@@ -1,0 +1,6 @@
+{
+  "name": "InvestIreland AI - Investment Scheme & Financial Intelligence",
+  "description": "Ireland-first financial intelligence platform for Ireland's new Investment Scheme, cross-border portfolio tracking across India, EU & US markets, and FY26-FY27 budget analytics grounded in official government sources.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

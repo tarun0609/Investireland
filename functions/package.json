@@ -1,0 +1,27 @@
+{
+  "name": "investireland-functions",
+  "description": "Firebase Cloud Functions for InvestIreland AI - Auth Triggers & Transactional Emails",
+  "scripts": {
+    "lint": "tsc --noEmit",
+    "build": "tsc",
+    "serve": "firebase emulators:start --only functions",
+    "shell": "firebase functions:shell",
+    "start": "npm run shell",
+    "deploy": "firebase deploy --only functions"
+  },
+  "engines": {
+    "node": "20"
+  },
+  "main": "lib/index.js",
+  "dependencies": {
+    "firebase-admin": "^13.1.0",
+    "firebase-functions": "^6.3.2",
+    "nodemailer": "^10.0.16"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.0",
+    "@types/nodemailer": "^8.0.2",
+    "typescript": "^7.0.2"
+  },
+  "private": true
+}

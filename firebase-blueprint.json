@@ -1,0 +1,88 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Registered investor account profile and tax residency metadata",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Unique user identifier matching auth UID" },
+        "name": { "type": "string", "description": "Display name of the user" },
+        "email": { "type": "string", "description": "Verified email address" },
+        "country": { "type": "string", "description": "Country of tax residency" },
+        "preferredCurrency": { "type": "string", "description": "Preferred display currency EUR, USD, INR, GBP" },
+        "primaryLifeStageGoal": { "type": "string", "description": "Target financial milestone or savings objective" },
+        "targetLifeGoalAmount": { "type": "number", "description": "Target savings amount in EUR" },
+        "registeredAt": { "type": "string", "description": "ISO timestamp when account was registered" },
+        "updatedAt": { "type": "string", "description": "ISO timestamp of last update" }
+      },
+      "required": ["uid", "name", "email", "country", "registeredAt"]
+    },
+    "UserHolding": {
+      "title": "UserHolding",
+      "description": "Individual investment asset held in the portfolio",
+      "type": "object",
+      "properties": {
+        "holdingId": { "type": "string", "description": "Identifier for the holding" },
+        "userId": { "type": "string", "description": "Owner user UID" },
+        "name": { "type": "string", "description": "Name of the asset or fund" },
+        "category": { "type": "string", "description": "Asset category such as Irish ETF, Indian MF, US Equities" },
+        "currency": { "type": "string", "description": "Original denomination currency" },
+        "units": { "type": "number", "description": "Units or shares held" },
+        "currentValueEUR": { "type": "number", "description": "Current equivalent value in EUR" },
+        "updatedAt": { "type": "string", "description": "Timestamp of last valuation update" }
+      },
+      "required": ["holdingId", "userId", "name", "category", "currency"]
+    },
+    "GoalMilestone": {
+      "title": "GoalMilestone",
+      "description": "Personalized life stage milestone target",
+      "type": "object",
+      "properties": {
+        "milestoneId": { "type": "string", "description": "Unique milestone ID" },
+        "userId": { "type": "string", "description": "Owner user UID" },
+        "title": { "type": "string", "description": "Milestone title" },
+        "category": { "type": "string", "description": "Milestone category" },
+        "targetAmountEUR": { "type": "number", "description": "Target target amount in EUR" },
+        "targetDate": { "type": "string", "description": "Target deadline date string" },
+        "status": { "type": "string", "description": "Progress status" },
+        "updatedAt": { "type": "string", "description": "Timestamp of update" }
+      },
+      "required": ["milestoneId", "userId", "title", "targetAmountEUR"]
+    },
+    "AuditEmail": {
+      "title": "AuditEmail",
+      "description": "Record of outbound automated transactional confirmation emails",
+      "type": "object",
+      "properties": {
+        "emailId": { "type": "string", "description": "Unique message or email delivery ID" },
+        "userId": { "type": "string", "description": "Recipient user UID" },
+        "recipientEmail": { "type": "string", "description": "Recipient email address" },
+        "recipientName": { "type": "string", "description": "Recipient name" },
+        "subject": { "type": "string", "description": "Email subject" },
+        "dispatchedAt": { "type": "string", "description": "Dispatch timestamp" },
+        "status": { "type": "string", "description": "Delivery status" },
+        "transport": { "type": "string", "description": "Mail transport mechanism" },
+        "summary": { "type": "string", "description": "Brief summary of message contents" }
+      },
+      "required": ["emailId", "recipientEmail", "subject", "dispatchedAt", "status"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "#/entities/User",
+      "description": "User profile document containing preferences and target goal"
+    },
+    "/users/{userId}/holdings/{holdingId}": {
+      "schema": "#/entities/UserHolding",
+      "description": "User specific portfolio holdings collection"
+    },
+    "/users/{userId}/milestones/{milestoneId}": {
+      "schema": "#/entities/GoalMilestone",
+      "description": "User specific financial goals and progress milestones"
+    },
+    "/users/{userId}/emails/{emailId}": {
+      "schema": "#/entities/AuditEmail",
+      "description": "Transactional confirmation email audit log for user"
+    }
+  }
+}

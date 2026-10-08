@@ -1,0 +1,44 @@
+[
+  {
+    "id": "usr_1791489674852_xilyr",
+    "name": "Alex O Connor",
+    "email": "alex.oconnor@example.ie",
+    "country": "Ireland",
+    "preferredCurrency": "EUR",
+    "taxResidencyStatus": "Ireland Tax Resident (TCA 1997)",
+    "registeredAt": "2026-10-08T20:01:14.852Z",
+    "lastLoginAt": "2026-10-08T20:01:14.852Z",
+    "hasOverseasAssets": true,
+    "primaryLifeStageGoal": "Dublin Home Deposit",
+    "targetLifeGoalAmount": 75000,
+    "emailVerified": true
+  },
+  {
+    "id": "usr_1791485202304_t7i2e",
+    "name": "Damak Taneja",
+    "email": "damaktaneja1@gmail.com",
+    "country": "Ireland",
+    "preferredCurrency": "EUR",
+    "taxResidencyStatus": "Ireland Tax Resident (TCA 1997)",
+    "registeredAt": "2026-10-08T18:46:42.304Z",
+    "lastLoginAt": "2026-10-08T18:46:42.304Z",
+    "hasOverseasAssets": true,
+    "primaryLifeStageGoal": "Dublin / Irish Home Deposit",
+    "targetLifeGoalAmount": 85000,
+    "emailVerified": true
+  },
+  {
+    "id": "usr_locapricorn_01",
+    "name": "Locapricorn Investor",
+    "email": "locapricorntraining@gmail.com",
+    "country": "Ireland",
+    "preferredCurrency": "EUR",
+    "taxResidencyStatus": "Ireland Tax Resident (TCA 1997)",
+    "registeredAt": "2026-10-08T18:50:09.887Z",
+    "lastLoginAt": "2026-10-08T18:50:13.466Z",
+    "hasOverseasAssets": true,
+    "primaryLifeStageGoal": "Dublin / Irish Home Deposit",
+    "targetLifeGoalAmount": 85000,
+    "emailVerified": true
+  }
+]
