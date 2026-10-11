@@ -148,8 +148,11 @@ export default function App() {
 
           {/* 2. Ireland's New Investment Account Framework (Budget 2027) */}
           <InvestmentAccountSection
+            investmentAccount={investmentAccount}
+            currentCurrency={currentCurrency}
             onOpenWaitlist={() => handleOpenWaitlist()}
             onExploreCalculator={() => handleNavigateSection('calculator')}
+            onAddContribution={handleAddContribution}
           />
 
           {/* 3. Problem Cards ("Investing shouldn't require a finance degree") */}

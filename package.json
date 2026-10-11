@@ -26,6 +26,7 @@
     "nodemailer": "^10.0.16",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
+    "react-is": "^19.3.0",
     "recharts": "^3.10.1",
     "vite": "^8.3.0"
   },
@@ -40,5 +41,8 @@
     "tailwindcss": "^4.3.3",
     "tsx": "^4.21.0",
     "typescript": "^7.0.2"
+  },
+  "overrides": {
+    "@grpc/grpc-js": "^1.14.6"
   }
 }

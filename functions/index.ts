@@ -1,5 +1,6 @@
-import * as functions from 'firebase-functions';
-import * as admin from 'firebase-admin';
+import * as functions from 'firebase-functions/v1';
+import { initializeApp, getApps } from 'firebase-admin/app';
+import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import nodemailer from 'nodemailer';
 import { 
   buildRegistrationConfirmationTemplate, 
@@ -7,14 +8,14 @@ import {
 } from '../src/services/emailService';
 
 // Initialize Firebase Admin SDK if not already initialized
-if (!admin.apps.length) {
-  admin.initializeApp();
+if (getApps().length === 0) {
+  initializeApp();
 }
 
-const firestoreDb = admin.firestore();
+const firestoreDb = getFirestore();
 
 // Outbound system dispatcher email
-const SYSTEM_DISPATCHER_EMAIL = process.env.SYSTEM_DISPATCHER_EMAIL || 'locapricorntraining@gmail.com';
+const SYSTEM_DISPATCHER_EMAIL = process.env.SYSTEM_DISPATCHER_EMAIL || 'notifications@investireland.ai';
 
 /**
  * Mailer transporter configured for production SMTP or Ethereal test inbox
@@ -102,7 +103,7 @@ export const onUserCreatedSendWelcomeEmail = functions
           primaryLifeStageGoal: primaryGoal,
           targetLifeGoalAmount: targetAmount,
           registeredAt: new Date().toISOString(),
-          createdAt: admin.firestore.FieldValue.serverTimestamp()
+          createdAt: FieldValue.serverTimestamp()
         }, { merge: true });
       }
 
@@ -153,7 +154,7 @@ export const onUserCreatedSendWelcomeEmail = functions
         previewUrl,
         summary: `Automated welcome email dispatched via Firebase Auth onCreate trigger to ${userEmail}.`,
         htmlContent: html,
-        createdAt: admin.firestore.FieldValue.serverTimestamp()
+        createdAt: FieldValue.serverTimestamp()
       });
 
       // 5. Update user document with confirmation flag
@@ -182,7 +183,7 @@ export const onUserCreatedSendWelcomeEmail = functions
  */
 export const triggerAuthWelcomeEmailTest = functions
   .region('europe-west1')
-  .https.onRequest(async (req, res) => {
+  .https.onRequest(async (req: functions.Request, res: functions.Response) => {
     const { email, name, userId } = req.body || req.query;
 
     if (!email) {
@@ -191,16 +192,16 @@ export const triggerAuthWelcomeEmailTest = functions
     }
 
     const testUser = {
-      uid: userId || `test_usr_${Date.now()}`,
-      email,
-      displayName: name || 'Test Investor'
+      uid: (userId as string) || `test_usr_${Date.now()}`,
+      email: email as string,
+      displayName: (name as string) || 'Test Investor'
     } as functions.auth.UserRecord;
 
     try {
       const emailPayload: RegistrationEmailPayload = {
         userId: testUser.uid,
         name: testUser.displayName || 'Test Investor',
-        email: testUser.email,
+        email: testUser.email || (email as string),
         country: 'Ireland',
         preferredCurrency: 'EUR',
         primaryGoal: 'Irish Home Deposit & Wealth Milestone',

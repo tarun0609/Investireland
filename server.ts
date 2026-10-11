@@ -15,7 +15,22 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
-app.use(express.json());
+// Security Hardening: Disable Express fingerprinting header
+app.disable('x-powered-by');
+
+// Security Hardening: Apply secure HTTP response headers
+app.use((req: Request, res: Response, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('X-Download-Options', 'noopen');
+  // Allow framing from AI Studio preview and dev domains, while denying arbitrary external embedding
+  res.setHeader('Content-Security-Policy', "frame-ancestors 'self' https://*.run.app https://*.ai.studio;");
+  next();
+});
+
+// Security Hardening: Bound JSON body payload size to protect against DoS
+app.use(express.json({ limit: '1mb' }));
 
 // Serve the standalone full-viewport looping video hero page requested by the user
 app.get(['/sellix', '/sellix.html'], (req: Request, res: Response) => {
@@ -689,13 +704,12 @@ Access your dashboard: https://ais-dev-qrlcr5odu3qypdbgjzwi5v-645067703073.europ
 }
 
 // System Outbound Auto-Response Dispatcher Address
-// Used by the mailer to dispatch automated welcome and milestone reports to each registered user's unique email.
-const SYSTEM_DISPATCHER_EMAIL = process.env.SYSTEM_DISPATCHER_EMAIL || 'locapricorntraining@gmail.com';
+// Used by the mailer connector to dispatch automated welcome and milestone reports to each registered user's unique email.
+const SYSTEM_DISPATCHER_EMAIL = process.env.SYSTEM_DISPATCHER_EMAIL || 'notifications@investireland.ai';
 
 function seedInitialDataIfEmpty() {
-  // We do not hardcode a user as locapricorntraining@gmail.com.
   // Each user registers with their own unique email address.
-  // locapricorntraining@gmail.com is configured as the system's official auto-response sender!
+  // The system uses a secure backend connector to dispatch confirmations.
 }
 seedInitialDataIfEmpty();
 

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { 
   Calendar, 
   Coins, 
@@ -8,28 +8,123 @@ import {
   AlertCircle, 
   CheckCircle2, 
   Info,
-  HelpCircle
+  HelpCircle,
+  FileDown,
+  Download,
+  History,
+  Plus,
+  UserCheck,
+  Printer,
+  Sparkles
 } from 'lucide-react';
+import { Currency, InvestmentAccountState } from '../types';
+import { getActiveUser } from '../services/authEmailService';
+import { loadInvestmentAccountState, saveInvestmentAccountState } from '../services/portfolioService';
+import { generateInvestmentAccountPdf } from '../services/pdfExportService';
+import { InvestmentAccountPdfModal } from './InvestmentAccountPdfModal';
 
 interface InvestmentAccountSectionProps {
   onOpenWaitlist: () => void;
   onExploreCalculator: () => void;
+  investmentAccount?: InvestmentAccountState;
+  currentCurrency?: Currency;
+  onAddContribution?: (amount: number, provider: string) => void;
 }
 
 export const InvestmentAccountSection: React.FC<InvestmentAccountSectionProps> = ({
   onOpenWaitlist,
-  onExploreCalculator
+  onExploreCalculator,
+  investmentAccount: propInvestmentAccount,
+  currentCurrency = 'EUR',
+  onAddContribution
 }) => {
+  const activeUser = getActiveUser();
+  const [localAccount, setLocalAccount] = useState<InvestmentAccountState>(() => {
+    return propInvestmentAccount || loadInvestmentAccountState(activeUser.id);
+  });
+  const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
+  const [isDirectDownloading, setIsDirectDownloading] = useState(false);
+  const [downloadSuccessToast, setDownloadSuccessToast] = useState(false);
+
+  // Use props if provided, otherwise local state
+  const currentAccount = propInvestmentAccount || localAccount;
+
+  const historyList = Array.isArray(currentAccount.history) ? currentAccount.history : [];
+  const annualLimit = currentAccount.annualLimit || 12000;
+  const annualContrib = currentAccount.annualContributions || 0;
+  const remainingAllowance = Math.max(0, annualLimit - annualContrib);
+  const accountValue = currentAccount.accountValue || 0;
+  const threshold = currentAccount.taxFreeThreshold || 50000;
+  const remainingShelter = Math.max(0, threshold - accountValue);
+  const allowancePercent = Math.min(100, Math.round((annualContrib / annualLimit) * 100));
+
+  // Direct 1-click PDF download handler
+  const handleQuickExportPdf = () => {
+    setIsDirectDownloading(true);
+    try {
+      const doc = generateInvestmentAccountPdf({
+        userName: activeUser?.name || 'Investor',
+        userEmail: activeUser?.email,
+        taxResidencyStatus: activeUser?.taxResidencyStatus || 'Irish Tax Resident (PPSN Verified, TCA 1997)',
+        investmentAccount: currentAccount,
+        currentCurrency,
+        customNotes: 'Exported from InvestIreland Investment Account statutory overview module.'
+      });
+
+      const today = new Date().toISOString().split('T')[0];
+      doc.save(`InvestIreland_InvestmentAccount_Summary_${today}.pdf`);
+      setDownloadSuccessToast(true);
+      setTimeout(() => setDownloadSuccessToast(false), 4000);
+    } catch (err) {
+      console.error('Quick PDF export error:', err);
+    } finally {
+      setIsDirectDownloading(false);
+    }
+  };
+
+  // Quick helper to record a sample deposit if user wants to see transaction history change in real time
+  const handleAddSampleDeposit = () => {
+    const depositAmount = 1000;
+    const provider = 'Davy Select (Direct Debit)';
+    if (onAddContribution) {
+      onAddContribution(depositAmount, provider);
+    } else {
+      const updated: InvestmentAccountState = {
+        ...currentAccount,
+        accountValue: currentAccount.accountValue + depositAmount,
+        annualContributions: Math.min(annualLimit, currentAccount.annualContributions + depositAmount),
+        history: [
+          {
+            id: `tx_${Date.now()}`,
+            date: new Date().toISOString().split('T')[0],
+            amount: depositAmount,
+            provider,
+            type: 'Contribution'
+          },
+          ...historyList
+        ]
+      };
+      setLocalAccount(updated);
+      saveInvestmentAccountState(activeUser.id, updated);
+    }
+  };
+
   return (
     <section id="investment-account" className="py-20 bg-white border-b border-slate-200">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         
         {/* Section Header */}
         <div className="text-center max-w-3xl mx-auto">
-          <span className="text-xs font-bold text-emerald-800 uppercase tracking-widest bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200">
-            Historic Reform in Irish Personal Finance
-          </span>
-          <h2 className="mt-4 text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
+          <div className="flex items-center justify-center gap-2 mb-3">
+            <span className="text-xs font-bold text-emerald-800 uppercase tracking-widest bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200">
+              Historic Reform in Irish Personal Finance
+            </span>
+            <span className="text-xs font-semibold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full border border-slate-200 hidden sm:inline-flex items-center gap-1 font-mono">
+              Budget 2027 &bull; 1 July 2027
+            </span>
+          </div>
+
+          <h2 className="mt-2 text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
             Get ready for Ireland’s new Investment Account.
           </h2>
           <p className="mt-4 text-base sm:text-lg text-slate-600 leading-relaxed">
@@ -102,6 +197,236 @@ export const InvestmentAccountSection: React.FC<InvestmentAccountSectionProps> =
 
         </div>
 
+        {/* ======================================================== */}
+        {/* INTERACTIVE USER INVESTMENT ACCOUNT & PDF EXPORT DOSSIER */}
+        {/* ======================================================== */}
+        <div className="mt-12 bg-white rounded-3xl p-6 sm:p-8 border-2 border-emerald-500/20 shadow-xl relative overflow-hidden">
+          {/* Subtle decorative background glow */}
+          <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-50 rounded-full blur-3xl -z-10 opacity-70"></div>
+
+          {/* Top Banner & Export Actions Toolbar */}
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-slate-200">
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold text-[11px] font-mono flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                  Your 2027 Account State &amp; Transaction Ledger
+                </span>
+                <span className="text-xs font-semibold text-slate-600 flex items-center gap-1">
+                  <UserCheck className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Holder: <strong>{activeUser.name}</strong></span>
+                </span>
+              </div>
+              <h3 className="text-xl sm:text-2xl font-black text-slate-900 mt-1 tracking-tight">
+                Budget 2027 Investment Account Ledger &amp; PDF Export
+              </h3>
+              <p className="text-xs text-slate-600 mt-0.5">
+                Generate and download an official, formatted PDF summary of your annual allowance, tax-free headroom, and complete transaction log.
+              </p>
+            </div>
+
+            {/* Prominent Export to PDF Action Buttons */}
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <button
+                type="button"
+                onClick={handleQuickExportPdf}
+                disabled={isDirectDownloading}
+                className="px-4 py-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white font-bold text-xs inline-flex items-center gap-2 shadow-sm hover:shadow transition-all cursor-pointer whitespace-nowrap"
+                title="Directly download Investment Account Summary PDF"
+              >
+                {isDirectDownloading ? (
+                  <>
+                    <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span>Preparing PDF...</span>
+                  </>
+                ) : (
+                  <>
+                    <FileDown className="w-4 h-4 text-emerald-200" />
+                    <span>Export to PDF</span>
+                  </>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setIsPdfModalOpen(true)}
+                className="px-3.5 py-2.5 rounded-xl border border-slate-300 hover:border-emerald-600 hover:bg-emerald-50/50 text-slate-700 font-bold text-xs inline-flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap"
+                title="Customize PDF options and preview document before export"
+              >
+                <Printer className="w-3.5 h-3.5 text-slate-500" />
+                <span>Customize &amp; Preview</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleAddSampleDeposit}
+                className="px-3 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs inline-flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap"
+                title="Add a sample €1,000 planned deposit to test live ledger updates"
+              >
+                <Plus className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Record €1k Deposit</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Download Success Notice */}
+          {downloadSuccessToast && (
+            <div className="mt-4 p-3 bg-emerald-50 border border-emerald-300 rounded-xl text-xs font-bold text-emerald-900 flex items-center gap-2 animate-in fade-in">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>Investment Account Summary PDF generated and downloaded to your device!</span>
+            </div>
+          )}
+
+          {/* Account Metrics Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mt-6">
+            
+            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-slate-500 uppercase">Account Value</span>
+                <span className="text-[10px] font-mono text-emerald-700 font-bold bg-emerald-100/70 px-2 py-0.5 rounded">
+                  Pre-Launch
+                </span>
+              </div>
+              <div className="text-3xl font-black text-slate-900 font-mono mt-1">
+                €{accountValue.toLocaleString('en-IE')}
+              </div>
+              <p className="text-[11px] text-slate-500 mt-1">
+                Accumulated capital growth &amp; early planned deposit assets
+              </p>
+            </div>
+
+            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-slate-500 uppercase">Annual Allowance Cap</span>
+                <span className="text-[10px] font-mono font-bold text-slate-600">
+                  {allowancePercent}% utilized
+                </span>
+              </div>
+              <div className="text-3xl font-black text-emerald-800 font-mono mt-1">
+                €{annualContrib.toLocaleString('en-IE')} <span className="text-sm font-normal text-slate-400">/ €12,000</span>
+              </div>
+              
+              {/* Allowance progress bar */}
+              <div className="w-full bg-slate-200 h-2 rounded-full mt-2 overflow-hidden">
+                <div 
+                  className="bg-emerald-600 h-full rounded-full transition-all duration-500" 
+                  style={{ width: `${allowancePercent}%` }}
+                />
+              </div>
+
+              <p className="text-[11px] text-emerald-700 font-semibold mt-1.5 flex items-center justify-between">
+                <span>€{remainingAllowance.toLocaleString('en-IE')} allowance remaining</span>
+                <span className="text-[10px] text-slate-400">Max €1,000/mo</span>
+              </p>
+            </div>
+
+            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-slate-500 uppercase">Tax-Free Shelter Room</span>
+                <span className="text-[10px] font-bold text-teal-800 bg-teal-100/70 px-2 py-0.5 rounded">
+                  0% Exit Tax
+                </span>
+              </div>
+              <div className="text-3xl font-black text-teal-800 font-mono mt-1">
+                €{remainingShelter.toLocaleString('en-IE')}
+              </div>
+              <p className="text-[11px] text-slate-500 mt-1">
+                Gains sheltered before marginal 1% annual fee applies
+              </p>
+            </div>
+
+          </div>
+
+          {/* Transaction & Allocation History Ledger */}
+          <div className="mt-8">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+              <div className="flex items-center gap-2">
+                <History className="w-4 h-4 text-emerald-700" />
+                <h4 className="text-sm font-bold text-slate-900">
+                  Transaction &amp; Allocation History ({historyList.length} Entries)
+                </h4>
+              </div>
+              <span className="text-xs text-slate-500">
+                All ledger entries below will be formatted into your downloaded PDF summary.
+              </span>
+            </div>
+
+            <div className="border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
+                    <tr>
+                      <th className="py-2.5 px-3.5">Date</th>
+                      <th className="py-2.5 px-3.5">Transaction Type</th>
+                      <th className="py-2.5 px-3.5">Provider / Custodian</th>
+                      <th className="py-2.5 px-3.5">Statutory Classification</th>
+                      <th className="py-2.5 px-3.5 text-right">Amount (EUR)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 text-slate-700 font-mono">
+                    {historyList.map((tx) => (
+                      <tr key={tx.id} className="hover:bg-slate-50/70 transition-colors">
+                        <td className="py-2.5 px-3.5 text-slate-600">{tx.date}</td>
+                        <td className="py-2.5 px-3.5 font-sans font-bold text-slate-900">{tx.type}</td>
+                        <td className="py-2.5 px-3.5 font-sans text-slate-600">{tx.provider}</td>
+                        <td className="py-2.5 px-3.5 font-sans">
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                            <span>Qualifying Deposit (2027 Rules)</span>
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3.5 font-bold text-emerald-800 text-right">
+                          €{Number(tx.amount).toLocaleString('en-IE')}
+                        </td>
+                      </tr>
+                    ))}
+                    {historyList.length === 0 && (
+                      <tr>
+                        <td colSpan={5} className="py-6 text-center text-slate-400 font-sans">
+                          No transactions recorded yet. Click "Record €1k Deposit" or make a deposit in the dashboard.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                  {historyList.length > 0 && (
+                    <tfoot className="bg-slate-50 font-bold text-slate-900 border-t border-slate-200">
+                      <tr>
+                        <td colSpan={4} className="py-2.5 px-3.5 font-sans text-xs">
+                          Total Recorded Allocations in Ledger
+                        </td>
+                        <td className="py-2.5 px-3.5 text-right font-mono text-emerald-900 text-xs">
+                          €{historyList.reduce((sum, item) => sum + (Number(item.amount) || 0), 0).toLocaleString('en-IE')}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  )}
+                </table>
+              </div>
+            </div>
+          </div>
+
+          {/* Quick PDF Export Banner Footer */}
+          <div className="mt-6 p-4 bg-emerald-50/60 border border-emerald-200 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-2.5">
+              <FileDown className="w-5 h-5 text-emerald-700 shrink-0" />
+              <div className="text-slate-800">
+                <span className="font-bold text-emerald-950 block">Need a printable dossier for your records or tax advisor?</span>
+                <span className="text-slate-600 text-[11px]">The PDF includes official reference numbers, statutory citations (TCA 1997 s.739D), and Department of Finance guidelines.</span>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={handleQuickExportPdf}
+              disabled={isDirectDownloading}
+              className="px-4 py-2 bg-emerald-800 hover:bg-emerald-900 disabled:opacity-50 text-white font-bold rounded-xl text-xs inline-flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 shadow-2xs"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Download PDF Summary</span>
+            </button>
+          </div>
+
+        </div>
+
         {/* Deep Dive: Clear distinctions (Spec Section 21) */}
         <div className="mt-12 bg-gradient-to-br from-slate-50 to-emerald-50/40 rounded-2xl p-6 sm:p-8 border border-slate-200">
           <div className="flex items-center gap-2 mb-4">
@@ -155,6 +480,16 @@ export const InvestmentAccountSection: React.FC<InvestmentAccountSectionProps> =
             <span>Simulate your savings in the Calculator</span>
             <ArrowRight className="w-4 h-4" />
           </button>
+          
+          <button
+            type="button"
+            onClick={handleQuickExportPdf}
+            className="inline-flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-semibold bg-slate-900 hover:bg-black text-white shadow-sm transition-all cursor-pointer"
+          >
+            <FileDown className="w-4 h-4 text-emerald-400" />
+            <span>Export Account Summary (PDF)</span>
+          </button>
+
           <button
             onClick={onOpenWaitlist}
             className="inline-flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-semibold bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 transition-all cursor-pointer"
@@ -164,6 +499,17 @@ export const InvestmentAccountSection: React.FC<InvestmentAccountSectionProps> =
         </div>
 
       </div>
+
+      {/* Export to PDF Customization & Preview Modal */}
+      <InvestmentAccountPdfModal
+        isOpen={isPdfModalOpen}
+        onClose={() => setIsPdfModalOpen(false)}
+        investmentAccount={currentAccount}
+        currentCurrency={currentCurrency}
+        defaultUserName={activeUser.name}
+        userEmail={activeUser.email}
+      />
     </section>
   );
 };
+

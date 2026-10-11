@@ -74,6 +74,13 @@ service cloud.firestore {
         allow create: if isOwner(userId) && isValidId(emailId);
         allow update, delete: if false;
       }
+
+      // Investment accounts state and transaction records
+      match /accounts/{accountId} {
+        allow get, list: if isOwner(userId);
+        allow create, update: if isOwner(userId) && isValidId(accountId);
+        allow delete: if isOwner(userId) && isValidId(accountId);
+      }
     }
 
     // Connection testing doc

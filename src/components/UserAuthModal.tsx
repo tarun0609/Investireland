@@ -35,7 +35,12 @@ import {
   sendMilestoneAutoEmail,
   fetchDatabaseStatus,
   BackendDatabaseInfo,
-  syncMilestoneToBackend
+  syncMilestoneToBackend,
+  signInWithGoogleOAuth,
+  OAUTH_CONFIG,
+  AuthErrorInfo,
+  subscribeToAuthErrors,
+  clearLastAuthError
 } from '../services/authEmailService';
 import { emailService } from '../services/emailService';
 import { LIFE_STAGE_PRESETS } from '../services/goalMilestoneService';
@@ -73,6 +78,7 @@ export const UserAuthModal: React.FC<UserAuthModalProps> = ({
     emailDispatch?: any;
   } | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [authErrorDetails, setAuthErrorDetails] = useState<AuthErrorInfo | null>(null);
 
   // Email outbox state
   const [emailLogs, setEmailLogs] = useState<EmailDispatchLog[]>([]);
@@ -82,6 +88,18 @@ export const UserAuthModal: React.FC<UserAuthModalProps> = ({
   const [dbInfo, setDbInfo] = useState<BackendDatabaseInfo | null>(null);
   const [isLoadingDb, setIsLoadingDb] = useState(false);
   const [dbSyncMessage, setDbSyncMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Listen for global auth error events
+    const unsubscribe = subscribeToAuthErrors((errorInfo) => {
+      setAuthErrorDetails(errorInfo);
+      setErrorMsg(`${errorInfo.message} ${errorInfo.actionHint}`);
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
 
   useEffect(() => {
     if (isOpen) {
@@ -131,6 +149,58 @@ export const UserAuthModal: React.FC<UserAuthModalProps> = ({
   };
 
   if (!isOpen) return null;
+
+  const handleGoogleOAuthSignIn = async () => {
+    setIsSubmitting(true);
+    setErrorMsg(null);
+    setAuthErrorDetails(null);
+    clearLastAuthError();
+    const result = await signInWithGoogleOAuth();
+    setIsSubmitting(false);
+
+    if (result.success && result.user) {
+      setAuthErrorDetails(null);
+      setErrorMsg(null);
+      setCurrentUserState(result.user);
+      setSubmissionSuccess({
+        user: result.user,
+        emailDispatch: result.emailDispatch
+      });
+      if (onUserChange) onUserChange(result.user);
+      loadEmails(result.user.email);
+    } else {
+      setAuthErrorDetails(result.errorDetails || null);
+      setErrorMsg(result.error || 'Google Sign-In failed');
+    }
+  };
+
+  const handleTriggerAuthCloudFunction = async () => {
+    if (!currentUser.email) return;
+    setIsSubmitting(true);
+    setDbSyncMessage(null);
+    try {
+      const res = await fetch('/api/functions/trigger-auth-welcome', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: currentUser.email,
+          name: currentUser.name,
+          userId: currentUser.id
+        })
+      });
+      const data = await res.json();
+      setIsSubmitting(false);
+      if (res.ok) {
+        setDbSyncMessage(`Firebase Auth onCreate Cloud Function executed: Delivered personalized welcome email to ${currentUser.email}.`);
+        loadEmails(currentUser.email);
+      } else {
+        setErrorMsg(data.error || 'Failed to trigger Cloud Function');
+      }
+    } catch (err: any) {
+      setIsSubmitting(false);
+      setErrorMsg(err.message || 'Error executing Cloud Function');
+    }
+  };
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -315,11 +385,62 @@ export const UserAuthModal: React.FC<UserAuthModalProps> = ({
           </button>
         </div>
 
-        {/* ERROR NOTICE */}
-        {errorMsg && (
-          <div className="mb-4 p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800 flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
-            <span>{errorMsg}</span>
+        {/* UI-FRIENDLY ERROR NOTICE */}
+        {(authErrorDetails || errorMsg) && (
+          <div className="mb-5 p-3.5 bg-rose-50/90 border border-rose-200 rounded-xl text-xs text-rose-900 shadow-2xs animate-in fade-in-50">
+            <div className="flex items-start justify-between gap-2.5">
+              <div className="flex items-start gap-2.5">
+                <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 mt-0.5" />
+                <div>
+                  <h4 className="font-bold text-rose-950 text-xs">
+                    {authErrorDetails?.title || 'Authentication Notice'}
+                  </h4>
+                  <p className="text-rose-800 text-[11px] mt-0.5 leading-relaxed">
+                    {authErrorDetails?.message || errorMsg}
+                  </p>
+
+                  {authErrorDetails?.actionHint && (
+                    <div className="mt-2 p-2 bg-white/70 border border-rose-200/70 rounded-lg text-[11px] text-slate-700 leading-normal flex items-start gap-1.5">
+                      <span className="font-bold text-rose-700 shrink-0">Action:</span>
+                      <span>{authErrorDetails.actionHint}</span>
+                    </div>
+                  )}
+
+                  {authErrorDetails?.technicalDetails && (
+                    <div className="mt-1.5 text-[10px] font-mono text-slate-500">
+                      Code: {authErrorDetails.code}
+                    </div>
+                  )}
+
+                  {authErrorDetails?.isRecoverable && (
+                    <div className="mt-2.5 flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleGoogleOAuthSignIn}
+                        disabled={isSubmitting}
+                        className="px-2.5 py-1 bg-rose-700 hover:bg-rose-800 text-white rounded-md text-[11px] font-bold inline-flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+                      >
+                        <RefreshCw className={`w-3 h-3 ${isSubmitting ? 'animate-spin' : ''}`} />
+                        <span>Retry Google Sign-In</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setErrorMsg(null);
+                  setAuthErrorDetails(null);
+                  clearLastAuthError();
+                }}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-md transition-colors cursor-pointer shrink-0"
+                title="Dismiss message"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
         )}
 
@@ -327,7 +448,31 @@ export const UserAuthModal: React.FC<UserAuthModalProps> = ({
         {activeTab === 'register' && (
           <div>
             {!submissionSuccess ? (
-              <form onSubmit={handleRegister} className="space-y-4 text-xs">
+              <div>
+                {/* Firebase Google OAuth Fast Flow */}
+                <button
+                  type="button"
+                  onClick={handleGoogleOAuthSignIn}
+                  disabled={isSubmitting}
+                  className="w-full py-2.5 px-4 rounded-xl border border-slate-300 hover:border-emerald-600 hover:bg-emerald-50/50 text-slate-800 font-bold text-xs flex items-center justify-center gap-2.5 transition-all shadow-2xs cursor-pointer mb-3.5 bg-white disabled:opacity-50"
+                  title="Sign up instantly with your Google Account"
+                >
+                  <svg className="w-4 h-4" viewBox="0 0 24 24">
+                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+                  </svg>
+                  <span>Sign up with Google (OAuth Instant Sync)</span>
+                </button>
+
+                <div className="flex items-center gap-2 mb-3.5">
+                  <div className="flex-1 h-px bg-slate-200"></div>
+                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">or register with email</span>
+                  <div className="flex-1 h-px bg-slate-200"></div>
+                </div>
+
+                <form onSubmit={handleRegister} className="space-y-4 text-xs">
                 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
@@ -350,8 +495,9 @@ export const UserAuthModal: React.FC<UserAuthModalProps> = ({
                         <Mail className="w-3.5 h-3.5 text-slate-400" />
                         Email Address *
                       </span>
-                      <span className="text-[10px] text-slate-400 font-medium">
-                        Auto-reply sent via locapricorntraining@gmail.com
+                      <span className="text-[10px] text-emerald-700 font-medium flex items-center gap-1">
+                        <ShieldCheck className="w-3 h-3 text-emerald-600 inline" />
+                        <span>Instant secure automated confirmation</span>
                       </span>
                     </label>
                     <input
@@ -455,7 +601,8 @@ export const UserAuthModal: React.FC<UserAuthModalProps> = ({
                   )}
                 </button>
               </form>
-            ) : (
+            </div>
+          ) : (
               <div className="text-center py-4">
                 <div className="w-14 h-14 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center mx-auto mb-3">
                   <CheckCircle2 className="w-8 h-8" />
@@ -516,7 +663,31 @@ export const UserAuthModal: React.FC<UserAuthModalProps> = ({
 
         {/* TAB 2: QUICK LOGIN */}
         {activeTab === 'login' && (
-          <form onSubmit={handleQuickLogin} className="space-y-4 text-xs">
+          <div>
+            {/* Firebase Google OAuth Fast Flow */}
+            <button
+              type="button"
+              onClick={handleGoogleOAuthSignIn}
+              disabled={isSubmitting}
+              className="w-full py-2.5 px-4 rounded-xl border border-slate-300 hover:border-emerald-600 hover:bg-emerald-50/50 text-slate-800 font-bold text-xs flex items-center justify-center gap-2.5 transition-all shadow-2xs cursor-pointer mb-3.5 bg-white disabled:opacity-50"
+              title="Sign in instantly with your Google Account"
+            >
+              <svg className="w-4 h-4" viewBox="0 0 24 24">
+                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+              </svg>
+              <span>Sign in with Google</span>
+            </button>
+
+            <div className="flex items-center gap-2 mb-3.5">
+              <div className="flex-1 h-px bg-slate-200"></div>
+              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">or sign in with password</span>
+              <div className="flex-1 h-px bg-slate-200"></div>
+            </div>
+
+            <form onSubmit={handleQuickLogin} className="space-y-4 text-xs">
             <div>
               <div className="flex items-center justify-between mb-1">
                 <label className="font-bold text-slate-700">Email Address</label>
@@ -563,7 +734,8 @@ export const UserAuthModal: React.FC<UserAuthModalProps> = ({
               </button>
             </div>
           </form>
-        )}
+        </div>
+      )}
 
         {/* TAB 3: EMAIL OUTBOX & RECEIPTS */}
         {activeTab === 'outbox' && (
@@ -757,6 +929,31 @@ export const UserAuthModal: React.FC<UserAuthModalProps> = ({
                 <span>{dbSyncMessage}</span>
               </div>
             )}
+
+            {/* Firebase Cloud Function Auth Trigger Module */}
+            <div className="p-3 bg-violet-50/70 border border-violet-200 rounded-xl text-xs space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-violet-900 flex items-center gap-1.5">
+                  <Mail className="w-3.5 h-3.5 text-violet-700" />
+                  Firebase Cloud Function Auth Trigger
+                </span>
+                <span className="text-[10px] font-mono font-bold bg-violet-100 text-violet-800 px-2 py-0.5 rounded">
+                  functions.auth.user().onCreate
+                </span>
+              </div>
+              <p className="text-[11px] text-violet-800 leading-relaxed">
+                Production Endpoint: <span className="font-mono text-[10px] text-violet-950 font-bold break-all">https://europe-west1-inbound-lyceum-cpthm.cloudfunctions.net/onUserCreatedSendWelcomeEmail</span>
+              </p>
+              <button
+                type="button"
+                onClick={handleTriggerAuthCloudFunction}
+                disabled={isSubmitting || !currentUser.email}
+                className="w-full py-2 px-3 rounded-lg bg-violet-600 hover:bg-violet-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 shadow-2xs"
+              >
+                <Send className="w-3.5 h-3.5" />
+                <span>Test Trigger Cloud Function Welcome Email to {currentUser.email || 'Active User'}</span>
+              </button>
+            </div>
 
             {/* Action Bar */}
             <div className="pt-2 flex flex-col sm:flex-row items-center gap-2">

@@ -297,22 +297,35 @@ Your current progress: ${formattedCurrent} of ${formattedTarget} (${pct}%).
 // 3. IMPLEMENTATION A: FIREBASE CLOUD FUNCTIONS / FIRESTORE QUEUE SERVICE
 // ============================================================================
 
+export const CLOUD_FUNCTIONS_CONFIG = {
+  region: 'europe-west1',
+  projectId: firebaseConfig.projectId || 'inbound-lyceum-cpthm',
+  authWelcomeTriggerUrl: 'https://europe-west1-inbound-lyceum-cpthm.cloudfunctions.net/onUserCreatedSendWelcomeEmail',
+  testTriggerUrl: 'https://europe-west1-inbound-lyceum-cpthm.cloudfunctions.net/triggerAuthWelcomeEmailTest',
+  localProxyUrl: '/api/functions/trigger-auth-welcome',
+  allowedOrigins: [
+    'https://ais-dev-qrlcr5odu3qypdbgjzwi5v-645067703073.europe-west1.run.app',
+    'https://ais-pre-qrlcr5odu3qypdbgjzwi5v-645067703073.europe-west1.run.app',
+    'https://investireland-ai-investment-scheme-financial-inte.ai.studio'
+  ]
+};
+
 /**
  * Implementation designed specifically for Firebase Cloud Functions integration.
  * Supports:
  * 1. Queueing emails into Firestore collections (/users/{userId}/emails or /mail)
  *    which trigger background Firebase Cloud Functions (e.g. onDocumentCreated or Firebase Trigger Email).
  * 2. Calling Firebase Callable / HTTP Cloud Functions when deployed.
- * 3. Graceful fallback to backend proxy if functions are in transition.
+ * 3. Live fetch requests to the production API endpoints.
  */
 export class FirebaseCloudFunctionsEmailService implements ITransactionalEmailService {
   private functionsRegion: string;
   private functionsBaseUrl: string;
 
   constructor(options?: { region?: string; functionsBaseUrl?: string }) {
-    this.functionsRegion = options?.region || 'europe-west1';
+    this.functionsRegion = options?.region || CLOUD_FUNCTIONS_CONFIG.region;
     this.functionsBaseUrl = options?.functionsBaseUrl || 
-      `https://${this.functionsRegion}-${firebaseConfig.projectId}.cloudfunctions.net`;
+      `https://${this.functionsRegion}-${CLOUD_FUNCTIONS_CONFIG.projectId}.cloudfunctions.net`;
   }
 
   /**
@@ -405,6 +418,40 @@ export class FirebaseCloudFunctionsEmailService implements ITransactionalEmailSe
   async sendRegistrationConfirmation(payload: RegistrationEmailPayload): Promise<EmailDispatchResult> {
     const { subject, html, text } = buildRegistrationConfirmationTemplate(payload);
     
+    // 1. Try live Firebase Cloud Function / production API trigger endpoint
+    try {
+      const liveEndpoint = CLOUD_FUNCTIONS_CONFIG.localProxyUrl;
+      const res = await fetch(liveEndpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: payload.email,
+          name: payload.name,
+          userId: payload.userId,
+          country: payload.country,
+          primaryGoal: payload.primaryGoal,
+          targetAmount: payload.targetAmount
+        })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        return {
+          success: true,
+          messageId: data.emailDispatch?.messageId || `live_${Date.now()}`,
+          dispatchedAt: data.emailDispatch?.dispatchedAt || new Date().toISOString(),
+          provider: 'FIREBASE_CLOUD_FUNCTIONS',
+          recipient: payload.email,
+          subject,
+          summary: `Personalized welcome email sent to ${payload.email} via live Cloud Function trigger.`,
+          previewUrl: data.emailDispatch?.previewUrl || null
+        };
+      }
+    } catch (apiErr) {
+      console.warn('[Firebase Cloud Functions] Live endpoint notice, queueing via Firestore:', apiErr);
+    }
+
+    // 2. Queue in Firestore for background Cloud Functions trigger
     return this.queueEmailForCloudFunction({
       to: payload.email,
       recipientName: payload.name,

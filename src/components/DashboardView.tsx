@@ -9,6 +9,7 @@ import { formatCurrency, convertFromEUR, convertToEUR, FALLBACK_FISCAL_DATA } fr
 import { computeFinancialXRay } from '../services/financialXRayService';
 import { BudgetCalculatorSection } from './BudgetCalculatorSection';
 import { ExportPdfModal } from './ExportPdfModal';
+import { InvestmentAccountPdfModal } from './InvestmentAccountPdfModal';
 import { MarketPerformanceWidget } from './MarketPerformanceWidget';
 import { RiskExposureRadar } from './RiskExposureRadar';
 import { AssetRebalancer } from './AssetRebalancer';
@@ -122,6 +123,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   // PDF Export Modal State
   const [isExportPdfOpen, setIsExportPdfOpen] = useState(false);
+  const [isInvAccountPdfOpen, setIsInvAccountPdfOpen] = useState(false);
 
   // CSV Import simulation
   const [importedFile, setImportedFile] = useState<string | null>(null);
@@ -717,13 +719,24 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   </p>
                 </div>
 
-                <button
-                  onClick={() => setIsContributionModalOpen(true)}
-                  className="inline-flex items-center gap-1.5 px-4 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>Record Planned Deposit</span>
-                </button>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    onClick={() => setIsInvAccountPdfOpen(true)}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2.5 bg-slate-900 hover:bg-black text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
+                    title="Export Investment Account summary and transaction ledger to PDF"
+                  >
+                    <FileDown className="w-4 h-4 text-emerald-400" />
+                    <span>Export to PDF</span>
+                  </button>
+
+                  <button
+                    onClick={() => setIsContributionModalOpen(true)}
+                    className="inline-flex items-center gap-1.5 px-4 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Record Planned Deposit</span>
+                  </button>
+                </div>
               </div>
 
               {/* 3 Metric Cards */}
@@ -1214,7 +1227,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       )}
 
-      {/* MODAL 3: EXPORT PDF SUMMARY */}
+      {/* MODAL 3: EXPORT FULL PORTFOLIO PDF SUMMARY */}
       <ExportPdfModal
         isOpen={isExportPdfOpen}
         onClose={() => setIsExportPdfOpen(false)}
@@ -1223,6 +1236,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         xray={xray}
         currentCurrency={currentCurrency}
         defaultUserName={userName}
+      />
+
+      {/* MODAL 3B: EXPORT BUDGET 2027 INVESTMENT ACCOUNT & TRANSACTION LEDGER PDF */}
+      <InvestmentAccountPdfModal
+        isOpen={isInvAccountPdfOpen}
+        onClose={() => setIsInvAccountPdfOpen(false)}
+        investmentAccount={investmentAccount}
+        currentCurrency={currentCurrency}
+        defaultUserName={userName}
+        userEmail={activeUser.email}
       />
 
       {/* MODAL 4: USER AUTHENTICATION & EMAIL AUTO-RESPONSE ENGINE */}

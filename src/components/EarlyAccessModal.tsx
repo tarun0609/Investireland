@@ -130,8 +130,9 @@ export const EarlyAccessModal: React.FC<EarlyAccessModalProps> = ({
                 <div>
                   <div className="flex items-center justify-between mb-1">
                     <label className="font-bold text-slate-700">Email Address *</label>
-                    <span className="text-[10px] text-slate-400 font-medium">
-                      Auto-reply confirmation via locapricorntraining@gmail.com
+                    <span className="text-[10px] text-emerald-700 font-medium flex items-center gap-1">
+                      <ShieldCheck className="w-3 h-3 text-emerald-600 inline" />
+                      <span>Instant automated confirmation</span>
                     </span>
                   </div>
                   <input

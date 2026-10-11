@@ -28,9 +28,9 @@
     "emailVerified": true
   },
   {
-    "id": "usr_locapricorn_01",
-    "name": "Locapricorn Investor",
-    "email": "locapricorntraining@gmail.com",
+    "id": "usr_demo_dublin_01",
+    "name": "Member Investor",
+    "email": "investor@investireland.demo",
     "country": "Ireland",
     "preferredCurrency": "EUR",
     "taxResidencyStatus": "Ireland Tax Resident (TCA 1997)",
