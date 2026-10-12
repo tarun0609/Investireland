@@ -1,5 +1,6 @@
 import React from 'react';
-import { ShieldCheck } from 'lucide-react';
+import { LifeBuoy, Mail, ShieldCheck } from 'lucide-react';
+import { CONTACT_EMAILS } from '../config/contact';
 
 interface FooterProps {
   onNavigateSection: (sectionId: string) => void;
@@ -115,6 +116,24 @@ export const Footer: React.FC<FooterProps> = ({ onNavigateSection, onOpenWaitlis
               No advertising, analytics or tracking cookies. Account data is stored with Firebase and can only be read by your signed-in account.
             </p>
           </nav>
+
+          {/* Contact */}
+          <div className="sm:col-span-3 md:col-span-5 -mt-4 flex flex-col sm:flex-row gap-3 sm:gap-8 text-[12px]">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <Mail className="w-4 h-4 text-emerald-400 shrink-0" aria-hidden="true" />
+              <span>General enquiries:</span>
+              <a href={`mailto:${CONTACT_EMAILS.enquiries}`} className="font-semibold text-slate-200 hover:text-white underline-offset-2 hover:underline">
+                {CONTACT_EMAILS.enquiries}
+              </a>
+            </div>
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <LifeBuoy className="w-4 h-4 text-emerald-400 shrink-0" aria-hidden="true" />
+              <span>Help &amp; feature requests:</span>
+              <a href={`mailto:${CONTACT_EMAILS.support}`} className="font-semibold text-slate-200 hover:text-white underline-offset-2 hover:underline">
+                {CONTACT_EMAILS.support}
+              </a>
+            </div>
+          </div>
 
         </div>
 
