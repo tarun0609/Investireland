@@ -1,6 +1,6 @@
 {
   "firestore": {
-    "database": "ai-studio-investirelandaii-6a889693-6842-4c14-bbe8-0e5ec82a479e",
+    "database": "(default)",
     "rules": "firestore.rules"
   },
   "functions": {

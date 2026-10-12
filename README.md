@@ -43,7 +43,7 @@ npm run dev            # http://localhost:3000
 
 1. In the Firebase console, enable the **Email/Password** and **Google** sign-in providers.
 2. Add your production domain to **Authentication → Settings → Authorized domains**.
-3. Deploy the security rules: `firebase deploy --only firestore:rules`. `firebase.json` targets the named Firestore database from `firebase-applet-config.json`.
+3. Deploy the security rules: `firebase deploy --only firestore:rules`. `firebase.json` targets the `(default)` Firestore database and `.firebaserc` selects the project.
 4. `firebase-applet-config.json` holds the *public* web config. It is safe to ship; access control is enforced by Auth and `firestore.rules`.
 5. Restrict the browser API key in Google Cloud Console (HTTP referrers and the APIs it can call), and consider enabling **App Check**.
 
