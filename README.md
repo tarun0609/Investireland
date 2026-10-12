@@ -47,6 +47,13 @@ npm run dev            # http://localhost:3000
 4. `firebase-applet-config.json` holds the *public* web config. It is safe to ship; access control is enforced by Auth and `firestore.rules`.
 5. Restrict the browser API key in Google Cloud Console (HTTP referrers and the APIs it can call), and consider enabling **App Check**.
 
+### Production domain (investirelandai.ie)
+
+1. Deploy the Node server (`npm run build`, then `NODE_ENV=production npm start`) to any host that runs Node 20+, such as Cloud Run, Render, Railway or Fly.io. Set the same variables as `.env` in the host's secret settings and use `APP_URL="https://investirelandai.ie"`.
+2. Point the domain's DNS at the host. Follow the host's custom-domain instructions, which usually means an `A` record for `investirelandai.ie` and a `CNAME` for `www`. Serve the site over HTTPS only.
+3. In Firebase, go to **Authentication → Settings → Authorized domains** and add `investirelandai.ie` and `www.investirelandai.ie`.
+4. Restrict the browser API key to `https://investirelandai.ie/*`, `https://www.investirelandai.ie/*` and `http://localhost:3000/*`.
+
 ### Welcome emails: deploy only one mechanism
 
 Two welcome-email paths exist. Use only one, or users will receive duplicates:
