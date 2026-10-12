@@ -1,12 +1,5 @@
 import React, { useState } from 'react';
-import { 
-  Check, 
-  Sparkles, 
-  ArrowRight, 
-  ShieldCheck, 
-  Building2, 
-  Users
-} from 'lucide-react';
+import { Check } from 'lucide-react';
 
 interface PricingSectionProps {
   onOpenWaitlist: (plan?: string) => void;
@@ -21,18 +14,20 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onOpenWaitlist }
         
         <div className="text-center max-w-3xl mx-auto">
           <span className="text-xs font-bold text-slate-500 uppercase tracking-widest bg-slate-200/60 px-3 py-1 rounded-full">
-            Transparent Subscription
+            Planned Pricing
           </span>
           <h2 className="mt-4 text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
             Clear, honest pricing. No hidden fees.
           </h2>
           <p className="mt-4 text-base sm:text-lg text-slate-600 leading-relaxed">
-            We don't take a cut of your assets under management. We provide pure financial intelligence and portfolio analytics.
+            We don't take a cut of your assets. These are the plans we intend to offer after the beta. During early access, everything is free and no payment details are collected.
           </p>
 
           {/* Billing Cycle Switcher */}
-          <div className="mt-8 inline-flex items-center p-1 bg-white rounded-xl border border-slate-200 shadow-xs">
+          <div role="group" aria-label="Billing cycle" className="mt-8 inline-flex flex-wrap justify-center items-center p-1 bg-white rounded-xl border border-slate-200 shadow-xs">
             <button
+              type="button"
+              aria-pressed={billingCycle === 'annual'}
               onClick={() => setBillingCycle('annual')}
               className={`px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 billingCycle === 'annual'
@@ -40,9 +35,12 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onOpenWaitlist }
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              Annual Billing <span className="text-[11px] font-normal text-emerald-200">(Save 25%)</span>
+              Annual Billing{' '}
+              <span className={`text-[11px] font-normal ${billingCycle === 'annual' ? 'text-emerald-100' : 'text-emerald-700'}`}>(Save ~25%)</span>
             </button>
             <button
+              type="button"
+              aria-pressed={billingCycle === 'monthly'}
               onClick={() => setBillingCycle('monthly')}
               className={`px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 billingCycle === 'monthly'
@@ -64,10 +62,10 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onOpenWaitlist }
               <div className="text-xs font-bold uppercase text-slate-700 tracking-wider">Free</div>
               <div className="mt-3 flex items-baseline gap-1">
                 <span className="text-4xl font-extrabold text-slate-900 font-mono">€0</span>
-                <span className="text-xs text-slate-700">forever</span>
+                <span className="text-xs text-slate-700">free plan</span>
               </div>
               <p className="text-xs text-slate-700 mt-2">
-                Essential tools for learning about Ireland's new Investment Account.
+                Essential tools for learning about Ireland's proposed Investment Account.
               </p>
 
               <ul className="mt-6 space-y-2.5 text-xs text-slate-700">
@@ -91,21 +89,22 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onOpenWaitlist }
             </div>
 
             <button
+              type="button"
               onClick={() => onOpenWaitlist('Free')}
               className="mt-8 w-full py-2.5 px-4 rounded-xl text-xs font-bold text-slate-800 bg-slate-100 hover:bg-slate-200 transition-colors cursor-pointer"
             >
-              Get Started Free
+              Join Free Early Access
             </button>
           </div>
 
           {/* PRO (Highlighted) */}
           <div className="bg-white p-6 sm:p-7 rounded-2xl border-2 border-emerald-500 shadow-lg flex flex-col justify-between relative overflow-hidden">
             <div className="absolute top-0 right-0 bg-emerald-600 text-white text-[10px] font-extrabold uppercase px-3 py-1 rounded-bl-lg tracking-wider">
-              Most Popular
+              Recommended
             </div>
 
             <div>
-              <div className="text-xs font-bold uppercase text-emerald-800 tracking-wider">Pro Expat &amp; Investor</div>
+              <div className="text-xs font-bold uppercase text-emerald-800 tracking-wider pr-24">Pro Expat &amp; Investor</div>
               <div className="mt-3 flex items-baseline gap-1">
                 <span className="text-4xl font-extrabold text-slate-900 font-mono">
                   {billingCycle === 'annual' ? '€89' : '€9.99'}
@@ -129,7 +128,7 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onOpenWaitlist }
                 </li>
                 <li className="flex items-start gap-2">
                   <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                  <span><strong>AI Plain English Assistant</strong> (unlimited inquiries)</span>
+                  <span><strong>AI Plain English Assistant</strong> (fair-use limits apply)</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
@@ -143,6 +142,7 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onOpenWaitlist }
             </div>
 
             <button
+              type="button"
               onClick={() => onOpenWaitlist('Pro')}
               className="mt-8 w-full py-2.5 px-4 rounded-xl text-xs font-bold text-white bg-emerald-700 hover:bg-emerald-800 transition-colors shadow-sm cursor-pointer"
             >
@@ -158,6 +158,7 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onOpenWaitlist }
                 <span className="text-4xl font-extrabold text-slate-900 font-mono">€149</span>
                 <span className="text-xs text-slate-700">/year</span>
               </div>
+              <p className="text-[11px] text-slate-500 mt-1">Annual billing only</p>
               <p className="text-xs text-slate-700 mt-2">
                 Consolidated household wealth dashboard for couples &amp; families.
               </p>
@@ -173,7 +174,7 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onOpenWaitlist }
                 </li>
                 <li className="flex items-start gap-2">
                   <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                  <span>Combined €24,000 joint 2027 allowances</span>
+                  <span>Combined €24,000 joint allowances (2 × €12,000, as proposed)</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
@@ -183,6 +184,7 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onOpenWaitlist }
             </div>
 
             <button
+              type="button"
               onClick={() => onOpenWaitlist('Family')}
               className="mt-8 w-full py-2.5 px-4 rounded-xl text-xs font-bold text-slate-800 bg-slate-100 hover:bg-slate-200 transition-colors cursor-pointer"
             >
@@ -197,16 +199,16 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onOpenWaitlist }
                 B2B &middot; Enterprise
               </div>
               <div className="mt-3 flex items-baseline gap-1">
-                <span className="text-3xl font-extrabold text-white font-mono">API / Partner</span>
+                <span className="text-3xl font-extrabold text-white font-mono">Partner Pilot</span>
               </div>
               <p className="text-xs text-slate-400 mt-2">
-                For banks, investment platforms, accountants &amp; employers.
+                Exploratory pilots for banks, investment platforms, accountants &amp; employers.
               </p>
 
               <ul className="mt-6 space-y-2.5 text-xs text-slate-300">
                 <li className="flex items-start gap-2">
                   <Check className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                  <span>InvestIreland Intelligence API</span>
+                  <span>InvestIreland Intelligence API (planned)</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <Check className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
@@ -224,14 +226,19 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onOpenWaitlist }
             </div>
 
             <button
+              type="button"
               onClick={() => onOpenWaitlist('B2B Pilot')}
               className="mt-8 w-full py-2.5 px-4 rounded-xl text-xs font-bold text-slate-900 bg-emerald-400 hover:bg-emerald-300 transition-colors cursor-pointer"
             >
-              Contact for Enterprise Pilot
+              Register Pilot Interest
             </button>
           </div>
 
         </div>
+
+        <p className="mt-8 text-center text-xs text-slate-500 max-w-2xl mx-auto">
+          Prices shown are planned and may change before launch. Nothing is charged during the beta, and we'll ask before you're ever billed.
+        </p>
 
       </div>
     </section>

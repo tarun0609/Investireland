@@ -1,6 +1,6 @@
 import { jsPDF } from 'jspdf';
 import { Currency, Holding, InvestmentAccountState, FinancialXRayData } from '../types';
-import { formatCurrency, convertToEUR } from './fiscalDataService';
+import { formatCurrency, convertToEUR, convertFromEUR } from './fiscalDataService';
 
 interface ExportPdfOptions {
   userName?: string;
@@ -12,8 +12,182 @@ interface ExportPdfOptions {
   includeCrossBorder?: boolean;
 }
 
+type RGB = [number, number, number];
+
+const EMERALD_DARK: RGB = [5, 150, 105];
+const EMERALD_LIGHT: RGB = [240, 253, 244];
+const EMERALD_BORDER: RGB = [167, 243, 208];
+const SLATE_DARK: RGB = [15, 23, 42];
+const SLATE_MUTED: RGB = [100, 116, 139];
+const SLATE_BG: RGB = [248, 250, 252];
+const BORDER: RGB = [226, 232, 240];
+
+const PAGE_TOP = 16;
+const FOOTER_RESERVED = 22;
+
+// Characters outside Latin-1 that jsPDF's built-in (WinAnsi) Helvetica can still render.
+const WIN_ANSI_EXTRAS = new Set('€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜™š›œžŸ');
+
+/**
+ * jsPDF's standard fonts only cover WinAnsi; anything else (₹, Devanagari, CJK, emoji)
+ * renders as garbage. Map common symbols to ASCII and replace the rest with '?'.
+ */
+export function toPdfSafeText(value: unknown): string {
+  const text = String(value ?? '')
+    .replace(/₹\s?/g, 'Rs ')
+    .replace(/[\u2212]/g, '-')
+    .replace(/[\u00A0\u202F\u2009]/g, ' ');
+  let out = '';
+  for (const ch of text.normalize('NFC')) {
+    const code = ch.codePointAt(0) ?? 0;
+    if (ch === '\n' || ch === '\t') out += ' ';
+    else if ((code >= 0x20 && code <= 0x7e) || (code >= 0xa0 && code <= 0xff) || WIN_ANSI_EXTRAS.has(ch)) out += ch;
+    else if (code >= 0x1f000 || (code >= 0x2600 && code <= 0x27bf) || (code >= 0xfe00 && code <= 0xfe0f) || code === 0x200d) continue; // emoji & modifiers
+    else if (code < 0x20) continue;
+    else out += '?';
+  }
+  return out.replace(/ {2,}/g, ' ');
+}
+
+const finite = (value: unknown): number => {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+};
+
+const eur = (amount: number, fractionDigits = 0): string => {
+  const safe = finite(amount);
+  const abs = Math.abs(safe).toLocaleString('en-IE', { minimumFractionDigits: fractionDigits, maximumFractionDigits: fractionDigits });
+  return `${safe < 0 && Math.round(Math.abs(safe) * 10 ** fractionDigits) !== 0 ? '-' : ''}€${abs}`;
+};
+
+const money = (amount: number, currency: Currency): string => {
+  const safe = finite(amount);
+  const formatted = toPdfSafeText(formatCurrency(Math.abs(safe), currency));
+  return `${safe < 0 && Math.round(Math.abs(safe)) !== 0 ? '-' : ''}${formatted}`;
+};
+
+const pct = (value: number) => `${Math.round(finite(value) * 10) / 10}%`;
+
+const reportDate = () => new Date().toLocaleDateString('en-IE', { day: 'numeric', month: 'short', year: 'numeric' });
+
+const resolveUserName = (name: string | undefined) => {
+  const stored = typeof window !== 'undefined' ? window.localStorage?.getItem('investireland_user_name') : null;
+  return toPdfSafeText((name ?? stored ?? '').trim()) || 'Investor';
+};
+
+/** Truncate text with an ellipsis so it fits within maxWidth (mm) using the current font. */
+function fitText(doc: jsPDF, value: unknown, maxWidth: number): string {
+  const text = toPdfSafeText(value);
+  if (doc.getTextWidth(text) <= maxWidth) return text;
+  const ellipsis = '...';
+  let lo = 0;
+  let hi = text.length;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (doc.getTextWidth(text.slice(0, mid).trimEnd() + ellipsis) <= maxWidth) lo = mid;
+    else hi = mid - 1;
+  }
+  return text.slice(0, lo).trimEnd() + ellipsis;
+}
+
+function createDoc() {
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  return { doc, pageWidth, pageHeight, margin: 14 };
+}
+
+function sectionTitle(doc: jsPDF, text: string, x: number, y: number) {
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.setTextColor(...EMERALD_DARK);
+  doc.text(toPdfSafeText(text), x, y);
+}
+
+function drawHeader(doc: jsPDF, opts: { pageWidth: number; margin: number; y: number; subtitle: string; metaLines: string[] }) {
+  const { pageWidth, margin, y, subtitle, metaLines } = opts;
+  doc.setFillColor(...EMERALD_DARK);
+  doc.rect(margin, y, 12, 12, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.text('IE', margin + 3.5, y + 8);
+
+  doc.setTextColor(...SLATE_DARK);
+  doc.setFontSize(15);
+  doc.text('InvestIreland AI', margin + 16, y + 5.5);
+
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(...SLATE_MUTED);
+  doc.text(toPdfSafeText(subtitle), margin + 16, y + 10.5);
+
+  doc.setFontSize(7.5);
+  const metaWidth = (pageWidth - margin * 2) * 0.4;
+  metaLines.forEach((line, idx) => {
+    doc.text(fitText(doc, line, metaWidth), pageWidth - margin, y + 3.5 + idx * 4, { align: 'right' });
+  });
+}
+
+/** Draw the disclaimer footer and page numbers on every page. */
+function drawFooters(doc: jsPDF, lines: string[]) {
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const margin = 14;
+  const pageCount = doc.getNumberOfPages();
+  for (let page = 1; page <= pageCount; page++) {
+    doc.setPage(page);
+    const footerY = pageHeight - 14;
+    doc.setDrawColor(...BORDER);
+    doc.setLineWidth(0.3);
+    doc.line(margin, footerY - 2, pageWidth - margin, footerY - 2);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(5.8);
+    doc.setTextColor(...SLATE_MUTED);
+    lines.forEach((line, idx) => {
+      doc.text(toPdfSafeText(line), pageWidth / 2, footerY + 1.5 + idx * 3.5, { align: 'center' });
+    });
+    doc.text(`Page ${page} of ${pageCount}`, pageWidth - margin, footerY + 1.5 + lines.length * 3.5, { align: 'right' });
+  }
+}
+
+/** Draw a wrapped text box, breaking across pages when needed. Returns the new y. */
+function drawTextBox(
+  doc: jsPDF,
+  text: string,
+  opts: { x: number; y: number; width: number; pageHeight: number; fontStyle?: 'normal' | 'italic'; color?: RGB }
+): number {
+  const { x, width, pageHeight } = opts;
+  let { y } = opts;
+  const lineHeight = 3;
+  doc.setFont('helvetica', opts.fontStyle ?? 'normal');
+  doc.setFontSize(6.8);
+  const lines: string[] = doc.splitTextToSize(toPdfSafeText(text), width - 6);
+  let idx = 0;
+  while (idx < lines.length) {
+    const available = Math.floor((pageHeight - FOOTER_RESERVED - y - 4) / lineHeight);
+    if (available < 1) {
+      doc.addPage();
+      y = PAGE_TOP;
+      continue;
+    }
+    const chunk = lines.slice(idx, idx + available);
+    const boxHeight = chunk.length * lineHeight + 3.5;
+    doc.setFillColor(...SLATE_BG);
+    doc.setDrawColor(...BORDER);
+    doc.roundedRect(x, y, width, boxHeight, 1.5, 1.5, 'FD');
+    doc.setFont('helvetica', opts.fontStyle ?? 'normal');
+    doc.setFontSize(6.8);
+    doc.setTextColor(...(opts.color ?? [51, 65, 85] as RGB));
+    doc.text(chunk, x + 3, y + 4);
+    y += boxHeight + 2;
+    idx += chunk.length;
+  }
+  return y;
+}
+
 export function generatePortfolioPdf({
-  userName = typeof window !== 'undefined' ? (localStorage.getItem('investireland_user_name') || 'Valued Investor') : 'Valued Investor',
+  userName,
   holdings,
   investmentAccount,
   xray,
@@ -21,298 +195,222 @@ export function generatePortfolioPdf({
   includeAiNotes = true,
   includeCrossBorder = true
 }: ExportPdfOptions): jsPDF {
-  const doc = new jsPDF({
-    orientation: 'portrait',
-    unit: 'mm',
-    format: 'a4'
+  const { doc, pageWidth, pageHeight, margin } = createDoc();
+  const contentWidth = pageWidth - margin * 2;
+  const holderName = resolveUserName(userName);
+  const safeHoldings = Array.isArray(holdings) ? holdings : [];
+  let y = PAGE_TOP;
+
+  const ensureSpace = (needed: number) => {
+    if (y + needed > pageHeight - FOOTER_RESERVED) {
+      doc.addPage();
+      y = PAGE_TOP;
+      return true;
+    }
+    return false;
+  };
+
+  drawHeader(doc, {
+    pageWidth,
+    margin,
+    y,
+    subtitle: 'Portfolio Summary & Tax Analytics (estimates)',
+    metaLines: [
+      `Generated: ${reportDate()}`,
+      `Account Holder: ${holderName}`,
+      currentCurrency === 'EUR' ? 'Values shown in EUR' : `Values shown in EUR (display currency: ${currentCurrency})`
+    ]
   });
-
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const pageHeight = doc.internal.pageSize.getHeight();
-  const margin = 14;
-  let y = 16;
-
-  // Primary Theme Colors
-  const emeraldDark = [5, 150, 105]; // #059669
-  const slateDark = [15, 23, 42]; // #0f172a
-  const slateMuted = [100, 116, 139]; // #64748b
-  const slateBg = [248, 250, 252]; // #f8fafc
-
-  // --- HEADER SECTION ---
-  doc.setFillColor(emeraldDark[0], emeraldDark[1], emeraldDark[2]);
-  doc.rect(margin, y, 12, 12, 'F');
-  doc.setTextColor(255, 255, 255);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10);
-  doc.text('IE', margin + 3.5, y + 8);
-
-  doc.setTextColor(slateDark[0], slateDark[1], slateDark[2]);
-  doc.setFontSize(16);
-  doc.text('InvestIreland AI', margin + 16, y + 6);
-
-  doc.setFontSize(8.5);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(slateMuted[0], slateMuted[1], slateMuted[2]);
-  doc.text('Financial Intelligence & Budget 2027 Analytics Summary', margin + 16, y + 11);
-
-  // Report Metadata on Right
-  doc.setFontSize(7.5);
-  doc.text(`Generated: ${new Date().toLocaleDateString('en-IE', { day: 'numeric', month: 'short', year: 'numeric' })}`, pageWidth - margin, y + 4, { align: 'right' });
-  doc.text(`Account Holder: ${userName}`, pageWidth - margin, y + 8, { align: 'right' });
-  doc.text(`Baseline Currency: ${currentCurrency}`, pageWidth - margin, y + 12, { align: 'right' });
-
   y += 18;
 
-  // Horizontal Rule
-  doc.setDrawColor(226, 232, 240);
+  doc.setDrawColor(...BORDER);
   doc.setLineWidth(0.4);
   doc.line(margin, y, pageWidth - margin, y);
   y += 6;
 
-  // --- EXECUTIVE SUMMARY CARDS ---
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9);
-  doc.setTextColor(emeraldDark[0], emeraldDark[1], emeraldDark[2]);
-  doc.text('1. EXECUTIVE WEALTH SNAPSHOT', margin, y);
+  // --- 1. EXECUTIVE SUMMARY CARDS ---
+  sectionTitle(doc, '1. PORTFOLIO SNAPSHOT', margin, y);
   y += 4;
 
-  const cardWidth = (pageWidth - (margin * 2) - 9) / 4;
+  const cardWidth = (contentWidth - 9) / 4;
   const cardHeight = 16;
-
   const summaryMetrics = [
-    { label: 'TOTAL ASSETS', val: `€${xray.totalAssetsEUR.toLocaleString('en-IE')}` },
-    { label: 'LIQUID CASH', val: `€${xray.liquidity.cashEUR.toLocaleString('en-IE')}` },
-    { label: 'INVESTMENTS', val: `€${xray.liquidity.liquidInvestmentsEUR.toLocaleString('en-IE')}` },
-    { label: 'IRISH PENSION', val: `€${xray.liquidity.pensionAndLockedEUR.toLocaleString('en-IE')}` }
+    { label: 'TOTAL ASSETS', val: eur(xray.totalAssetsEUR) },
+    { label: 'CASH', val: eur(xray.liquidity.cashEUR) },
+    { label: 'INVESTMENTS', val: eur(xray.liquidity.liquidInvestmentsEUR) },
+    { label: 'PENSION (LOCKED)', val: eur(xray.liquidity.pensionAndLockedEUR) }
   ];
 
   summaryMetrics.forEach((m, idx) => {
     const cardX = margin + idx * (cardWidth + 3);
-    doc.setFillColor(slateBg[0], slateBg[1], slateBg[2]);
-    doc.roundedRect(cardX, y, cardWidth, cardHeight, 1.5, 1.5, 'F');
-    doc.setDrawColor(226, 232, 240);
-    doc.roundedRect(cardX, y, cardWidth, cardHeight, 1.5, 1.5, 'S');
+    doc.setFillColor(...SLATE_BG);
+    doc.setDrawColor(...BORDER);
+    doc.roundedRect(cardX, y, cardWidth, cardHeight, 1.5, 1.5, 'FD');
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(6.5);
-    doc.setTextColor(slateMuted[0], slateMuted[1], slateMuted[2]);
+    doc.setTextColor(...SLATE_MUTED);
     doc.text(m.label, cardX + 3, y + 5);
 
-    doc.setFont('helvetica', 'bold');
     doc.setFontSize(10.5);
-    doc.setTextColor(slateDark[0], slateDark[1], slateDark[2]);
-    doc.text(m.val, cardX + 3, y + 12);
+    doc.setTextColor(...SLATE_DARK);
+    doc.text(fitText(doc, m.val, cardWidth - 6), cardX + 3, y + 12);
   });
-
   y += cardHeight + 8;
 
-  // --- BUDGET 2027 INVESTMENT ACCOUNT SECTION ---
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9);
-  doc.setTextColor(emeraldDark[0], emeraldDark[1], emeraldDark[2]);
-  doc.text('2. IRELAND BUDGET 2027 INVESTMENT ACCOUNT (PSIA) STATUS', margin, y);
+  // --- 2. INVESTMENT ACCOUNT SECTION ---
+  const annualLimit = finite(investmentAccount.annualLimit);
+  const annualContrib = finite(investmentAccount.annualContributions);
+  const accountValue = finite(investmentAccount.accountValue);
+  const threshold = finite(investmentAccount.taxFreeThreshold);
+  const remainingCap = Math.max(0, annualLimit - annualContrib);
+  const thresholdDist = Math.max(0, threshold - accountValue);
+
+  sectionTitle(doc, '2. ANNOUNCED INVESTMENT ACCOUNT (PSIA) - TRACKER', margin, y);
   y += 4;
 
-  // Highlight Box
-  doc.setFillColor(240, 253, 244); // light emerald
-  doc.setDrawColor(167, 243, 208);
-  doc.roundedRect(margin, y, pageWidth - (margin * 2), 22, 2, 2, 'FD');
+  doc.setFillColor(...EMERALD_LIGHT);
+  doc.setDrawColor(...EMERALD_BORDER);
+  doc.roundedRect(margin, y, contentWidth, 22, 2, 2, 'FD');
 
-  const remainingCap = Math.max(0, investmentAccount.annualLimit - investmentAccount.annualContributions);
-  const thresholdDist = Math.max(0, investmentAccount.taxFreeThreshold - investmentAccount.accountValue);
-
+  const colW = contentWidth / 3;
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8);
   doc.setTextColor(6, 78, 59);
   doc.text('Annual Allowance Tracking:', margin + 4, y + 6);
-  doc.text('€50,000 Tax-Free Threshold Status:', margin + 65, y + 6);
-  doc.text('Statutory Exemption Impact:', margin + 125, y + 6);
+  doc.text(fitText(doc, `${eur(threshold)} Threshold Status:`, colW - 6), margin + 4 + colW, y + 6);
+  doc.text('Proposed Tax Treatment:', margin + 4 + colW * 2, y + 6);
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7.5);
-  doc.setTextColor(15, 23, 42);
-  doc.text(`Allocated: €${investmentAccount.annualContributions.toLocaleString()} / €${investmentAccount.annualLimit.toLocaleString()}`, margin + 4, y + 11);
-  doc.text(`Remaining Allowance: €${remainingCap.toLocaleString()}`, margin + 4, y + 16);
-
-  doc.text(`Account Value: €${investmentAccount.accountValue.toLocaleString()}`, margin + 65, y + 11);
-  doc.text(`Tax-Free Headroom: €${thresholdDist.toLocaleString()}`, margin + 65, y + 16);
-
-  doc.text('Replaces 41% Exit Tax within scheme', margin + 125, y + 11);
-  doc.text('Exempt from 8-year Deemed Disposal', margin + 125, y + 16);
-
+  doc.setTextColor(...SLATE_DARK);
+  doc.text(fitText(doc, `Allocated: ${eur(annualContrib)} / ${eur(annualLimit)}`, colW - 6), margin + 4, y + 11);
+  doc.text(fitText(doc, `Remaining Allowance: ${eur(remainingCap)}`, colW - 6), margin + 4, y + 16);
+  doc.text(fitText(doc, `Account Value: ${eur(accountValue)}`, colW - 6), margin + 4 + colW, y + 11);
+  doc.text(fitText(doc, `Headroom to threshold: ${eur(thresholdDist)}`, colW - 6), margin + 4 + colW, y + 16);
+  doc.text(fitText(doc, 'No exit tax on gains within scheme', colW - 6), margin + 4 + colW * 2, y + 11);
+  doc.text(fitText(doc, 'Subject to final legislation', colW - 6), margin + 4 + colW * 2, y + 16);
   y += 28;
 
-  // --- CROSS-BORDER GEOGRAPHIC ALLOCATION ---
+  // --- 3. CROSS-BORDER GEOGRAPHIC ALLOCATION ---
   if (includeCrossBorder) {
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(9);
-    doc.setTextColor(emeraldDark[0], emeraldDark[1], emeraldDark[2]);
-    doc.text('3. CROSS-BORDER WEALTH DISTRIBUTION (IE &middot; INDIA &middot; US)', margin, y);
+    ensureSpace(27);
+    sectionTitle(doc, '3. CROSS-BORDER WEALTH DISTRIBUTION (IE / INDIA / US)', margin, y);
     y += 4;
 
-    const geoCardW = (pageWidth - (margin * 2) - 6) / 3;
+    const geo = (country: string) => xray.geographicExposure?.find(g => g.country === country);
+    const ieEUR = finite(geo('Ireland')?.valueEUR);
+    const inEUR = finite(geo('India')?.valueEUR);
+    const usEUR = finite(geo('US')?.valueEUR);
+
+    const geoCardW = (contentWidth - 6) / 3;
     const geoMetrics = [
-      {
-        flag: 'IRELAND (EUR)',
-        amount: `€${(xray.geographicExposure.find(g => g.country === 'Ireland')?.valueEUR || 0).toLocaleString()}`,
-        pct: `${xray.geographicExposure.find(g => g.country === 'Ireland')?.percentage || 0}%`,
-        note: 'Pensions, Savings, Investment Account'
-      },
-      {
-        flag: 'INDIA (INR)',
-        amount: `₹${(Math.round((xray.geographicExposure.find(g => g.country === 'India')?.valueEUR || 0) * 92.45)).toLocaleString()} (~€${(xray.geographicExposure.find(g => g.country === 'India')?.valueEUR || 0).toLocaleString()})`,
-        pct: `${xray.geographicExposure.find(g => g.country === 'India')?.percentage || 0}%`,
-        note: 'Mutual Funds (SIP), Equities & NRE (DTAA Art. 13)'
-      },
-      {
-        flag: 'UNITED STATES (USD)',
-        amount: `$${(Math.round((xray.geographicExposure.find(g => g.country === 'US')?.valueEUR || 0) * 1.085)).toLocaleString()} (~€${(xray.geographicExposure.find(g => g.country === 'US')?.valueEUR || 0).toLocaleString()})`,
-        pct: `${xray.geographicExposure.find(g => g.country === 'US')?.percentage || 0}%`,
-        note: 'Tech Employer RSUs, Direct Shares (W-8BEN)'
-      }
+      { flag: 'IRELAND (EUR)', amount: eur(ieEUR), pct: pct(finite(geo('Ireland')?.percentage)), note: 'Pensions, savings, Irish assets' },
+      { flag: 'INDIA (INR)', amount: `${money(convertFromEUR(inEUR, 'INR'), 'INR')} (~${eur(inEUR)})`, pct: pct(finite(geo('India')?.percentage)), note: 'Mutual funds, equities, NRE (DTAA)' },
+      { flag: 'UNITED STATES (USD)', amount: `${money(convertFromEUR(usEUR, 'USD'), 'USD')} (~${eur(usEUR)})`, pct: pct(finite(geo('US')?.percentage)), note: 'RSUs, direct US shares (W-8BEN)' }
     ];
 
     geoMetrics.forEach((g, idx) => {
       const gX = margin + idx * (geoCardW + 3);
-      doc.setFillColor(slateBg[0], slateBg[1], slateBg[2]);
-      doc.setDrawColor(226, 232, 240);
+      doc.setFillColor(...SLATE_BG);
+      doc.setDrawColor(...BORDER);
       doc.roundedRect(gX, y, geoCardW, 17, 1.5, 1.5, 'FD');
 
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(7);
-      doc.setTextColor(slateDark[0], slateDark[1], slateDark[2]);
+      doc.setTextColor(...SLATE_DARK);
       doc.text(g.flag, gX + 3, y + 4.5);
       doc.text(g.pct, gX + geoCardW - 3, y + 4.5, { align: 'right' });
 
       doc.setFontSize(8.5);
-      doc.setTextColor(emeraldDark[0], emeraldDark[1], emeraldDark[2]);
-      doc.text(g.amount, gX + 3, y + 10);
+      doc.setTextColor(...EMERALD_DARK);
+      doc.text(fitText(doc, g.amount, geoCardW - 6), gX + 3, y + 10);
 
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(6);
-      doc.setTextColor(slateMuted[0], slateMuted[1], slateMuted[2]);
-      doc.text(g.note, gX + 3, y + 14.5);
+      doc.setTextColor(...SLATE_MUTED);
+      doc.text(fitText(doc, g.note, geoCardW - 6), gX + 3, y + 14.5);
     });
-
     y += 23;
   }
 
-  // --- DETAILED HOLDINGS TABLE ---
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9);
-  doc.setTextColor(emeraldDark[0], emeraldDark[1], emeraldDark[2]);
-  doc.text(`4. DETAILED HOLDINGS LEDGER (${holdings.length} POSITIONS)`, margin, y);
+  // --- 4. DETAILED HOLDINGS TABLE ---
+  ensureSpace(20);
+  sectionTitle(doc, `4. HOLDINGS (${safeHoldings.length} ${safeHoldings.length === 1 ? 'POSITION' : 'POSITIONS'})`, margin, y);
   y += 4;
 
-  // Table Header
-  const colWidths = [62, 25, 24, 33, 24, 14];
-  const tableHeaders = ['Asset Name', 'Type', 'Region', 'Provider', 'Local Value', 'EUR Val'];
-  
-  doc.setFillColor(15, 23, 42);
-  doc.rect(margin, y, pageWidth - (margin * 2), 6.5, 'F');
-  doc.setTextColor(255, 255, 255);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(7);
+  const colWidths = [58, 22, 18, 34, 26, 24];
+  const tableHeaders = ['Asset Name', 'Type', 'Region', 'Provider', 'Local Value', 'EUR Value'];
+  const rowHeight = 6.5;
 
-  let curX = margin + 2;
-  tableHeaders.forEach((th, idx) => {
-    doc.text(th, curX, y + 4.5);
-    curX += colWidths[idx];
-  });
+  const drawTableHeader = () => {
+    doc.setFillColor(...SLATE_DARK);
+    doc.rect(margin, y, contentWidth, rowHeight, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7);
+    let x = margin + 2;
+    tableHeaders.forEach((th, idx) => {
+      if (idx === tableHeaders.length - 1) doc.text(th, margin + contentWidth - 2, y + 4.5, { align: 'right' });
+      else doc.text(th, x, y + 4.5);
+      x += colWidths[idx];
+    });
+    y += rowHeight;
+  };
+  drawTableHeader();
 
-  y += 6.5;
-
-  // Table Rows
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(6.8);
 
-  holdings.forEach((h, rIdx) => {
-    if (y > pageHeight - 35) {
-      doc.addPage();
-      y = 16;
-    }
+  if (safeHoldings.length === 0) {
+    doc.setFillColor(255, 255, 255);
+    doc.rect(margin, y, contentWidth, 9, 'F');
+    doc.setTextColor(...SLATE_MUTED);
+    doc.text('No holdings added yet.', margin + 4, y + 6);
+    y += 9;
+  }
 
-    const rowBg = rIdx % 2 === 0 ? [255, 255, 255] : [248, 250, 252];
-    doc.setFillColor(rowBg[0], rowBg[1], rowBg[2]);
-    doc.rect(margin, y, pageWidth - (margin * 2), 6.5, 'F');
+  safeHoldings.forEach((h, rIdx) => {
+    if (ensureSpace(rowHeight)) drawTableHeader();
+
+    const rowBg: RGB = rIdx % 2 === 0 ? [255, 255, 255] : SLATE_BG;
+    doc.setFillColor(...rowBg);
+    doc.rect(margin, y, contentWidth, rowHeight, 'F');
     doc.setDrawColor(241, 245, 249);
-    doc.line(margin, y + 6.5, pageWidth - margin, y + 6.5);
+    doc.line(margin, y + rowHeight, pageWidth - margin, y + rowHeight);
 
-    const valEUR = convertToEUR(h.currentValue, h.currency);
+    const valEUR = finite(convertToEUR(finite(h.currentValue), h.currency));
+    const cells = [h.assetName, h.assetType, h.country, h.provider, money(h.currentValue, h.currency)];
 
-    curX = margin + 2;
-    doc.setTextColor(15, 23, 42);
-
-    // Truncate name if long
-    const cleanName = h.assetName.length > 34 ? `${h.assetName.substring(0, 32)}...` : h.assetName;
-    doc.text(cleanName, curX, y + 4.5);
-    curX += colWidths[0];
-
-    doc.text(h.assetType, curX, y + 4.5);
-    curX += colWidths[1];
-
-    doc.text(h.country, curX, y + 4.5);
-    curX += colWidths[2];
-
-    const cleanProvider = h.provider.length > 18 ? `${h.provider.substring(0, 16)}...` : h.provider;
-    doc.text(cleanProvider, curX, y + 4.5);
-    curX += colWidths[3];
-
-    doc.text(formatCurrency(h.currentValue, h.currency), curX, y + 4.5);
-    curX += colWidths[4];
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6.8);
+    doc.setTextColor(...SLATE_DARK);
+    let x = margin + 2;
+    cells.forEach((cell, idx) => {
+      doc.text(fitText(doc, cell, colWidths[idx] - 3), x, y + 4.5);
+      x += colWidths[idx];
+    });
 
     doc.setFont('helvetica', 'bold');
-    doc.text(`€${Math.round(valEUR).toLocaleString()}`, curX, y + 4.5);
+    doc.text(eur(valEUR), margin + contentWidth - 2, y + 4.5, { align: 'right' });
     doc.setFont('helvetica', 'normal');
-
-    y += 6.5;
+    y += rowHeight;
   });
 
   y += 5;
 
-  // --- AI DIAGNOSTIC ASSESSMENT ---
-  if (includeAiNotes && y < pageHeight - 40) {
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8.5);
-    doc.setTextColor(emeraldDark[0], emeraldDark[1], emeraldDark[2]);
-    doc.text('5. INVESTIRELAND AI DIAGNOSTIC ASSESSMENT', margin, y);
+  // --- 5. AI DIAGNOSTIC ASSESSMENT ---
+  if (includeAiNotes && xray.aiDiagnosis?.trim()) {
+    ensureSpace(14);
+    sectionTitle(doc, '5. AI-GENERATED PORTFOLIO NOTES (NOT ADVICE)', margin, y);
     y += 4;
-
-    doc.setFillColor(slateBg[0], slateBg[1], slateBg[2]);
-    doc.setDrawColor(226, 232, 240);
-    doc.roundedRect(margin, y, pageWidth - (margin * 2), 16, 1.5, 1.5, 'FD');
-
-    doc.setFont('helvetica', 'italic');
-    doc.setFontSize(6.8);
-    doc.setTextColor(51, 65, 85);
-    
-    // Split text to fit
-    const splitText = doc.splitTextToSize(`"${xray.aiDiagnosis}"`, pageWidth - (margin * 2) - 6);
-    doc.text(splitText, margin + 3, y + 4.5);
-
-    y += 20;
+    y = drawTextBox(doc, `"${xray.aiDiagnosis.trim()}"`, { x: margin, y, width: contentWidth, pageHeight, fontStyle: 'italic' });
   }
 
-  // --- FOOTER STATUTORY DISCLAIMER ---
-  const footerY = pageHeight - 14;
-  doc.setDrawColor(226, 232, 240);
-  doc.line(margin, footerY - 2, pageWidth - margin, footerY - 2);
-
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(5.8);
-  doc.setTextColor(slateMuted[0], slateMuted[1], slateMuted[2]);
-  doc.text(
-    'CONFIDENTIAL FINANCIAL INTELLIGENCE SUMMARY &middot; EDUCATIONAL AND ANALYTICAL ONLY &middot; NOT REGULATED INVESTMENT ADVICE',
-    pageWidth / 2,
-    footerY + 1.5,
-    { align: 'center' }
-  );
-  doc.text(
-    'Figures based on Department of Finance Budget 2027 Framework and Taxes Consolidation Act 1997 s.739D &middot; investireland.ai',
-    pageWidth / 2,
-    footerY + 5,
-    { align: 'center' }
-  );
+  drawFooters(doc, [
+    'ESTIMATES FOR EDUCATIONAL PURPOSES ONLY - NOT REGULATED INVESTMENT OR TAX ADVICE',
+    'Values use static reference FX rates and simplified Irish tax rules. Confirm with Revenue.ie or a qualified adviser. investireland.ai'
+  ]);
 
   return doc;
 }
@@ -328,11 +426,11 @@ export interface InvestmentAccountPdfOptions {
 }
 
 /**
- * Generates an official, printable PDF summary specifically for Ireland's
- * Budget 2027 Investment Account (PSIA) state and transaction history.
+ * Generates a printable PDF summary of the user's tracked (announced) Investment Account
+ * (PSIA) state and logged transaction history. Figures are user-entered estimates.
  */
 export function generateInvestmentAccountPdf({
-  userName = typeof window !== 'undefined' ? (localStorage.getItem('investireland_user_name') || 'Valued Investor') : 'Valued Investor',
+  userName,
   userEmail,
   taxResidencyStatus = 'Self-declared tax residency',
   investmentAccount,
@@ -340,310 +438,237 @@ export function generateInvestmentAccountPdf({
   customNotes,
   includeStatutoryBreakdown = true
 }: InvestmentAccountPdfOptions): jsPDF {
-  const doc = new jsPDF({
-    orientation: 'portrait',
-    unit: 'mm',
-    format: 'a4'
+  const { doc, pageWidth, pageHeight, margin } = createDoc();
+  const contentWidth = pageWidth - margin * 2;
+  const holderName = resolveUserName(userName);
+  let y = PAGE_TOP;
+
+  const ensureSpace = (needed: number) => {
+    if (y + needed > pageHeight - FOOTER_RESERVED) {
+      doc.addPage();
+      y = PAGE_TOP;
+      return true;
+    }
+    return false;
+  };
+
+  drawHeader(doc, {
+    pageWidth,
+    margin,
+    y,
+    subtitle: 'Investment Account (PSIA) Tracker & Transaction Log',
+    metaLines: [
+      `Generated: ${reportDate()}`,
+      `Account Holder: ${holderName}`,
+      currentCurrency === 'EUR' ? 'Values shown in EUR' : `Values in EUR (display: ${currentCurrency})`
+    ]
   });
-
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const pageHeight = doc.internal.pageSize.getHeight();
-  const margin = 14;
-  let y = 16;
-
-  // Primary Theme Colors
-  const emeraldDark = [5, 150, 105]; // #059669
-  const emeraldLight = [240, 253, 244]; // #f0fdf4
-  const emeraldBorder = [167, 243, 208]; // #a7f3d0
-  const slateDark = [15, 23, 42]; // #0f172a
-  const slateMuted = [100, 116, 139]; // #64748b
-  const slateBg = [248, 250, 252]; // #f8fafc
-
-  // --- HEADER SECTION ---
-  doc.setFillColor(emeraldDark[0], emeraldDark[1], emeraldDark[2]);
-  doc.rect(margin, y, 12, 12, 'F');
-  doc.setTextColor(255, 255, 255);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10);
-  doc.text('IE', margin + 3.5, y + 8);
-
-  doc.setTextColor(slateDark[0], slateDark[1], slateDark[2]);
-  doc.setFontSize(15);
-  doc.text('InvestIreland AI', margin + 16, y + 5.5);
-
-  doc.setFontSize(8);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(slateMuted[0], slateMuted[1], slateMuted[2]);
-  doc.text('Budget 2027 Investment Account (PSIA) & Transaction Ledger', margin + 16, y + 10.5);
-
-  // Right-aligned Metadata
-  const docRef = `IE-PSIA-${Date.now().toString().slice(-6)}`;
-  doc.setFontSize(7.5);
-  doc.text(`Doc Ref: ${docRef}`, pageWidth - margin, y + 3.5, { align: 'right' });
-  doc.text(`Generated: ${new Date().toLocaleDateString('en-IE', { day: 'numeric', month: 'short', year: 'numeric' })}`, pageWidth - margin, y + 7.5, { align: 'right' });
-  doc.text(`Account Holder: ${userName}`, pageWidth - margin, y + 11.5, { align: 'right' });
-
   y += 16;
 
-  // Divider line
-  doc.setDrawColor(226, 232, 240);
+  doc.setDrawColor(...BORDER);
   doc.setLineWidth(0.4);
   doc.line(margin, y, pageWidth - margin, y);
   y += 6;
 
   // --- ACCOUNT HOLDER PROFILE STRIP ---
-  doc.setFillColor(slateBg[0], slateBg[1], slateBg[2]);
-  doc.setDrawColor(226, 232, 240);
-  doc.roundedRect(margin, y, pageWidth - (margin * 2), 15, 1.5, 1.5, 'FD');
+  doc.setFillColor(...SLATE_BG);
+  doc.setDrawColor(...BORDER);
+  doc.roundedRect(margin, y, contentWidth, 15, 1.5, 1.5, 'FD');
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(7);
-  doc.setTextColor(slateDark[0], slateDark[1], slateDark[2]);
-  doc.text('INVESTOR PROFILE & TAX RESIDENCE METADATA', margin + 4, y + 4.5);
+  doc.setTextColor(...SLATE_DARK);
+  doc.text('INVESTOR PROFILE', margin + 4, y + 4.5);
 
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7);
-  doc.setTextColor(slateMuted[0], slateMuted[1], slateMuted[2]);
-  doc.text(`Investor Name: ${userName}`, margin + 4, y + 9.5);
-  if (userEmail) {
-    doc.text(`Email: ${userEmail}`, margin + 65, y + 9.5);
-  } else {
-    doc.text(`Account Mode: Verified Investor Session`, margin + 65, y + 9.5);
-  }
-  doc.text(`Statutory Status: ${taxResidencyStatus}`, margin + 4, y + 13.5);
-  doc.text(`Scheme Target Launch: 1 July 2027 (Dept of Finance)`, margin + 105, y + 13.5);
-
+  doc.setTextColor(...SLATE_MUTED);
+  const half = contentWidth / 2;
+  doc.text(fitText(doc, `Investor Name: ${holderName}`, half - 8), margin + 4, y + 9.5);
+  const safeEmail = toPdfSafeText((userEmail ?? '').trim());
+  if (safeEmail) doc.text(fitText(doc, `Email: ${safeEmail}`, half - 8), margin + 4 + half, y + 9.5);
+  doc.text(fitText(doc, `Tax residency: ${toPdfSafeText(taxResidencyStatus) || 'Self-declared tax residency'}`, half - 8), margin + 4, y + 13.5);
+  doc.text(fitText(doc, `Scheme status: ${toPdfSafeText(investmentAccount.status || 'Announced')}`, half - 8), margin + 4 + half, y + 13.5);
   y += 19;
 
-  // --- SECTION 1: INVESTMENT ACCOUNT STATE SNAPSHOT ---
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9);
-  doc.setTextColor(emeraldDark[0], emeraldDark[1], emeraldDark[2]);
-  doc.text('1. CURRENT ACCOUNT STATE & STATUTORY ALLOWANCES', margin, y);
+  // --- SECTION 1: ACCOUNT STATE SNAPSHOT ---
+  sectionTitle(doc, '1. TRACKED ACCOUNT STATE & ALLOWANCES', margin, y);
   y += 4;
 
-  const cardWidth = (pageWidth - (margin * 2) - 9) / 4;
+  const cardWidth = (contentWidth - 9) / 4;
   const cardHeight = 18;
 
-  const annualLimit = investmentAccount.annualLimit || 12000;
-  const annualContrib = investmentAccount.annualContributions || 0;
+  const annualLimit = finite(investmentAccount.annualLimit) || 12000;
+  const annualContrib = finite(investmentAccount.annualContributions);
   const remainingAllowance = Math.max(0, annualLimit - annualContrib);
-  const accountValue = investmentAccount.accountValue || 0;
-  const threshold = investmentAccount.taxFreeThreshold || 50000;
+  const accountValue = finite(investmentAccount.accountValue);
+  const threshold = finite(investmentAccount.taxFreeThreshold) || 50000;
+  const chargeRate = finite(investmentAccount.excessAnnualChargeRate) || 0.01;
   const remainingShelter = Math.max(0, threshold - accountValue);
   const excess = Math.max(0, accountValue - threshold);
-  const excessAnnualCharge = excess * (investmentAccount.excessAnnualChargeRate || 0.01);
+  const excessAnnualCharge = excess * chargeRate;
+  const chargePctLabel = `${Math.round(chargeRate * 10000) / 100}%`;
 
   const stateCards = [
+    { label: 'ACCOUNT VALUE', val: eur(accountValue), sub: 'Deposits & returns (self-logged)' },
+    { label: 'ANNUAL ALLOWANCE', val: `${eur(annualContrib)} / ${eur(annualLimit)}`, sub: `${eur(remainingAllowance)} remaining` },
+    { label: 'THRESHOLD', val: eur(threshold), sub: `${eur(remainingShelter)} headroom` },
     {
-      label: 'CURRENT ACCOUNT VALUE',
-      val: `€${accountValue.toLocaleString('en-IE')}`,
-      sub: 'Accumulated deposits & returns'
-    },
-    {
-      label: '2027 ANNUAL ALLOWANCE',
-      val: `€${annualContrib.toLocaleString('en-IE')} / €12k`,
-      sub: `€${remainingAllowance.toLocaleString('en-IE')} headroom remaining`
-    },
-    {
-      label: 'TAX-FREE THRESHOLD',
-      val: `€${threshold.toLocaleString('en-IE')}`,
-      sub: `€${remainingShelter.toLocaleString('en-IE')} shelter room`
-    },
-    {
-      label: 'ANNUAL CHARGE (EXCESS)',
-      val: excess > 0 ? `€${Math.round(excessAnnualCharge).toLocaleString('en-IE')}/yr` : '€0.00 / yr',
-      sub: excess > 0 ? `1% on €${excess.toLocaleString('en-IE')} excess` : 'Balance under €50k ceiling'
+      label: 'EST. ANNUAL CHARGE',
+      val: excess > 0 ? `${eur(excessAnnualCharge)}/yr` : `${eur(0)}/yr`,
+      sub: excess > 0 ? `${chargePctLabel} on ${eur(excess)} excess` : `Balance under ${eur(threshold)}`
     }
   ];
 
   stateCards.forEach((c, idx) => {
     const cX = margin + idx * (cardWidth + 3);
-    doc.setFillColor(slateBg[0], slateBg[1], slateBg[2]);
-    doc.setDrawColor(226, 232, 240);
+    doc.setFillColor(...SLATE_BG);
+    doc.setDrawColor(...BORDER);
     doc.roundedRect(cX, y, cardWidth, cardHeight, 1.5, 1.5, 'FD');
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(6.5);
-    doc.setTextColor(slateMuted[0], slateMuted[1], slateMuted[2]);
+    doc.setTextColor(...SLATE_MUTED);
     doc.text(c.label, cX + 3, y + 4.5);
 
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(10.5);
-    doc.setTextColor(emeraldDark[0], emeraldDark[1], emeraldDark[2]);
-    doc.text(c.val, cX + 3, y + 10.5);
+    doc.setFontSize(10);
+    doc.setTextColor(...EMERALD_DARK);
+    doc.text(fitText(doc, c.val, cardWidth - 6), cX + 3, y + 10.5);
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(5.8);
-    doc.setTextColor(slateDark[0], slateDark[1], slateDark[2]);
-    doc.text(c.sub, cX + 3, y + 15);
+    doc.setTextColor(...SLATE_DARK);
+    doc.text(fitText(doc, c.sub, cardWidth - 6), cX + 3, y + 15);
   });
-
   y += cardHeight + 7;
 
-  // --- SECTION 2: STATUTORY FRAMEWORK & REFORM ADVANTAGES ---
+  // --- SECTION 2: PROPOSED SCHEME MECHANICS ---
   if (includeStatutoryBreakdown) {
-    doc.setFillColor(emeraldLight[0], emeraldLight[1], emeraldLight[2]);
-    doc.setDrawColor(emeraldBorder[0], emeraldBorder[1], emeraldBorder[2]);
-    doc.roundedRect(margin, y, pageWidth - (margin * 2), 22, 2, 2, 'FD');
+    ensureSpace(26);
+    doc.setFillColor(...EMERALD_LIGHT);
+    doc.setDrawColor(...EMERALD_BORDER);
+    doc.roundedRect(margin, y, contentWidth, 22, 2, 2, 'FD');
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8);
     doc.setTextColor(6, 78, 59);
-    doc.text('Ireland Budget 2027 Scheme Mechanics vs Standard Tax Regime:', margin + 4, y + 5);
+    doc.text('Announced Investment Account vs standard fund taxation (subject to final legislation):', margin + 4, y + 5);
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7);
-    doc.setTextColor(15, 23, 42);
-
-    doc.text('• Contribution Rule: Maximum €12,000 cash deposit per tax year (lump sum or monthly standing order up to €1,000/mo).', margin + 4, y + 10);
-    doc.text('• Statutory Tax Relief: 0% Exit Tax on qualifying ETF capital gains and dividends up to the €50,000 account threshold.', margin + 4, y + 14);
-    doc.text('• Deemed Disposal Exemption: Completely exempt from the onerous 8-year Deemed Disposal rule (TCA 1997 Section 739D).', margin + 4, y + 18);
-
+    doc.setTextColor(...SLATE_DARK);
+    const bullets = [
+      `• Contributions: up to ${eur(annualLimit)} per tax year (as modelled in this app).`,
+      `• Proposed: no exit tax on qualifying gains within the account up to the ${eur(threshold)} threshold; ${chargePctLabel} annual charge modelled above it.`,
+      '• Proposed: outside the 8-year deemed disposal rule that applies to ordinary funds/ETFs (TCA 1997 s.739D).'
+    ];
+    bullets.forEach((b, idx) => doc.text(fitText(doc, b, contentWidth - 8), margin + 4, y + 10 + idx * 4));
     y += 26;
   }
 
-  // --- SECTION 3: TRANSACTION & ALLOCATION LEDGER TABLE ---
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9);
-  doc.setTextColor(emeraldDark[0], emeraldDark[1], emeraldDark[2]);
+  // --- SECTION 3: TRANSACTION LEDGER TABLE ---
   const historyList = Array.isArray(investmentAccount.history) ? investmentAccount.history : [];
-  doc.text(`2. TRANSACTION & ALLOCATION HISTORY (${historyList.length} LOGGED EVENTS)`, margin, y);
+  ensureSpace(20);
+  sectionTitle(doc, `2. TRANSACTION HISTORY (${historyList.length} LOGGED ${historyList.length === 1 ? 'EVENT' : 'EVENTS'})`, margin, y);
   y += 4;
 
-  // Table Column Definitions
-  const colWidths = [28, 30, 48, 44, 32];
-  const tableHeaders = ['Date', 'Transaction Type', 'Provider / Platform', 'Statutory Classification', 'Amount (EUR)'];
+  const colWidths = [28, 30, 56, 36, 32];
+  const tableHeaders = ['Date', 'Type', 'Provider / Platform', 'Source', 'Amount (EUR)'];
+  const rowHeight = 6.5;
 
-  // Table Header Strip
-  doc.setFillColor(slateDark[0], slateDark[1], slateDark[2]);
-  doc.rect(margin, y, pageWidth - (margin * 2), 6.5, 'F');
-  doc.setTextColor(255, 255, 255);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(7);
+  const drawTableHeader = () => {
+    doc.setFillColor(...SLATE_DARK);
+    doc.rect(margin, y, contentWidth, rowHeight, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7);
+    let x = margin + 2;
+    tableHeaders.forEach((th, idx) => {
+      if (idx === tableHeaders.length - 1) doc.text(th, margin + contentWidth - 2, y + 4.5, { align: 'right' });
+      else doc.text(th, x, y + 4.5);
+      x += colWidths[idx];
+    });
+    y += rowHeight;
+  };
+  drawTableHeader();
 
-  let curX = margin + 2;
-  tableHeaders.forEach((th, idx) => {
-    if (idx === 4) {
-      doc.text(th, curX + colWidths[idx] - 4, y + 4.5, { align: 'right' });
-    } else {
-      doc.text(th, curX, y + 4.5);
-    }
-    curX += colWidths[idx];
-  });
-
-  y += 6.5;
-
-  // Table Body Rows
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7);
 
   if (historyList.length === 0) {
-    // Empty state row
     doc.setFillColor(255, 255, 255);
-    doc.rect(margin, y, pageWidth - (margin * 2), 9, 'F');
-    doc.setTextColor(slateMuted[0], slateMuted[1], slateMuted[2]);
-    doc.text('No transaction events logged yet. Initial allocation baseline established.', margin + 4, y + 6);
+    doc.rect(margin, y, contentWidth, 9, 'F');
+    doc.setTextColor(...SLATE_MUTED);
+    doc.text('No transactions logged yet.', margin + 4, y + 6);
     y += 9;
   } else {
     historyList.forEach((tx, rIdx) => {
-      if (y > pageHeight - 38) {
-        doc.addPage();
-        y = 16;
-      }
+      if (ensureSpace(rowHeight)) drawTableHeader();
 
-      const rowBg = rIdx % 2 === 0 ? [255, 255, 255] : [248, 250, 252];
-      doc.setFillColor(rowBg[0], rowBg[1], rowBg[2]);
-      doc.rect(margin, y, pageWidth - (margin * 2), 6.5, 'F');
+      const rowBg: RGB = rIdx % 2 === 0 ? [255, 255, 255] : SLATE_BG;
+      doc.setFillColor(...rowBg);
+      doc.rect(margin, y, contentWidth, rowHeight, 'F');
       doc.setDrawColor(241, 245, 249);
-      doc.line(margin, y + 6.5, pageWidth - margin, y + 6.5);
+      doc.line(margin, y + rowHeight, pageWidth - margin, y + rowHeight);
 
-      curX = margin + 2;
-      doc.setTextColor(slateDark[0], slateDark[1], slateDark[2]);
+      doc.setFontSize(7);
+      doc.setTextColor(...SLATE_DARK);
+      let x = margin + 2;
 
-      // Date
-      doc.text(tx.date || new Date().toISOString().split('T')[0], curX, y + 4.5);
-      curX += colWidths[0];
-
-      // Type
-      doc.setFont('helvetica', 'bold');
-      doc.text(tx.type || 'Contribution', curX, y + 4.5);
       doc.setFont('helvetica', 'normal');
-      curX += colWidths[1];
+      doc.text(fitText(doc, tx.date || '-', colWidths[0] - 3), x, y + 4.5);
+      x += colWidths[0];
 
-      // Provider
-      const cleanProvider = (tx.provider || 'Davy Select').length > 24 ? `${tx.provider.substring(0, 22)}...` : (tx.provider || 'Davy Select');
-      doc.text(cleanProvider, curX, y + 4.5);
-      curX += colWidths[2];
-
-      // Statutory Status
-      doc.setTextColor(6, 78, 59);
-      doc.text('Eligible Deposit (2027 Rules)', curX, y + 4.5);
-      doc.setTextColor(slateDark[0], slateDark[1], slateDark[2]);
-      curX += colWidths[3];
-
-      // Amount
       doc.setFont('helvetica', 'bold');
-      doc.text(`€${Number(tx.amount || 0).toLocaleString('en-IE')}`, curX + colWidths[4] - 4, y + 4.5, { align: 'right' });
+      doc.text(fitText(doc, tx.type || 'Contribution', colWidths[1] - 3), x, y + 4.5);
+      doc.setFont('helvetica', 'normal');
+      x += colWidths[1];
+
+      doc.text(fitText(doc, tx.provider || '-', colWidths[2] - 3), x, y + 4.5);
+      x += colWidths[2];
+
+      doc.setTextColor(...SLATE_MUTED);
+      doc.text('Self-logged', x, y + 4.5);
+      doc.setTextColor(...SLATE_DARK);
+
+      doc.setFont('helvetica', 'bold');
+      doc.text(eur(finite(tx.amount)), margin + contentWidth - 2, y + 4.5, { align: 'right' });
       doc.setFont('helvetica', 'normal');
 
-      y += 6.5;
+      y += rowHeight;
     });
   }
 
   // Subtotal Summary Strip
-  const totalLogged = historyList.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
-  doc.setFillColor(slateBg[0], slateBg[1], slateBg[2]);
-  doc.rect(margin, y, pageWidth - (margin * 2), 7, 'F');
+  ensureSpace(12);
+  const totalLogged = historyList.reduce((sum, item) => sum + finite(item.amount), 0);
+  doc.setFillColor(...SLATE_BG);
+  doc.rect(margin, y, contentWidth, 7, 'F');
   doc.setDrawColor(203, 213, 225);
   doc.line(margin, y + 7, pageWidth - margin, y + 7);
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(7);
-  doc.setTextColor(slateDark[0], slateDark[1], slateDark[2]);
-  doc.text(`TOTAL LOGGED ALLOCATIONS: €${totalLogged.toLocaleString('en-IE')}`, margin + 4, y + 4.8);
-  doc.text(`Remaining Annual Allowance: €${remainingAllowance.toLocaleString('en-IE')}`, pageWidth - margin - 4, y + 4.8, { align: 'right' });
+  doc.setTextColor(...SLATE_DARK);
+  doc.text(`TOTAL LOGGED: ${eur(totalLogged)}`, margin + 4, y + 4.8);
+  doc.text(`Remaining Annual Allowance: ${eur(remainingAllowance)}`, pageWidth - margin - 4, y + 4.8, { align: 'right' });
   y += 12;
 
-  // Custom User Notes (if provided)
-  if (customNotes && y < pageHeight - 35) {
+  // Custom User Notes
+  const notes = toPdfSafeText(customNotes ?? '').trim();
+  if (notes) {
+    ensureSpace(14);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(7.5);
-    doc.setTextColor(slateDark[0], slateDark[1], slateDark[2]);
-    doc.text('ACCOUNT HOLDER COMPLIANCE NOTES:', margin, y);
+    doc.setTextColor(...SLATE_DARK);
+    doc.text('ACCOUNT HOLDER NOTES:', margin, y);
     y += 4;
-
-    doc.setFillColor(slateBg[0], slateBg[1], slateBg[2]);
-    doc.roundedRect(margin, y, pageWidth - (margin * 2), 12, 1, 1, 'FD');
-    doc.setFont('helvetica', 'italic');
-    doc.setFontSize(6.8);
-    doc.setTextColor(slateMuted[0], slateMuted[1], slateMuted[2]);
-    const splitNotes = doc.splitTextToSize(`"${customNotes}"`, pageWidth - (margin * 2) - 6);
-    doc.text(splitNotes, margin + 3, y + 4.5);
-    y += 16;
+    y = drawTextBox(doc, notes, { x: margin, y, width: contentWidth, pageHeight, fontStyle: 'italic', color: SLATE_MUTED });
   }
 
-  // --- FOOTER STATUTORY DISCLAIMER ---
-  const footerY = pageHeight - 14;
-  doc.setDrawColor(226, 232, 240);
-  doc.line(margin, footerY - 2, pageWidth - margin, footerY - 2);
-
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(5.8);
-  doc.setTextColor(slateMuted[0], slateMuted[1], slateMuted[2]);
-  doc.text(
-    'OFFICIAL BUDGET 2027 INVESTMENT ACCOUNT (PSIA) AUDIT SUMMARY · STATUTORY SCRUTINY IN PROGRESS · NOT REGULATED ADVICE',
-    pageWidth / 2,
-    footerY + 1.5,
-    { align: 'center' }
-  );
-  doc.text(
-    'Figures based on Department of Finance Budget 2027 Framework and Taxes Consolidation Act 1997 s.739D · investireland.ai',
-    pageWidth / 2,
-    footerY + 5,
-    { align: 'center' }
-  );
+  drawFooters(doc, [
+    'PERSONAL TRACKING SUMMARY OF AN ANNOUNCED SCHEME - ESTIMATES ONLY - NOT REGULATED INVESTMENT OR TAX ADVICE',
+    'Scheme rules are subject to final legislation. Figures are user-entered. Confirm with Revenue.ie or a qualified adviser. investireland.ai'
+  ]);
 
   return doc;
 }
-

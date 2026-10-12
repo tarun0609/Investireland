@@ -20,24 +20,37 @@ export const ReadinessQuizSection: React.FC<ReadinessQuizSectionProps> = ({
 }) => {
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<number, number>>({});
+  // Selected option index per question (scores can repeat, so they can't identify the choice)
+  const [selectedOptions, setSelectedOptions] = useState<Record<number, number>>({});
   const [result, setResult] = useState<QuizResult | null>(null);
 
   const currentQ = QUIZ_QUESTIONS[currentQuestionIndex];
 
-  const handleSelectOption = (score: number) => {
+  const handleSelectOption = (score: number, optionIndex: number) => {
+    if (result) return;
     const updatedAnswers = { ...answers, [currentQ.id]: score };
     setAnswers(updatedAnswers);
+    setSelectedOptions(prev => ({ ...prev, [currentQ.id]: optionIndex }));
 
     if (currentQuestionIndex < QUIZ_QUESTIONS.length - 1) {
-      setCurrentQuestionIndex(prev => prev + 1);
+      // Use the rendered index (not prev + 1) so a fast double-click can't skip a question
+      setCurrentQuestionIndex(currentQuestionIndex + 1);
     } else {
       const finalResult = calculateQuizScore(updatedAnswers);
       setResult(finalResult);
     }
   };
 
+  const handleBack = () => {
+    if (currentQuestionIndex > 0) setCurrentQuestionIndex(currentQuestionIndex - 1);
+  };
+
+  const answeredCount = QUIZ_QUESTIONS.filter(q => answers[q.id] !== undefined).length;
+  const progressPct = Math.round((answeredCount / QUIZ_QUESTIONS.length) * 100);
+
   const handleRestart = () => {
     setAnswers({});
+    setSelectedOptions({});
     setCurrentQuestionIndex(0);
     setResult(null);
   };
@@ -66,12 +79,19 @@ export const ReadinessQuizSection: React.FC<ReadinessQuizSectionProps> = ({
               {/* Progress Tracker */}
               <div className="flex items-center justify-between text-xs font-bold text-slate-500 mb-2">
                 <span>Question {currentQuestionIndex + 1} of {QUIZ_QUESTIONS.length}</span>
-                <span>{Math.round(((currentQuestionIndex + 1) / QUIZ_QUESTIONS.length) * 100)}% Complete</span>
+                <span>{progressPct}% Complete</span>
               </div>
-              <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden mb-6">
+              <div
+                className="w-full bg-slate-100 h-2 rounded-full overflow-hidden mb-6"
+                role="progressbar"
+                aria-label="Quiz progress"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={progressPct}
+              >
                 <div 
                   className="bg-emerald-600 h-2 rounded-full transition-all duration-300"
-                  style={{ width: `${((currentQuestionIndex + 1) / QUIZ_QUESTIONS.length) * 100}%` }}
+                  style={{ width: `${progressPct}%` }}
                 />
               </div>
 
@@ -87,14 +107,22 @@ export const ReadinessQuizSection: React.FC<ReadinessQuizSectionProps> = ({
 
               {/* Options */}
               <div className="space-y-3">
-                {currentQ.options.map((opt, idx) => (
+                {currentQ.options.map((opt, idx) => {
+                  const isSelected = selectedOptions[currentQ.id] === idx;
+                  return (
                   <button
-                    key={idx}
-                    onClick={() => handleSelectOption(opt.score)}
-                    className="w-full text-left p-4 rounded-xl border border-slate-200 hover:border-emerald-500 hover:bg-emerald-50/40 transition-all cursor-pointer group flex items-start gap-3"
+                    key={`${currentQ.id}-${idx}`}
+                    type="button"
+                    aria-pressed={isSelected}
+                    onClick={() => handleSelectOption(opt.score, idx)}
+                    className={`w-full text-left p-4 rounded-xl border hover:border-emerald-500 hover:bg-emerald-50/40 transition-all cursor-pointer group flex items-start gap-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 ${
+                      isSelected ? 'border-emerald-500 bg-emerald-50/40' : 'border-slate-200'
+                    }`}
                   >
-                    <div className="w-5 h-5 rounded-full border border-slate-300 group-hover:border-emerald-600 flex items-center justify-center shrink-0 mt-0.5 group-hover:bg-emerald-600">
-                      <span className="w-2 h-2 rounded-full bg-white opacity-0 group-hover:opacity-100" />
+                    <div className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 mt-0.5 group-hover:border-emerald-600 group-hover:bg-emerald-600 ${
+                      isSelected ? 'border-emerald-600 bg-emerald-600' : 'border-slate-300'
+                    }`}>
+                      <span className={`w-2 h-2 rounded-full bg-white group-hover:opacity-100 ${isSelected ? 'opacity-100' : 'opacity-0'}`} />
                     </div>
                     <div>
                       <div className="text-sm font-bold text-slate-900 group-hover:text-emerald-950">
@@ -105,8 +133,19 @@ export const ReadinessQuizSection: React.FC<ReadinessQuizSectionProps> = ({
                       </div>
                     </div>
                   </button>
-                ))}
+                  );
+                })}
               </div>
+
+              {currentQuestionIndex > 0 && (
+                <button
+                  type="button"
+                  onClick={handleBack}
+                  className="mt-4 text-xs font-semibold text-slate-500 hover:text-slate-800 cursor-pointer"
+                >
+                  &larr; Previous question
+                </button>
+              )}
             </div>
           ) : (
             <div className="text-center py-4">
@@ -144,6 +183,7 @@ export const ReadinessQuizSection: React.FC<ReadinessQuizSectionProps> = ({
               {/* CTAs */}
               <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
                 <button
+                  type="button"
                   onClick={() => onOpenWaitlist({ readinessScore: result.score, readinessTitle: result.title })}
                   className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-sm shadow-sm transition-all cursor-pointer"
                 >
@@ -151,6 +191,7 @@ export const ReadinessQuizSection: React.FC<ReadinessQuizSectionProps> = ({
                   <ArrowRight className="w-4 h-4" />
                 </button>
                 <button
+                  type="button"
                   onClick={handleRestart}
                   className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-4 py-3 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-50 font-semibold text-xs transition-all cursor-pointer"
                 >

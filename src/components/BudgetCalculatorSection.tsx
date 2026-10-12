@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Currency, BudgetCalculatorInputs, BudgetCalculatorResult } from '../types';
-import { calculateBudgetProjections } from '../services/budgetCalculatorService';
+import { calculateBudgetProjections, FY27_ANNUAL_CONTRIBUTION_LIMIT, FY27_TAX_FREE_THRESHOLD, ILLUSTRATIVE_INFLATION_RATE } from '../services/budgetCalculatorService';
 import { formatCurrency, convertFromEUR, convertToEUR } from '../services/fiscalDataService';
 import { 
   Calculator, 
@@ -55,10 +55,20 @@ export const BudgetCalculatorSection: React.FC<BudgetCalculatorSectionProps> = (
   }, [startingAmountEUR, monthlyContributionEUR, timeHorizonYears, annualReturnRate, adjustForInflation, assetClass]);
 
   // Currency converted displays
-  const displayTotalInvested = formatCurrency(convertFromEUR(calculation.totalContributions, currentCurrency), currentCurrency);
-  const displayFY26Net = formatCurrency(convertFromEUR(calculation.fy26FinalNetValue, currentCurrency), currentCurrency);
-  const displayFY27Net = formatCurrency(convertFromEUR(calculation.fy27FinalNetValue, currentCurrency), currentCurrency);
-  const displayWealthSaved = formatCurrency(convertFromEUR(calculation.totalWealthSaved, currentCurrency), currentCurrency);
+  const fmt = (amountEUR: number) => formatCurrency(convertFromEUR(amountEUR, currentCurrency), currentCurrency);
+  const displayTotalInvested = fmt(calculation.totalContributions);
+  const displayFY26Net = fmt(calculation.fy26FinalNetValue);
+  const displayFY27Net = fmt(calculation.fy27FinalNetValue);
+  // totalWealthSaved can be negative in edge cases; show an explicit sign rather than "+-€…"
+  const displayWealthSaved = `${calculation.totalWealthSaved < 0 ? '−' : '+'}${fmt(Math.abs(calculation.totalWealthSaved))}`;
+  const inflationDeflator = Math.pow(1 + ILLUSTRATIVE_INFLATION_RATE, timeHorizonYears);
+  const displayFY26NetReal = fmt(Math.round(calculation.fy26FinalNetValue / inflationDeflator));
+  const displayFY27NetReal = fmt(calculation.inflationAdjustedFY27Net ?? Math.round(calculation.fy27FinalNetValue / inflationDeflator));
+  const finalProjection = calculation.projections[calculation.projections.length - 1];
+  const thresholdPct = finalProjection ? finalProjection.thresholdProgressPct : 0;
+  const annualContributionEUR = monthlyContributionEUR * 12;
+  const isAboveAnnualCap = annualContributionEUR > FY27_ANNUAL_CONTRIBUTION_LIMIT;
+  const isAtAnnualCap = annualContributionEUR === FY27_ANNUAL_CONTRIBUTION_LIMIT;
   const displayTaxesFY26 = formatCurrency(convertFromEUR(calculation.totalTaxesFY26, currentCurrency), currentCurrency);
   const displayTaxesFY27 = formatCurrency(convertFromEUR(calculation.totalTaxesFY27, currentCurrency), currentCurrency);
 
@@ -90,14 +100,16 @@ export const BudgetCalculatorSection: React.FC<BudgetCalculatorSectionProps> = (
             FY26 vs FY27 Budget &amp; Investment Calculator
           </h2>
           <p className="mt-4 text-base sm:text-lg text-slate-600 leading-relaxed">
-            See the exact mathematical impact of transitioning from Ireland’s current <strong className="text-slate-900">41% deemed disposal regime</strong> to the new <strong className="text-slate-900">Budget 2027 Personal Savings &amp; Investment Account</strong>.
+            See the illustrative impact of moving from Ireland’s current <strong className="text-slate-900">38% deemed disposal regime</strong> to the new <strong className="text-slate-900">Budget 2027 Personal Savings &amp; Investment Account</strong>.
           </p>
         </div>
 
         {/* View / Regime Switcher Tabs */}
         <div className="mt-10 flex justify-center">
-          <div className="inline-flex p-1 bg-white rounded-xl border border-slate-200 shadow-xs">
+          <div className="flex flex-col sm:inline-flex sm:flex-row w-full sm:w-auto p-1 bg-white rounded-xl border border-slate-200 shadow-xs" role="group" aria-label="Regime view">
             <button
+              type="button"
+              aria-pressed={activeRegimeTab === 'comparison'}
               onClick={() => setActiveRegimeTab('comparison')}
               className={`px-4 py-2 rounded-lg text-xs sm:text-sm font-bold transition-all cursor-pointer ${
                 activeRegimeTab === 'comparison'
@@ -108,6 +120,8 @@ export const BudgetCalculatorSection: React.FC<BudgetCalculatorSectionProps> = (
               Side-by-Side Comparison
             </button>
             <button
+              type="button"
+              aria-pressed={activeRegimeTab === 'fy27'}
               onClick={() => setActiveRegimeTab('fy27')}
               className={`px-4 py-2 rounded-lg text-xs sm:text-sm font-bold transition-all cursor-pointer ${
                 activeRegimeTab === 'fy27'
@@ -118,6 +132,8 @@ export const BudgetCalculatorSection: React.FC<BudgetCalculatorSectionProps> = (
               FY27 New Scheme Only (€12k / €50k)
             </button>
             <button
+              type="button"
+              aria-pressed={activeRegimeTab === 'fy26'}
               onClick={() => setActiveRegimeTab('fy26')}
               className={`px-4 py-2 rounded-lg text-xs sm:text-sm font-bold transition-all cursor-pointer ${
                 activeRegimeTab === 'fy26'
@@ -125,7 +141,7 @@ export const BudgetCalculatorSection: React.FC<BudgetCalculatorSectionProps> = (
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              FY26 Current Regime (41% Deemed Disposal)
+              FY26 Current Regime (38% Deemed Disposal)
             </button>
           </div>
         </div>
@@ -142,6 +158,7 @@ export const BudgetCalculatorSection: React.FC<BudgetCalculatorSectionProps> = (
                 <span>Simulation Parameters</span>
               </div>
               <button
+                type="button"
                 onClick={handleReset}
                 className="text-xs text-slate-500 hover:text-slate-800 flex items-center gap-1 cursor-pointer"
                 title="Reset to default values"
@@ -158,7 +175,7 @@ export const BudgetCalculatorSection: React.FC<BudgetCalculatorSectionProps> = (
                 <div className="flex items-center justify-between text-xs font-semibold text-slate-700 mb-1.5">
                   <label htmlFor="starting-amount">Starting Lump Sum Investment</label>
                   <span className="font-mono text-slate-900 font-bold">
-                    {formatCurrency(convertFromEUR(startingAmountEUR, currentCurrency), currentCurrency)}
+                    {fmt(startingAmountEUR)}
                   </span>
                 </div>
                 <input
@@ -172,11 +189,15 @@ export const BudgetCalculatorSection: React.FC<BudgetCalculatorSectionProps> = (
                   className="w-full accent-emerald-600 cursor-pointer"
                 />
                 <div className="flex justify-between text-[11px] text-slate-600 mt-1">
-                  <span>€0</span>
-                  <span>€25,000</span>
-                  <span>€50,000</span>
-                  <span>€100,000</span>
+                  <span>{fmt(0)}</span>
+                  <span>{fmt(50000)}</span>
+                  <span>{fmt(100000)}</span>
                 </div>
+                {startingAmountEUR > FY27_ANNUAL_CONTRIBUTION_LIMIT && (
+                  <p className="text-[11px] text-amber-800 mt-1">
+                    Only {fmt(FY27_ANNUAL_CONTRIBUTION_LIMIT)} of a lump sum fits in the first year's allowance; the rest is modelled in a normal taxable account under FY27.
+                  </p>
+                )}
               </div>
 
               {/* Monthly Contribution */}
@@ -184,14 +205,19 @@ export const BudgetCalculatorSection: React.FC<BudgetCalculatorSectionProps> = (
                 <div className="flex items-center justify-between text-xs font-semibold text-slate-700 mb-1.5">
                   <div className="flex items-center gap-1.5">
                     <label htmlFor="monthly-contribution">Monthly Contribution</label>
-                    {monthlyContributionEUR === 1000 && (
-                      <span className="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded font-bold">
+                    {isAtAnnualCap && (
+                      <span className="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded font-bold">
                         €12k Max Cap
+                      </span>
+                    )}
+                    {isAboveAnnualCap && (
+                      <span className="text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded font-bold">
+                        Above €12k cap
                       </span>
                     )}
                   </div>
                   <span className="font-mono text-slate-900 font-bold">
-                    {formatCurrency(convertFromEUR(monthlyContributionEUR, currentCurrency), currentCurrency)}
+                    {fmt(monthlyContributionEUR)}
                     <span className="text-[11px] text-slate-600 font-normal">/mo</span>
                   </span>
                 </div>
@@ -205,16 +231,22 @@ export const BudgetCalculatorSection: React.FC<BudgetCalculatorSectionProps> = (
                   onChange={(e) => setMonthlyContributionEUR(Number(e.target.value))}
                   className="w-full accent-emerald-600 cursor-pointer"
                 />
-                <div className="flex justify-between items-center text-[11px] text-slate-600 mt-1">
-                  <span>€0</span>
+                <div className="flex justify-between items-center gap-2 text-[11px] text-slate-600 mt-1">
+                  <span>{fmt(0)}</span>
                   <button
+                    type="button"
                     onClick={handleMaxScheme}
-                    className="text-emerald-700 hover:underline font-semibold cursor-pointer"
+                    className="text-emerald-700 hover:underline font-semibold cursor-pointer text-center"
                   >
                     Quick Set €1,000/mo (Annual Cap)
                   </button>
-                  <span>€2,000</span>
+                  <span>{fmt(2000)}</span>
                 </div>
+                {isAboveAnnualCap && (
+                  <p className="text-[11px] text-amber-800 mt-1">
+                    {fmt(annualContributionEUR - FY27_ANNUAL_CONTRIBUTION_LIMIT)}/yr exceeds the €12,000 allowance and is modelled in a normal taxable account under FY27.
+                  </p>
+                )}
               </div>
 
               {/* Time Horizon */}
@@ -247,14 +279,15 @@ export const BudgetCalculatorSection: React.FC<BudgetCalculatorSectionProps> = (
 
               {/* Illustrative Return Rate Buttons */}
               <div>
-                <label className="text-xs font-semibold text-slate-700 block mb-2">
+                <span id="return-rate-label" className="text-xs font-semibold text-slate-700 block mb-2">
                   Illustrative Annual Return Rate
-                </label>
-                <div className="grid grid-cols-3 gap-2">
+                </span>
+                <div className="grid grid-cols-3 gap-2" role="group" aria-labelledby="return-rate-label">
                   {[0.05, 0.07, 0.09].map((rate) => (
                     <button
                       key={rate}
                       type="button"
+                      aria-pressed={annualReturnRate === rate}
                       onClick={() => setAnnualReturnRate(rate)}
                       className={`py-2 px-3 rounded-lg text-xs font-bold transition-all border cursor-pointer ${
                         annualReturnRate === rate
@@ -273,12 +306,13 @@ export const BudgetCalculatorSection: React.FC<BudgetCalculatorSectionProps> = (
 
               {/* Asset Class Selector */}
               <div>
-                <label className="text-xs font-semibold text-slate-700 block mb-2">
+                <span id="asset-class-label" className="text-xs font-semibold text-slate-700 block mb-2">
                   Underlying Asset Vehicle
-                </label>
-                <div className="grid grid-cols-2 gap-2 text-xs">
+                </span>
+                <div className="grid grid-cols-2 gap-2 text-xs" role="group" aria-labelledby="asset-class-label">
                   <button
                     type="button"
+                    aria-pressed={assetClass === 'etf_fund'}
                     onClick={() => setAssetClass('etf_fund')}
                     className={`p-2.5 rounded-lg border text-left cursor-pointer transition-all ${
                       assetClass === 'etf_fund'
@@ -287,10 +321,11 @@ export const BudgetCalculatorSection: React.FC<BudgetCalculatorSectionProps> = (
                     }`}
                   >
                     <div>UCITS ETFs &amp; Funds</div>
-                    <div className="text-[10px] text-slate-500 font-normal">FY26: 41% + 8-yr disposal</div>
+                    <div className="text-[10px] text-slate-500 font-normal">FY26: 38% + 8-yr disposal</div>
                   </button>
                   <button
                     type="button"
+                    aria-pressed={assetClass === 'individual_shares'}
                     onClick={() => setAssetClass('individual_shares')}
                     className={`p-2.5 rounded-lg border text-left cursor-pointer transition-all ${
                       assetClass === 'individual_shares'
@@ -307,17 +342,20 @@ export const BudgetCalculatorSection: React.FC<BudgetCalculatorSectionProps> = (
               {/* Inflation Adjustment Toggle */}
               <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
                 <div>
-                  <span className="text-xs font-semibold text-slate-800 block">
+                  <span id="inflation-toggle-label" className="text-xs font-semibold text-slate-800 block">
                     Adjust for Inflation (CSO 2.2% HICP)
                   </span>
                   <span className="text-[11px] text-slate-500">
-                    Calculates future purchasing power
+                    Also shows net values in today's money
                   </span>
                 </div>
                 <button
                   type="button"
-                  onClick={() => setAdjustForInflation(!adjustForInflation)}
-                  className={`w-10 h-6 flex items-center rounded-full p-1 transition-colors cursor-pointer ${
+                  role="switch"
+                  aria-checked={adjustForInflation}
+                  aria-label="Adjust for inflation (2.2% HICP)"
+                  onClick={() => setAdjustForInflation(prev => !prev)}
+                  className={`w-10 h-6 shrink-0 flex items-center rounded-full p-1 transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 ${
                     adjustForInflation ? 'bg-emerald-600 justify-end' : 'bg-slate-300 justify-start'
                   }`}
                 >
@@ -340,8 +378,8 @@ export const BudgetCalculatorSection: React.FC<BudgetCalculatorSectionProps> = (
                     <Sparkles className="w-3.5 h-3.5" />
                     Projected Benefit under FY27 Scheme
                   </span>
-                  <div className="text-3xl sm:text-4xl font-extrabold font-mono mt-2 tracking-tight">
-                    +{displayWealthSaved}
+                  <div className="text-3xl sm:text-4xl font-extrabold font-mono mt-2 tracking-tight break-words">
+                    {displayWealthSaved}
                   </div>
                   <p className="text-xs sm:text-sm text-emerald-100 mt-1">
                     Extra wealth retained in your pocket compared to current FY26 rules over {timeHorizonYears} years.
@@ -373,7 +411,7 @@ export const BudgetCalculatorSection: React.FC<BudgetCalculatorSectionProps> = (
                     FY26 Current Regime
                   </span>
                   <span className="text-[11px] px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-mono font-medium">
-                    {assetClass === 'etf_fund' ? '41% Exit Tax' : '33% CGT'}
+                    {assetClass === 'etf_fund' ? '38% Exit Tax' : '33% CGT'}
                   </span>
                 </div>
 
@@ -382,6 +420,9 @@ export const BudgetCalculatorSection: React.FC<BudgetCalculatorSectionProps> = (
                   <div className="text-2xl font-extrabold text-slate-800 font-mono">
                     {displayFY26Net}
                   </div>
+                  {adjustForInflation && (
+                    <div className="text-[11px] text-slate-500 font-mono">≈ {displayFY26NetReal} in today's money</div>
+                  )}
                 </div>
 
                 <div className="mt-3 space-y-1.5 text-xs text-slate-600">
@@ -422,6 +463,9 @@ export const BudgetCalculatorSection: React.FC<BudgetCalculatorSectionProps> = (
                   <div className="text-2xl font-extrabold text-emerald-950 font-mono">
                     {displayFY27Net}
                   </div>
+                  {adjustForInflation && (
+                    <div className="text-[11px] text-emerald-800 font-mono">≈ {displayFY27NetReal} in today's money</div>
+                  )}
                 </div>
 
                 <div className="mt-3 space-y-1.5 text-xs text-slate-600">
@@ -430,7 +474,7 @@ export const BudgetCalculatorSection: React.FC<BudgetCalculatorSectionProps> = (
                     <span className="font-mono font-medium">{displayTotalInvested}</span>
                   </div>
                   <div className="flex justify-between text-emerald-700 font-medium">
-                    <span>1% Annual Charge (above €50k):</span>
+                    <span>{isAboveAnnualCap || startingAmountEUR > FY27_ANNUAL_CONTRIBUTION_LIMIT ? '1% Charge + Tax on Over-Cap Savings:' : '1% Annual Charge (above €50k):'}</span>
                     <span className="font-mono">-{displayTaxesFY27}</span>
                   </div>
                   <div className="text-[11px] text-emerald-800 bg-emerald-100/70 p-2 rounded-lg mt-2 flex items-start gap-1.5 font-medium">
@@ -444,18 +488,18 @@ export const BudgetCalculatorSection: React.FC<BudgetCalculatorSectionProps> = (
 
             {/* Threshold Progress Bar for FY27 */}
             <div className="bg-white p-4 sm:p-5 rounded-xl border border-slate-200 shadow-xs">
-              <div className="flex items-center justify-between text-xs font-semibold text-slate-800 mb-2">
-                <span>€50,000 Tax-Free Threshold Status</span>
+              <div className="flex flex-wrap items-center justify-between gap-1 text-xs font-semibold text-slate-800 mb-2">
+                <span>{fmt(FY27_TAX_FREE_THRESHOLD)} Tax-Free Threshold Status</span>
                 <span className="text-emerald-700 font-bold font-mono">
-                  {calculation.projections[calculation.projections.length - 1].fy27NetValue >= 50000 
-                    ? '100% Tax-Free Ceiling Reached' 
-                    : `${calculation.projections[calculation.projections.length - 1].thresholdProgressPct}% Filled`}
+                  {thresholdPct >= 100
+                    ? 'Tax-Free Threshold Reached'
+                    : `${thresholdPct}% Filled`}
                 </span>
               </div>
               <div className="w-full bg-slate-100 h-3 rounded-full overflow-hidden">
                 <div 
                   className="h-3 rounded-full bg-gradient-to-r from-emerald-500 to-teal-600 transition-all duration-500"
-                  style={{ width: `${Math.min(100, calculation.projections[calculation.projections.length - 1].thresholdProgressPct)}%` }}
+                  style={{ width: `${Math.min(100, thresholdPct)}%` }}
                 />
               </div>
               <p className="text-[11px] text-slate-500 mt-2">
@@ -464,9 +508,11 @@ export const BudgetCalculatorSection: React.FC<BudgetCalculatorSectionProps> = (
             </div>
 
             {/* Toggle Year-by-Year Table Button */}
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <button
-                onClick={() => setShowTable(!showTable)}
+                type="button"
+                aria-expanded={showTable}
+                onClick={() => setShowTable(prev => !prev)}
                 className="text-xs font-semibold text-emerald-700 hover:text-emerald-800 flex items-center gap-1.5 cursor-pointer"
               >
                 <Table className="w-3.5 h-3.5" />
@@ -474,6 +520,7 @@ export const BudgetCalculatorSection: React.FC<BudgetCalculatorSectionProps> = (
               </button>
 
               <button
+                type="button"
                 onClick={() => onOpenWaitlist({
                   startingAmountEUR,
                   monthlyContributionEUR,
@@ -494,7 +541,7 @@ export const BudgetCalculatorSection: React.FC<BudgetCalculatorSectionProps> = (
                   Annual Milestone Projection (Nominal Values)
                 </div>
                 <div className="overflow-x-auto max-h-80">
-                  <table className="w-full text-left text-xs">
+                  <table className="w-full min-w-[480px] text-left text-xs">
                     <thead className="bg-slate-100 text-slate-600 font-semibold sticky top-0">
                       <tr>
                         <th className="py-2.5 px-3">Year</th>
@@ -506,21 +553,21 @@ export const BudgetCalculatorSection: React.FC<BudgetCalculatorSectionProps> = (
                     </thead>
                     <tbody className="divide-y divide-slate-100 text-slate-700 font-mono">
                       {calculation.projections.map((p) => (
-                        <tr key={p.year} className={p.year % 8 === 0 ? 'bg-amber-50/60' : 'hover:bg-slate-50'}>
-                          <td className="py-2 px-3 font-bold text-slate-900">
-                            Yr {p.year} {p.year % 8 === 0 && <span className="text-[10px] text-amber-700 font-sans font-semibold">(8yr cycle)</span>}
+                        <tr key={p.year} className={assetClass === 'etf_fund' && p.year % 8 === 0 ? 'bg-amber-50/60' : 'hover:bg-slate-50'}>
+                          <td className="py-2 px-3 font-bold text-slate-900 whitespace-nowrap">
+                            Yr {p.year} {assetClass === 'etf_fund' && p.year % 8 === 0 && <span className="text-[10px] text-amber-700 font-sans font-semibold">(8yr cycle)</span>}
                           </td>
                           <td className="py-2 px-3">
-                            {formatCurrency(convertFromEUR(p.contributionsCumulative, currentCurrency), currentCurrency)}
+                            {fmt(p.contributionsCumulative)}
                           </td>
                           <td className="py-2 px-3 text-slate-600">
-                            {formatCurrency(convertFromEUR(p.fy26NetValue, currentCurrency), currentCurrency)}
+                            {fmt(p.fy26NetValue)}
                           </td>
                           <td className="py-2 px-3 font-semibold text-emerald-900">
-                            {formatCurrency(convertFromEUR(p.fy27NetValue, currentCurrency), currentCurrency)}
+                            {fmt(p.fy27NetValue)}
                           </td>
                           <td className="py-2 px-3 font-bold text-emerald-700">
-                            +{formatCurrency(convertFromEUR(p.wealthSavedUnderFY27, currentCurrency), currentCurrency)}
+                            +{fmt(p.wealthSavedUnderFY27)}
                           </td>
                         </tr>
                       ))}

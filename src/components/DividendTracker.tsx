@@ -15,7 +15,10 @@ import {
   getStoredDividends, 
   saveStoredDividends, 
   calculateDividendAnalytics, 
-  DEFAULT_HISTORICAL_DIVIDENDS 
+  DEFAULT_HISTORICAL_DIVIDENDS,
+  isSampleDividendData,
+  parseLocalDate,
+  todayLocalISODate
 } from '../services/dividendService';
 import { 
   Coins, 
@@ -50,6 +53,25 @@ import {
   Legend 
 } from 'recharts';
 
+const MAX_DIVIDEND_AMOUNT = 1_000_000_000;
+
+const countryFlag = (country: CountryExposure) =>
+  country === 'Ireland' ? '🇮🇪' : country === 'India' ? '🇮🇳' : country === 'US' ? '🇺🇸' : '🇪🇺';
+
+const defaultWithholdingRate = (holding?: Holding) => {
+  if (!holding) return 20;
+  if (holding.country === 'US') return 15;
+  if (holding.country === 'India') return 20;
+  if (holding.country === 'Ireland') return holding.assetType === 'Cash / Deposit' ? 33 : 25;
+  return 20;
+};
+
+const formatOriginal = (amount: number, currency: Currency) => {
+  const symbol = currency === 'INR' ? '₹' : currency === 'USD' ? '$' : currency === 'GBP' ? '£' : '€';
+  const locale = currency === 'INR' ? 'en-IN' : 'en-IE';
+  return `${symbol}${amount.toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+};
+
 interface DividendTrackerProps {
   holdings: Holding[];
   currentCurrency: Currency;
@@ -72,49 +94,77 @@ export const DividendTracker: React.FC<DividendTrackerProps> = ({
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [showDtaaGuide, setShowDtaaGuide] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
+  const [copyError, setCopyError] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   // New dividend form state
-  const [newHoldingId, setNewHoldingId] = useState<string>(holdings[0]?.id || 'h-5');
-  const [newPaymentDate, setNewPaymentDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
-  const [newGrossAmount, setNewGrossAmount] = useState<number>(15000);
-  const [newWithholdingRate, setNewWithholdingRate] = useState<number>(20);
+  const [newHoldingId, setNewHoldingId] = useState<string>(holdings[0]?.id || '');
+  const [newPaymentDate, setNewPaymentDate] = useState<string>(() => todayLocalISODate());
+  const [newGrossAmount, setNewGrossAmount] = useState<number>(100);
+  const [newWithholdingRate, setNewWithholdingRate] = useState<number>(() => defaultWithholdingRate(holdings[0]));
   const [newPayoutType, setNewPayoutType] = useState<DividendRecord['payoutType']>('Cash Payout');
   const [newNotes, setNewNotes] = useState<string>('');
+
+  const isSampleData = useMemo(() => isSampleDividendData(dividends), [dividends]);
+  const previewGross = Number.isFinite(newGrossAmount) && newGrossAmount > 0 ? newGrossAmount : 0;
+  const previewRate = Number.isFinite(newWithholdingRate) ? Math.min(100, Math.max(0, newWithholdingRate)) : 0;
 
   // Persist changes to localStorage
   useEffect(() => {
     saveStoredDividends(dividends);
   }, [dividends]);
 
-  // Synchronize new holding form defaults when newHoldingId changes
+  useEffect(() => {
+    if (!copySuccess && !copyError) return;
+    const timer = setTimeout(() => { setCopySuccess(false); setCopyError(false); }, 2500);
+    return () => clearTimeout(timer);
+  }, [copySuccess, copyError]);
+
   const selectedHolding = useMemo(() => {
     return holdings.find(h => h.id === newHoldingId) || holdings[0];
   }, [newHoldingId, holdings]);
 
-  useEffect(() => {
-    if (selectedHolding) {
-      if (selectedHolding.country === 'US') {
-        setNewWithholdingRate(15);
-      } else if (selectedHolding.country === 'India') {
-        setNewWithholdingRate(20);
-      } else if (selectedHolding.country === 'Ireland') {
-        setNewWithholdingRate(33);
-      } else {
-        setNewWithholdingRate(20);
-      }
-    }
-  }, [selectedHolding]);
+  const openAddModal = () => {
+    const holding = holdings.find(h => h.id === newHoldingId) || holdings[0];
+    setNewHoldingId(holding?.id || '');
+    setNewWithholdingRate(defaultWithholdingRate(holding));
+    setNewPaymentDate(todayLocalISODate());
+    setFormError(null);
+    setIsAddModalOpen(true);
+  };
+
+  const handleSelectHolding = (id: string) => {
+    setNewHoldingId(id);
+    setNewWithholdingRate(defaultWithholdingRate(holdings.find(h => h.id === id)));
+  };
 
   // Compute analytics
   const analytics = useMemo(() => {
     return calculateDividendAnalytics(dividends, holdings);
   }, [dividends, holdings]);
 
+  const availableYears = useMemo(() => {
+    const years = new Set<number>();
+    dividends.forEach(d => years.add(Number(d.paymentDate.slice(0, 4))));
+    return Array.from(years).filter(Number.isFinite).sort((a, b) => b - a);
+  }, [dividends]);
+
+  const availableCountries = useMemo(() => {
+    const order: CountryExposure[] = ['Ireland', 'India', 'US', 'Europe'];
+    return order.filter(c => dividends.some(d => d.country === c));
+  }, [dividends]);
+
+  const dateRangeLabel = availableYears.length === 0
+    ? ''
+    : availableYears.length === 1
+    ? `(${availableYears[0]})`
+    : `(${availableYears[availableYears.length - 1]} – ${availableYears[0]})`;
+
   // Filtered ledger
   const filteredDividends = useMemo(() => {
     return dividends.filter(item => {
       if (countryFilter !== 'All' && item.country !== countryFilter) return false;
-      if (yearFilter !== 'All' && new Date(item.paymentDate).getFullYear() !== yearFilter) return false;
+      if (yearFilter !== 'All' && Number(item.paymentDate.slice(0, 4)) !== yearFilter) return false;
       if (payoutTypeFilter !== 'All' && item.payoutType !== payoutTypeFilter) return false;
       if (searchQuery.trim()) {
         const query = searchQuery.toLowerCase();
@@ -125,7 +175,7 @@ export const DividendTracker: React.FC<DividendTrackerProps> = ({
         if (!matchesName && !matchesTicker && !matchesBroker && !matchesNotes) return false;
       }
       return true;
-    }).sort((a, b) => new Date(b.paymentDate).getTime() - new Date(a.paymentDate).getTime());
+    }).sort((a, b) => b.paymentDate.localeCompare(a.paymentDate));
   }, [dividends, countryFilter, yearFilter, payoutTypeFilter, searchQuery]);
 
   // Chart data formatting in user currency
@@ -147,16 +197,16 @@ export const DividendTracker: React.FC<DividendTrackerProps> = ({
 
   // Periodic bar chart data (quarterly/yearly aggregation)
   const periodicChartData = useMemo(() => {
-    const periodMap = new Map<string, { period: string; ireland: number; india: number; us: number; total: number }>();
+    const periodMap = new Map<string, { period: string; ireland: number; india: number; us: number; europe: number; total: number }>();
     
     // Sort chronological
-    const sorted = [...dividends].sort((a, b) => new Date(a.paymentDate).getTime() - new Date(b.paymentDate).getTime());
+    const sorted = [...dividends].sort((a, b) => a.paymentDate.localeCompare(b.paymentDate));
     
     for (const div of sorted) {
-      const d = new Date(div.paymentDate);
+      const d = parseLocalDate(div.paymentDate);
       const q = Math.floor(d.getMonth() / 3) + 1;
       const key = `${d.getFullYear()} Q${q}`;
-      const entry = periodMap.get(key) || { period: key, ireland: 0, india: 0, us: 0, total: 0 };
+      const entry = periodMap.get(key) || { period: key, ireland: 0, india: 0, us: 0, europe: 0, total: 0 };
       
       const valEUR = convertToEUR(div.grossAmount, div.currency);
       const valUserCurr = convertFromEUR(valEUR, currentCurrency);
@@ -164,6 +214,7 @@ export const DividendTracker: React.FC<DividendTrackerProps> = ({
       if (div.country === 'Ireland') entry.ireland += valUserCurr;
       else if (div.country === 'India') entry.india += valUserCurr;
       else if (div.country === 'US') entry.us += valUserCurr;
+      else entry.europe += valUserCurr;
       entry.total += valUserCurr;
 
       periodMap.set(key, entry);
@@ -174,16 +225,34 @@ export const DividendTracker: React.FC<DividendTrackerProps> = ({
       ireland: Math.round(p.ireland),
       india: Math.round(p.india),
       us: Math.round(p.us),
+      europe: Math.round(p.europe),
       total: Math.round(p.total)
     }));
   }, [dividends, currentCurrency]);
 
   const handleSaveDividend = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedHolding || newGrossAmount <= 0) return;
+    if (!selectedHolding) {
+      setFormError('Add a holding to your portfolio before logging a dividend.');
+      return;
+    }
+    const gross = Number(newGrossAmount);
+    const rate = Number(newWithholdingRate);
+    if (!Number.isFinite(gross) || gross <= 0 || gross > MAX_DIVIDEND_AMOUNT) {
+      setFormError('Enter a gross dividend amount greater than zero.');
+      return;
+    }
+    if (!Number.isFinite(rate) || rate < 0 || rate > 100) {
+      setFormError('Withholding rate must be between 0% and 100%.');
+      return;
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(newPaymentDate) || newPaymentDate > todayLocalISODate()) {
+      setFormError('Enter a valid payment date that is not in the future.');
+      return;
+    }
 
-    const whtAmount = (newGrossAmount * (newWithholdingRate / 100));
-    const netAmount = newGrossAmount - whtAmount;
+    const whtAmount = (gross * (rate / 100));
+    const netAmount = gross - whtAmount;
 
     let taxCategory: DividendRecord['taxCategory'] = 'Irish DIRT / Income Tax';
     if (selectedHolding.country === 'US') taxCategory = 'US WHT (W-8BEN)';
@@ -197,34 +266,42 @@ export const DividendTracker: React.FC<DividendTrackerProps> = ({
       ticker: selectedHolding.ticker,
       country: selectedHolding.country,
       paymentDate: newPaymentDate,
-      grossAmount: Number(newGrossAmount),
+      grossAmount: gross,
       withholdingTax: Number(whtAmount.toFixed(2)),
       netAmount: Number(netAmount.toFixed(2)),
       currency: selectedHolding.currency,
-      withholdingRatePct: Number(newWithholdingRate),
+      withholdingRatePct: rate,
       taxCategory,
       payoutType: newPayoutType,
-      broker: selectedHolding.provider,
-      notes: newNotes.trim() || undefined
+      broker: selectedHolding.provider || '',
+      notes: newNotes.trim().slice(0, 500) || undefined
     };
 
-    setDividends(prev => [newRecord, ...prev]);
+    // Logging the first real payment replaces the illustrative sample records.
+    setDividends(prev => [newRecord, ...(isSampleDividendData(prev) ? [] : prev)]);
     setIsAddModalOpen(false);
     setNewNotes('');
+    setFormError(null);
   };
 
-  const handleDeleteDividend = (id: string) => {
-    setDividends(prev => prev.filter(d => d.id !== id));
+  const handleDeleteDividend = (item: DividendRecord) => {
+    if (!window.confirm(`Delete the ${item.paymentDate} dividend record for "${item.holdingName}"?`)) return;
+    setDividends(prev => prev.filter(d => d.id !== item.id));
   };
 
   const handleResetDefaults = () => {
-    if (window.confirm('Reset dividend tracker to default verified cross-border historical records?')) {
+    if (window.confirm('Replace your dividend ledger with the illustrative sample records? Any dividends you logged will be removed.')) {
       setDividends(DEFAULT_HISTORICAL_DIVIDENDS);
-      saveStoredDividends(DEFAULT_HISTORICAL_DIVIDENDS);
     }
   };
 
-  const handleCopySummary = () => {
+  const handleClearSample = () => {
+    if (window.confirm('Remove the sample dividend records and start your own ledger?')) {
+      setDividends([]);
+    }
+  };
+
+  const handleCopySummary = async () => {
     const text = `=== CROSS-BORDER DIVIDEND INCOME SUMMARY ===
 Cumulative Historical Dividends: ${formatCurrency(convertFromEUR(analytics.totalGrossEUR, currentCurrency), currentCurrency)}
 Net Dividends Received: ${formatCurrency(convertFromEUR(analytics.totalNetEUR, currentCurrency), currentCurrency)}
@@ -236,12 +313,15 @@ JURISDICTION BREAKDOWN:
 - Ireland: ${formatCurrency(convertFromEUR(analytics.byCountry.find(c => c.country === 'Ireland')?.grossEUR || 0, currentCurrency), currentCurrency)}
 - India: ${formatCurrency(convertFromEUR(analytics.byCountry.find(c => c.country === 'India')?.grossEUR || 0, currentCurrency), currentCurrency)} (TDS claimable under Art 23)
 - US: ${formatCurrency(convertFromEUR(analytics.byCountry.find(c => c.country === 'US')?.grossEUR || 0, currentCurrency), currentCurrency)} (15% W-8BEN WHT)
-Total Recorded Payments: ${dividends.length}
+Total Recorded Payments: ${dividends.length}${isSampleData ? '\n(Illustrative sample data — not your own records)' : ''}
 Generated via InvestIreland Portfolio Engine`;
 
-    navigator.clipboard.writeText(text);
-    setCopySuccess(true);
-    setTimeout(() => setCopySuccess(false), 2500);
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopySuccess(true);
+    } catch {
+      setCopyError(true);
+    }
   };
 
   const handleExportCSV = () => {
@@ -267,10 +347,11 @@ Generated via InvestIreland Portfolio Engine`;
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', `investireland_dividend_ledger_${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute('download', `investireland_dividend_ledger_${todayLocalISODate()}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    setTimeout(() => URL.revokeObjectURL(url), 0);
   };
 
   return (
@@ -300,6 +381,7 @@ Generated via InvestIreland Portfolio Engine`;
           {/* Action buttons */}
           <div className="flex flex-wrap items-center gap-2 shrink-0">
             <button
+              type="button"
               onClick={() => setShowDtaaGuide(!showDtaaGuide)}
               className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 transition-colors cursor-pointer"
               title="View Irish Revenue DTAA rules on foreign dividends"
@@ -308,6 +390,7 @@ Generated via InvestIreland Portfolio Engine`;
               <span>DTAA Tax Rules</span>
             </button>
             <button
+              type="button"
               onClick={handleExportCSV}
               className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 transition-colors cursor-pointer"
               title="Download dividend ledger CSV"
@@ -316,16 +399,20 @@ Generated via InvestIreland Portfolio Engine`;
               <span>Export CSV</span>
             </button>
             <button
+              type="button"
               onClick={handleCopySummary}
               className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 transition-colors cursor-pointer"
               title="Copy executive summary to clipboard"
             >
               {copySuccess ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Receipt className="w-3.5 h-3.5" />}
-              <span>{copySuccess ? 'Copied!' : 'Copy Summary'}</span>
+              <span>{copySuccess ? 'Copied!' : copyError ? 'Copy failed' : 'Copy Summary'}</span>
             </button>
             <button
-              onClick={() => setIsAddModalOpen(true)}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-sm transition-all cursor-pointer"
+              type="button"
+              onClick={openAddModal}
+              disabled={holdings.length === 0}
+              title={holdings.length === 0 ? 'Add a holding to your portfolio first' : 'Log a dividend payment'}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-sm transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Plus className="w-4 h-4" />
               <span>Log Dividend</span>
@@ -342,8 +429,10 @@ Generated via InvestIreland Portfolio Engine`;
                 Irish Tax Treatment of Cross-Border Dividends (Revenue TCA 1997)
               </span>
               <button 
+                type="button"
                 onClick={() => setShowDtaaGuide(false)}
-                className="text-slate-400 hover:text-white p-1"
+                aria-label="Close DTAA guide"
+                className="text-slate-400 hover:text-white p-1 cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -365,6 +454,28 @@ Generated via InvestIreland Portfolio Engine`;
           </div>
         )}
       </div>
+
+      {(isSampleData || dividends.length === 0) && (
+        <div className={`px-6 py-3 border-b text-xs flex flex-wrap items-center justify-between gap-2 ${isSampleData ? 'bg-amber-50 border-amber-200 text-amber-900' : 'bg-slate-50 border-slate-200 text-slate-700'}`}>
+          <span className="flex items-center gap-2">
+            <Info className="w-4 h-4 shrink-0" />
+            {isSampleData
+              ? 'You are viewing illustrative sample dividends, not your own records. Log a real payment to start your own ledger.'
+              : holdings.length === 0
+              ? 'No dividends logged yet. Add a holding to your portfolio, then log dividend payments here.'
+              : 'No dividends logged yet. Use "Log Dividend" to record your first payment.'}
+          </span>
+          {isSampleData ? (
+            <button type="button" onClick={handleClearSample} className="font-bold underline hover:no-underline cursor-pointer">
+              Clear sample data
+            </button>
+          ) : (
+            <button type="button" onClick={handleResetDefaults} className="font-bold underline hover:no-underline cursor-pointer">
+              Load sample data
+            </button>
+          )}
+        </div>
+      )}
 
       {/* 2. Top Executive Metric Cards */}
       <div className="p-6 bg-slate-50/70 border-b border-slate-200">
@@ -450,6 +561,7 @@ Generated via InvestIreland Portfolio Engine`;
               <span className="text-[11px] text-emerald-700 font-medium">Shelterable in 2027</span>
               {onOpenInvestmentAccount && (
                 <button
+                  type="button"
                   onClick={onOpenInvestmentAccount}
                   className="text-[11px] font-bold text-emerald-700 hover:underline cursor-pointer flex items-center gap-0.5"
                 >
@@ -469,9 +581,11 @@ Generated via InvestIreland Portfolio Engine`;
           <div>
             <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
               <span>Cumulative Historical Dividend Trajectory</span>
-              <span className="text-xs font-normal text-slate-500 font-mono">
-                (2024 &ndash; 2026)
-              </span>
+              {dateRangeLabel && (
+                <span className="text-xs font-normal text-slate-500 font-mono">
+                  {dateRangeLabel}
+                </span>
+              )}
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">
               Cumulative progression of cross-border dividend payouts in {currentCurrency}.
@@ -479,8 +593,9 @@ Generated via InvestIreland Portfolio Engine`;
           </div>
 
           {/* Segmented Chart View Selector */}
-          <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-xl self-start sm:self-auto border border-slate-200/60">
+          <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-xl self-start sm:self-auto border border-slate-200/60 max-w-full overflow-x-auto">
             <button
+              type="button"
               onClick={() => setChartMode('cumulative')}
               className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer whitespace-nowrap ${
                 chartMode === 'cumulative'
@@ -491,6 +606,7 @@ Generated via InvestIreland Portfolio Engine`;
               Cumulative (Gross vs Net)
             </button>
             <button
+              type="button"
               onClick={() => setChartMode('jurisdiction')}
               className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer whitespace-nowrap ${
                 chartMode === 'jurisdiction'
@@ -501,6 +617,7 @@ Generated via InvestIreland Portfolio Engine`;
               By Jurisdiction
             </button>
             <button
+              type="button"
               onClick={() => setChartMode('periodic')}
               className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer whitespace-nowrap ${
                 chartMode === 'periodic'
@@ -534,17 +651,20 @@ Generated via InvestIreland Portfolio Engine`;
                 <Tooltip 
                   formatter={(val: any, name: any) => [
                     `${formatCurrency(Number(val), currentCurrency)}`, 
-                    name === 'ireland' ? 'Ireland' : name === 'india' ? 'India' : name === 'us' ? 'United States' : 'Total'
+                    name === 'ireland' ? 'Ireland' : name === 'india' ? 'India' : name === 'us' ? 'United States' : name === 'europe' ? 'Europe' : 'Total'
                   ]}
                   contentStyle={{ backgroundColor: '#0f172a', borderRadius: '0.75rem', border: 'none', color: '#fff', fontSize: '12px' }}
                 />
                 <Legend 
                   wrapperStyle={{ fontSize: '11px', paddingTop: '10px' }} 
-                  formatter={(value) => value === 'ireland' ? 'Ireland' : value === 'india' ? 'India' : 'United States'}
+                  formatter={(value) => value === 'ireland' ? 'Ireland' : value === 'india' ? 'India' : value === 'europe' ? 'Europe' : 'United States'}
                 />
                 <Bar dataKey="ireland" fill="#10b981" stackId="a" radius={[0, 0, 0, 0]} />
                 <Bar dataKey="india" fill="#f59e0b" stackId="a" radius={[0, 0, 0, 0]} />
-                <Bar dataKey="us" fill="#3b82f6" stackId="a" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="us" fill="#3b82f6" stackId="a" radius={[0, 0, 0, 0]} />
+                {availableCountries.includes('Europe') && (
+                  <Bar dataKey="europe" fill="#8b5cf6" stackId="a" radius={[0, 0, 0, 0]} />
+                )}
               </BarChart>
             ) : chartMode === 'jurisdiction' ? (
               <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
@@ -663,7 +783,9 @@ Generated via InvestIreland Portfolio Engine`;
               ? 'text-emerald-700 bg-emerald-50 border-emerald-200' 
               : isIndia 
               ? 'text-amber-700 bg-amber-50 border-amber-200' 
-              : 'text-blue-700 bg-blue-50 border-blue-200';
+              : isUS
+              ? 'text-blue-700 bg-blue-50 border-blue-200'
+              : 'text-violet-700 bg-violet-50 border-violet-200';
 
             return (
               <div 
@@ -673,7 +795,7 @@ Generated via InvestIreland Portfolio Engine`;
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <span className="text-base">
-                      {isIreland ? '🇮🇪' : isIndia ? '🇮🇳' : '🇺🇸'}
+                      {countryFlag(c.country)}
                     </span>
                     <span className="font-bold text-slate-900 text-sm">{c.country}</span>
                   </div>
@@ -693,7 +815,7 @@ Generated via InvestIreland Portfolio Engine`;
                   <div className="flex justify-between items-baseline text-xs">
                     <span className="text-slate-500">Original Currency Gross:</span>
                     <span className="font-semibold text-slate-700 font-mono tabular-nums">
-                      {c.currency === 'INR' ? `₹${c.originalGross.toLocaleString('en-IN')}` : c.currency === 'USD' ? `$${c.originalGross.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : `€${c.originalGross.toFixed(2)}`}
+                      {formatOriginal(c.originalGross, c.currency)}
                     </span>
                   </div>
 
@@ -739,12 +861,13 @@ Generated via InvestIreland Portfolio Engine`;
 
           <div className="flex items-center gap-2">
             <button
+              type="button"
               onClick={handleResetDefaults}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 border border-slate-200 transition-colors cursor-pointer"
-              title="Reset records to default portfolio dividends"
+              title="Replace the ledger with illustrative sample dividends"
             >
               <RotateCcw className="w-3.5 h-3.5 text-slate-400" />
-              <span>Reset Defaults</span>
+              <span>Load sample data</span>
             </button>
           </div>
         </div>
@@ -753,7 +876,7 @@ Generated via InvestIreland Portfolio Engine`;
         <div className="flex flex-wrap items-center gap-2.5 pb-4">
           
           {/* Search bar */}
-          <div className="relative flex-1 min-w-[200px] max-w-xs">
+          <div className="relative flex-1 min-w-[180px] max-w-xs">
             <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
@@ -764,8 +887,10 @@ Generated via InvestIreland Portfolio Engine`;
             />
             {searchQuery && (
               <button 
+                type="button" 
                 onClick={() => setSearchQuery('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                aria-label="Clear search"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
               >
                 <X className="w-3 h-3" />
               </button>
@@ -773,9 +898,10 @@ Generated via InvestIreland Portfolio Engine`;
           </div>
 
           {/* Country filter buttons */}
-          <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
-            {(['All', 'Ireland', 'India', 'US'] as const).map(c => (
+          <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg max-w-full overflow-x-auto">
+            {(['All', ...availableCountries] as const).map(c => (
               <button
+                type="button"
                 key={c}
                 onClick={() => setCountryFilter(c)}
                 className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-colors cursor-pointer whitespace-nowrap ${
@@ -790,9 +916,10 @@ Generated via InvestIreland Portfolio Engine`;
           </div>
 
           {/* Year filter buttons */}
-          <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
-            {(['All', 2026, 2025, 2024] as const).map(yr => (
+          <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg max-w-full overflow-x-auto">
+            {(['All', ...availableYears] as const).map(yr => (
               <button
+                type="button"
                 key={yr}
                 onClick={() => setYearFilter(yr)}
                 className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-colors cursor-pointer whitespace-nowrap ${
@@ -807,9 +934,10 @@ Generated via InvestIreland Portfolio Engine`;
           </div>
 
           {/* Payout type filter */}
-          <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
+          <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg max-w-full overflow-x-auto">
             {(['All', 'Cash Payout', 'Fund IDCW'] as const).map(pt => (
               <button
+                type="button"
                 key={pt}
                 onClick={() => setPayoutTypeFilter(pt)}
                 className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-colors cursor-pointer whitespace-nowrap ${
@@ -887,7 +1015,7 @@ Generated via InvestIreland Portfolio Engine`;
                       {/* Country & Broker */}
                       <td className="py-3 px-3.5 font-sans whitespace-nowrap">
                         <div className="flex items-center gap-1.5">
-                          <span>{isIreland ? '🇮🇪' : isIndia ? '🇮🇳' : '🇺🇸'}</span>
+                          <span>{countryFlag(item.country)}</span>
                           <span className="font-medium text-slate-800">{item.country}</span>
                         </div>
                         <div className="text-[11px] text-slate-400 font-mono truncate max-w-[130px]">
@@ -897,13 +1025,13 @@ Generated via InvestIreland Portfolio Engine`;
 
                       {/* Gross Amount (Original) */}
                       <td className="py-3 px-3.5 text-right font-bold text-slate-900 whitespace-nowrap">
-                        {item.currency === 'INR' ? `₹${item.grossAmount.toLocaleString('en-IN')}` : item.currency === 'USD' ? `$${item.grossAmount.toFixed(2)}` : `€${item.grossAmount.toFixed(2)}`}
+                        {formatOriginal(item.grossAmount, item.currency)}
                       </td>
 
                       {/* Withholding Tax */}
                       <td className="py-3 px-3.5 text-right whitespace-nowrap">
                         <span className="text-amber-700 font-medium">
-                          {item.currency === 'INR' ? `₹${item.withholdingTax.toLocaleString('en-IN')}` : item.currency === 'USD' ? `$${item.withholdingTax.toFixed(2)}` : `€${item.withholdingTax.toFixed(2)}`}
+                          {formatOriginal(item.withholdingTax, item.currency)}
                         </span>
                         <div className="text-[10px] text-slate-400">
                           {item.withholdingRatePct}%
@@ -912,7 +1040,7 @@ Generated via InvestIreland Portfolio Engine`;
 
                       {/* Net Amount */}
                       <td className="py-3 px-3.5 text-right font-bold text-emerald-700 whitespace-nowrap">
-                        {item.currency === 'INR' ? `₹${item.netAmount.toLocaleString('en-IN')}` : item.currency === 'USD' ? `$${item.netAmount.toFixed(2)}` : `€${item.netAmount.toFixed(2)}`}
+                        {formatOriginal(item.netAmount, item.currency)}
                       </td>
 
                       {/* Converted to active currency */}
@@ -928,6 +1056,7 @@ Generated via InvestIreland Portfolio Engine`;
                         <span className={`inline-block text-[11px] font-medium px-2 py-0.5 rounded ${
                           isUS ? 'bg-blue-50 text-blue-800 border border-blue-200' :
                           isIndia ? 'bg-amber-50 text-amber-800 border border-amber-200' :
+                          item.country === 'Europe' ? 'bg-violet-50 text-violet-800 border border-violet-200' :
                           'bg-emerald-50 text-emerald-800 border border-emerald-200'
                         }`}>
                           {item.taxCategory}
@@ -942,8 +1071,10 @@ Generated via InvestIreland Portfolio Engine`;
                       {/* Action */}
                       <td className="py-3 px-3 text-center">
                         <button
-                          onClick={() => handleDeleteDividend(item.id)}
-                          className="text-slate-300 hover:text-rose-600 p-1 rounded transition-colors cursor-pointer"
+                          type="button"
+                          onClick={() => handleDeleteDividend(item)}
+                          aria-label={`Delete ${item.paymentDate} dividend for ${item.holdingName}`}
+                          className="text-slate-400 hover:text-rose-600 p-1 rounded transition-colors cursor-pointer"
                           title="Delete this dividend record"
                         >
                           <X className="w-3.5 h-3.5" />
@@ -961,8 +1092,8 @@ Generated via InvestIreland Portfolio Engine`;
 
       {/* 6. MODAL: LOG NEW DIVIDEND PAYMENT */}
       {isAddModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs" role="dialog" aria-modal="true" aria-labelledby="log-dividend-title" onKeyDown={(e) => { if (e.key === 'Escape') setIsAddModalOpen(false); }}>
+          <div className="bg-white rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-5 sm:p-6 shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
             
             <div className="flex items-center justify-between pb-4 border-b border-slate-200">
               <div className="flex items-center gap-2.5">
@@ -970,13 +1101,15 @@ Generated via InvestIreland Portfolio Engine`;
                   <Coins className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-slate-900">Record Dividend Payment</h3>
+                  <h3 id="log-dividend-title" className="text-base font-bold text-slate-900">Record Dividend Payment</h3>
                   <p className="text-xs text-slate-500">Log a cross-border dividend payout into your portfolio ledger</p>
                 </div>
               </div>
               <button 
+                type="button" 
                 onClick={() => setIsAddModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
+                aria-label="Close"
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -986,30 +1119,33 @@ Generated via InvestIreland Portfolio Engine`;
               
               {/* Holding Selection */}
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                <label htmlFor="dividend-holding" className="block text-xs font-semibold text-slate-700 mb-1">
                   Select Portfolio Holding *
                 </label>
                 <select
-                  value={newHoldingId}
-                  onChange={(e) => setNewHoldingId(e.target.value)}
+                  id="dividend-holding"
+                  value={selectedHolding?.id || ''}
+                  onChange={(e) => handleSelectHolding(e.target.value)}
                   className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl bg-white focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600"
                 >
                   {holdings.map(h => (
                     <option key={h.id} value={h.id}>
-                      {h.country === 'Ireland' ? '🇮🇪' : h.country === 'India' ? '🇮🇳' : '🇺🇸'} {h.assetName} ({h.currency} &middot; {h.provider})
+                      {countryFlag(h.country)} {h.assetName} ({h.currency}{h.provider ? ` · ${h.provider}` : ''})
                     </option>
                   ))}
                 </select>
               </div>
 
               {/* Date & Payout Type */}
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  <label htmlFor="dividend-date" className="block text-xs font-semibold text-slate-700 mb-1">
                     Payment Date *
                   </label>
                   <input
+                    id="dividend-date"
                     type="date"
+                    max={todayLocalISODate()}
                     value={newPaymentDate}
                     onChange={(e) => setNewPaymentDate(e.target.value)}
                     required
@@ -1017,12 +1153,13 @@ Generated via InvestIreland Portfolio Engine`;
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  <label htmlFor="dividend-payout-type" className="block text-xs font-semibold text-slate-700 mb-1">
                     Payout Type
                   </label>
                   <select
+                    id="dividend-payout-type"
                     value={newPayoutType}
-                    onChange={(e) => setNewPayoutType(e.target.value as any)}
+                    onChange={(e) => setNewPayoutType(e.target.value as DividendRecord['payoutType'])}
                     className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl bg-white focus:outline-none focus:border-emerald-600"
                   >
                     <option value="Cash Payout">Cash Payout (Bank/Broker)</option>
@@ -1033,39 +1170,45 @@ Generated via InvestIreland Portfolio Engine`;
               </div>
 
               {/* Gross Amount & Currency Display */}
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  <label htmlFor="dividend-gross" className="block text-xs font-semibold text-slate-700 mb-1">
                     Gross Dividend Amount ({selectedHolding?.currency}) *
                   </label>
                   <input
+                    id="dividend-gross"
                     type="number"
                     step="any"
                     min="0.01"
-                    value={newGrossAmount}
-                    onChange={(e) => setNewGrossAmount(Number(e.target.value))}
+                    max={MAX_DIVIDEND_AMOUNT}
+                    inputMode="decimal"
+                    value={Number.isFinite(newGrossAmount) ? newGrossAmount : ''}
+                    onChange={(e) => setNewGrossAmount(e.target.value === '' ? NaN : Number(e.target.value))}
                     required
                     className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl bg-white focus:outline-none focus:border-emerald-600 font-mono font-bold"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  <label htmlFor="dividend-wht" className="block text-xs font-semibold text-slate-700 mb-1">
                     Withholding Rate (%)
                   </label>
                   <input
+                    id="dividend-wht"
                     type="number"
                     step="0.5"
                     min="0"
-                    max="50"
-                    value={newWithholdingRate}
-                    onChange={(e) => setNewWithholdingRate(Number(e.target.value))}
+                    max="100"
+                    inputMode="decimal"
+                    value={Number.isFinite(newWithholdingRate) ? newWithholdingRate : ''}
+                    onChange={(e) => setNewWithholdingRate(e.target.value === '' ? NaN : Number(e.target.value))}
                     required
                     className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl bg-white focus:outline-none focus:border-emerald-600 font-mono"
                   />
                   <span className="text-[10px] text-slate-500 mt-0.5 block">
                     {selectedHolding?.country === 'US' ? '15% US treaty rate with W-8BEN' :
                      selectedHolding?.country === 'India' ? '20% Indian TDS under s.195' :
-                     '33% standard Irish DIRT'}
+                     selectedHolding?.country === 'Ireland' ? (selectedHolding.assetType === 'Cash / Deposit' ? '33% Irish DIRT on deposit interest' : '25% Irish Dividend Withholding Tax') :
+                     'Check the source-country treaty rate'}
                   </span>
                 </div>
               </div>
@@ -1074,25 +1217,27 @@ Generated via InvestIreland Portfolio Engine`;
               <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-1 font-mono">
                 <div className="flex justify-between text-slate-600">
                   <span>Gross:</span>
-                  <span className="font-semibold text-slate-900">{selectedHolding?.currency} {newGrossAmount.toFixed(2)}</span>
+                  <span className="font-semibold text-slate-900">{selectedHolding ? formatOriginal(previewGross, selectedHolding.currency) : '—'}</span>
                 </div>
                 <div className="flex justify-between text-amber-700">
-                  <span>Tax Withheld ({newWithholdingRate}%):</span>
-                  <span>- {selectedHolding?.currency} {(newGrossAmount * (newWithholdingRate / 100)).toFixed(2)}</span>
+                  <span>Tax Withheld ({previewRate}%):</span>
+                  <span>- {selectedHolding ? formatOriginal(previewGross * previewRate / 100, selectedHolding.currency) : '—'}</span>
                 </div>
                 <div className="flex justify-between text-emerald-700 font-bold pt-1 border-t border-slate-200">
                   <span>Net Received:</span>
-                  <span>{selectedHolding?.currency} {(newGrossAmount * (1 - newWithholdingRate / 100)).toFixed(2)}</span>
+                  <span>{selectedHolding ? formatOriginal(previewGross * (1 - previewRate / 100), selectedHolding.currency) : '—'}</span>
                 </div>
               </div>
 
               {/* Notes */}
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                <label htmlFor="dividend-notes" className="block text-xs font-semibold text-slate-700 mb-1">
                   Notes / Receipt Reference (Optional)
                 </label>
                 <input
+                  id="dividend-notes"
                   type="text"
+                  maxLength={500}
                   placeholder="e.g. Q3 interim dividend, Form 16A TDS ref #10492"
                   value={newNotes}
                   onChange={(e) => setNewNotes(e.target.value)}
@@ -1100,18 +1245,25 @@ Generated via InvestIreland Portfolio Engine`;
                 />
               </div>
 
+              {formError && (
+                <p role="alert" className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">
+                  {formError}
+                </p>
+              )}
+
               {/* Buttons */}
               <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-200">
                 <button
                   type="button"
                   onClick={() => setIsAddModalOpen(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:text-slate-800 hover:bg-slate-100"
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:text-slate-800 hover:bg-slate-100 cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-xl text-xs font-bold bg-emerald-700 hover:bg-emerald-800 text-white shadow-xs"
+                  disabled={!selectedHolding}
+                  className="px-4 py-2 rounded-xl text-xs font-bold bg-emerald-700 hover:bg-emerald-800 text-white shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Save Dividend Record
                 </button>

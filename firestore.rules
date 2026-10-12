@@ -28,7 +28,8 @@ service cloud.firestore {
     }
 
     function optionalNumber(data, field) {
-      return !(field in data) || data[field] == null || data[field] is number;
+      return !(field in data) || data[field] == null ||
+             (data[field] is number && data[field] >= 0 && data[field] < 1000000000000);
     }
 
     function isValidUser(data) {

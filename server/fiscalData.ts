@@ -30,7 +30,7 @@ export const OFFICIAL_FISCAL_DATA = {
     fy26: {
       budgetYear: 'FY2026',
       status: 'Current Enacted Law',
-      exitTaxRate: 0.41,
+      exitTaxRate: 0.38,
       deemedDisposalCycleYears: 8,
       cgtRate: 0.33,
       cgtAnnualExemption: 1270,
@@ -53,7 +53,7 @@ export const OFFICIAL_FISCAL_DATA = {
       eligibleInvestments: ['UCITS ETFs', 'Listed Equities', 'Government & Corporate Bonds', 'Regulated Investment Funds', 'Cash Deposits'],
       excludedInvestments: ['Crypto-assets', 'Unlisted speculative derivatives', 'Direct residential property'],
       residencyRequirement: 'Irish Tax Resident (PPSN required, aged 18+)',
-      exitTaxOutsideScheme: 0.41,
+      exitTaxOutsideScheme: 0.38,
       primaryLegislation: 'General Scheme of the Investment Accounts Bill 2026/27 (Dept of Finance)',
     },
   },

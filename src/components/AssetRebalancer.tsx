@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Holding, Currency, CountryExposure } from '../types';
 import { convertToEUR, convertFromEUR, formatCurrency, FALLBACK_FISCAL_DATA } from '../services/fiscalDataService';
 import { 
@@ -63,6 +63,15 @@ export const AssetRebalancer: React.FC<AssetRebalancerProps> = ({
   const [mode, setMode] = useState<RebalanceMode>('portfolio');
   const [cashToInject, setCashToInject] = useState<number>(5000);
   const [copied, setCopied] = useState<boolean>(false);
+  const [copyError, setCopyError] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (!copied && !copyError) return;
+    const timer = setTimeout(() => { setCopied(false); setCopyError(false); }, 2500);
+    return () => clearTimeout(timer);
+  }, [copied, copyError]);
+
+  const fmt = (amountEUR: number) => formatCurrency(convertFromEUR(amountEUR, currentCurrency), currentCurrency);
 
   // Custom targets state
   const [customTargets, setCustomTargets] = useState<TargetAllocation>({
@@ -154,9 +163,9 @@ export const AssetRebalancer: React.FC<AssetRebalancerProps> = ({
             localVal: ieDiff,
             suggestedVehicle: ieDiff > 0 
               ? 'Budget 2027 Personal Investment Account (€12,000/yr tax shelter) or PRSA AVC pension' 
-              : 'Trim cash or bond deposits (avoid selling ETFs with 41% deemed disposal penalties)',
+              : 'Trim cash or bond deposits (avoid selling ETFs with 38% deemed disposal penalties)',
             taxNote: ieDiff < 0 
-              ? 'Selling Irish/EU funds triggers 41% Exit Tax. Prefer rebalancing via fresh deposits.' 
+              ? 'Selling Irish/EU funds triggers 38% Exit Tax. Prefer rebalancing via fresh deposits.' 
               : 'Qualifies for 2027 PSIA €12,000/yr exemption from 8-year deemed disposal.'
           },
           {
@@ -192,8 +201,25 @@ export const AssetRebalancer: React.FC<AssetRebalancerProps> = ({
               ? 'Add S&P 500 / NASDAQ-100 or global US equities' 
               : 'Trim vested tech RSUs (utilize annual €1,270 Irish CGT exemption threshold)',
             taxNote: 'US withholding tax 15% under Irish W-8BEN form is credited against Irish tax returns.'
+          },
+          {
+            region: 'Europe / Global',
+            flag: '🇪🇺',
+            currencyName: 'EUR (€)',
+            localCurrency: 'EUR' as Currency,
+            currentValEUR: currentAllocation.otherVal,
+            currentPct: currentAllocation.otherPct,
+            targetPct: activeTargets.other,
+            targetValEUR: otherTargetVal,
+            diffEUR: otherDiff,
+            action: Math.abs(otherDiff) < 150 ? 'HOLD' : otherDiff > 0 ? 'BUY' : 'SELL',
+            localVal: otherDiff,
+            suggestedVehicle: otherDiff > 0
+              ? 'Add global or European UCITS index funds'
+              : 'Redirect European / global holdings towards your Ireland, India and US targets',
+            taxNote: 'Disposals of EU-domiciled funds are generally subject to 38% Irish Exit Tax.'
           }
-        ]
+        ].filter(item => item.region !== 'Europe / Global' || item.currentValEUR > 0 || item.targetPct > 0)
       };
     } else {
       // Cash injection mode (Tax-Smart Irish Strategy): Do NOT sell anything!
@@ -203,21 +229,25 @@ export const AssetRebalancer: React.FC<AssetRebalancerProps> = ({
       const ieTargetVal = (newTotal * activeTargets.ireland) / 100;
       const inTargetVal = (newTotal * activeTargets.india) / 100;
       const usTargetVal = (newTotal * activeTargets.us) / 100;
+      const otherTargetVal = (newTotal * activeTargets.other) / 100;
 
       // Deficits: how much each market is below target
       const ieDeficit = Math.max(0, ieTargetVal - currentAllocation.ieVal);
       const inDeficit = Math.max(0, inTargetVal - currentAllocation.inVal);
       const usDeficit = Math.max(0, usTargetVal - currentAllocation.usVal);
-      const totalDeficit = ieDeficit + inDeficit + usDeficit;
+      const otherDeficit = Math.max(0, otherTargetVal - currentAllocation.otherVal);
+      const totalDeficit = ieDeficit + inDeficit + usDeficit + otherDeficit;
 
       let ieAlloc = 0;
       let inAlloc = 0;
       let usAlloc = 0;
+      let otherAlloc = 0;
 
       if (totalDeficit > 0 && cashToInject > 0) {
         ieAlloc = (ieDeficit / totalDeficit) * cashToInject;
         inAlloc = (inDeficit / totalDeficit) * cashToInject;
         usAlloc = (usDeficit / totalDeficit) * cashToInject;
+        otherAlloc = (otherDeficit / totalDeficit) * cashToInject;
       }
 
       return {
@@ -237,7 +267,7 @@ export const AssetRebalancer: React.FC<AssetRebalancerProps> = ({
             action: ieAlloc > 50 ? 'BUY' : 'HOLD',
             localVal: ieAlloc,
             suggestedVehicle: 'Allocate to Ireland Budget 2027 PSIA (€12k annual allowance) or PRSA Pension',
-            taxNote: '100% Tax-Free rebalance: No sales triggered, zero exit tax or CGT liability created.'
+            taxNote: 'No-sale rebalance: because nothing is sold, no exit tax or CGT is triggered by the rebalance itself.'
           },
           {
             region: 'India Market',
@@ -268,30 +298,54 @@ export const AssetRebalancer: React.FC<AssetRebalancerProps> = ({
             localVal: usAlloc * fx.EUR_TO_USD,
             suggestedVehicle: 'Channel funds into US broad index ETFs or hold cash reserve',
             taxNote: 'Maintains long-term compounding without crystallizing capital gains in Ireland.'
+          },
+          {
+            region: 'Europe / Global',
+            flag: '🇪🇺',
+            currencyName: 'EUR (€)',
+            localCurrency: 'EUR' as Currency,
+            currentValEUR: currentAllocation.otherVal,
+            currentPct: currentAllocation.otherPct,
+            targetPct: activeTargets.other,
+            targetValEUR: currentAllocation.otherVal + otherAlloc,
+            diffEUR: otherAlloc,
+            action: otherAlloc > 50 ? 'BUY' : 'HOLD',
+            localVal: otherAlloc,
+            suggestedVehicle: 'Add global or European UCITS index funds',
+            taxNote: 'Fresh capital injection avoids crystallizing Exit Tax on existing funds.'
           }
-        ]
+        ].filter(item => item.region !== 'Europe / Global' || item.currentValEUR > 0 || item.targetPct > 0)
       };
     }
   }, [currentAllocation, activeTargets, mode, cashToInject]);
 
-  const handleCopyPlan = () => {
+  const hasHoldings = currentAllocation.totalEUR > 0;
+  const targetsValid = targetSum === 100;
+
+  const handleCopyPlan = async () => {
     const textLines = [
       `INVESTIRELAND AI — REBALANCING PLAN`,
       `Strategy: ${strategy === 'custom' ? 'Custom Targets' : STRATEGY_PRESETS[strategy].name}`,
-      `Method: ${mode === 'portfolio' ? 'Full Rebalance (Buy/Sell)' : `Tax-Smart Cash Injection (+€${cashToInject.toLocaleString()})`}`,
-      `Total Portfolio: €${Math.round(currentAllocation.totalEUR).toLocaleString()}`,
+      `Method: ${mode === 'portfolio' ? 'Full Rebalance (Buy/Sell)' : `Tax-Smart Cash Injection (+€${cashToInject.toLocaleString('en-IE')})`}`,
+      `Total Portfolio: €${Math.round(currentAllocation.totalEUR).toLocaleString('en-IE')}`,
       `------------------------------------------`,
       ...rebalancePlan.items.map(item => {
-        const sign = item.diffEUR > 0 ? '+' : '';
-        return `${item.flag} ${item.region} [${item.action}]: ${sign}€${Math.round(Math.abs(item.diffEUR)).toLocaleString()} (Target: ${item.targetPct}% | Current: ${item.currentPct.toFixed(1)}%)\n  Vehicle: ${item.suggestedVehicle}`;
+        const sign = item.action === 'BUY' ? '+' : item.action === 'SELL' ? '-' : '';
+        const amount = item.action === 'HOLD' ? 0 : Math.round(Math.abs(item.diffEUR));
+        return `${item.flag} ${item.region} [${item.action}]: ${sign}€${amount.toLocaleString('en-IE')} (Target: ${item.targetPct}% | Current: ${item.currentPct.toFixed(1)}%)\n  Vehicle: ${item.suggestedVehicle}`;
       }),
       `------------------------------------------`,
-      `Official Source: InvestIreland Risk Exposure Radar & Budget 2027 Intelligence.`
+      `Educational estimate only — not financial advice.`
     ];
 
-    navigator.clipboard.writeText(textLines.join('\n'));
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2500);
+    try {
+      await navigator.clipboard.writeText(textLines.join('\n'));
+      setCopyError(false);
+      setCopied(true);
+    } catch {
+      setCopied(false);
+      setCopyError(true);
+    }
   };
 
   return (
@@ -320,14 +374,21 @@ export const AssetRebalancer: React.FC<AssetRebalancerProps> = ({
 
         <div className="flex items-center gap-2 self-start sm:self-auto">
           <button
+            type="button"
             onClick={handleCopyPlan}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-all cursor-pointer"
+            disabled={!targetsValid || (!hasHoldings && mode === 'portfolio')}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             title="Copy rebalance order checklist to clipboard"
           >
             {copied ? (
               <>
                 <Check className="w-3.5 h-3.5 text-emerald-400" />
                 <span className="text-emerald-400">Plan Copied</span>
+              </>
+            ) : copyError ? (
+              <>
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+                <span className="text-amber-300">Copy failed</span>
               </>
             ) : (
               <>
@@ -365,6 +426,7 @@ export const AssetRebalancer: React.FC<AssetRebalancerProps> = ({
               const isSelected = strategy === stratKey;
               return (
                 <button
+                  type="button"
                   key={stratKey}
                   onClick={() => setStrategy(stratKey)}
                   className={`text-left p-3.5 rounded-xl border transition-all cursor-pointer ${
@@ -393,6 +455,7 @@ export const AssetRebalancer: React.FC<AssetRebalancerProps> = ({
 
             {/* Custom Option */}
             <button
+              type="button"
               onClick={() => setStrategy('custom')}
               className={`text-left p-3.5 rounded-xl border transition-all cursor-pointer ${
                 strategy === 'custom'
@@ -410,14 +473,14 @@ export const AssetRebalancer: React.FC<AssetRebalancerProps> = ({
                 Define your exact custom percentage targets across Ireland, India, and US.
               </p>
               <div className="mt-2.5 text-[10px] font-mono font-bold text-slate-600">
-                IE {customTargets.ireland}% · IN {customTargets.india}% · US {customTargets.us}%
+                IE {customTargets.ireland}% · IN {customTargets.india}% · US {customTargets.us}%{customTargets.other > 0 ? ` · EU ${customTargets.other}%` : ''}
               </div>
             </button>
           </div>
 
           {/* Custom Sliders Drawer (Visible if Custom Selected) */}
           {strategy === 'custom' && (
-            <div className="mt-4 p-4 bg-slate-50 rounded-xl border border-slate-200 grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="mt-4 p-4 bg-slate-50 rounded-xl border border-slate-200 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <div>
                 <div className="flex justify-between text-xs font-bold mb-1">
                   <span className="text-slate-800">🇮🇪 Ireland Target</span>
@@ -430,6 +493,7 @@ export const AssetRebalancer: React.FC<AssetRebalancerProps> = ({
                   step="5"
                   value={customTargets.ireland}
                   onChange={(e) => setCustomTargets({ ...customTargets, ireland: Number(e.target.value) })}
+                  aria-label="Ireland target percentage"
                   className="w-full accent-emerald-600 cursor-pointer"
                 />
               </div>
@@ -446,6 +510,7 @@ export const AssetRebalancer: React.FC<AssetRebalancerProps> = ({
                   step="5"
                   value={customTargets.india}
                   onChange={(e) => setCustomTargets({ ...customTargets, india: Number(e.target.value) })}
+                  aria-label="India target percentage"
                   className="w-full accent-amber-600 cursor-pointer"
                 />
               </div>
@@ -462,7 +527,25 @@ export const AssetRebalancer: React.FC<AssetRebalancerProps> = ({
                   step="5"
                   value={customTargets.us}
                   onChange={(e) => setCustomTargets({ ...customTargets, us: Number(e.target.value) })}
+                  aria-label="US target percentage"
                   className="w-full accent-blue-600 cursor-pointer"
+                />
+              </div>
+
+              <div>
+                <div className="flex justify-between text-xs font-bold mb-1">
+                  <span className="text-slate-800">🇪🇺 Europe / Global Target</span>
+                  <span className="font-mono text-slate-700">{customTargets.other}%</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  step="5"
+                  value={customTargets.other}
+                  onChange={(e) => setCustomTargets({ ...customTargets, other: Number(e.target.value) })}
+                  aria-label="Europe and global target percentage"
+                  className="w-full accent-slate-600 cursor-pointer"
                 />
               </div>
             </div>
@@ -481,8 +564,9 @@ export const AssetRebalancer: React.FC<AssetRebalancerProps> = ({
               </p>
             </div>
 
-            <div className="flex items-center bg-white p-1 rounded-xl border border-slate-200 text-xs font-bold self-start sm:self-auto shadow-xs">
+            <div className="flex flex-wrap items-center bg-white p-1 rounded-xl border border-slate-200 text-xs font-bold self-start sm:self-auto shadow-xs">
               <button
+                type="button"
                 onClick={() => setMode('portfolio')}
                 className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
                   mode === 'portfolio'
@@ -493,6 +577,7 @@ export const AssetRebalancer: React.FC<AssetRebalancerProps> = ({
                 Classic Buy/Sell (Net €0)
               </button>
               <button
+                type="button"
                 onClick={() => setMode('cash_injection')}
                 className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
                   mode === 'cash_injection'
@@ -515,25 +600,30 @@ export const AssetRebalancer: React.FC<AssetRebalancerProps> = ({
                   <span>Irish Tax-Smart Advantage: Zero Taxable Realizations</span>
                 </span>
                 <p className="text-[11px] text-emerald-800 mt-0.5">
-                  Instead of selling overweight assets (which triggers 41% exit tax or 33% CGT), inject fresh savings directly into underweight markets.
+                  Instead of selling overweight assets (which triggers 38% exit tax or 33% CGT), inject fresh savings directly into underweight markets.
                 </p>
               </div>
 
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-bold text-slate-700 whitespace-nowrap">Fresh Capital to Invest:</span>
+              <div className="flex flex-wrap items-center gap-2">
+                <label htmlFor="rebalancer-cash-inject" className="text-xs font-bold text-slate-700 whitespace-nowrap">Fresh Capital to Invest:</label>
                 <div className="relative">
                   <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-500">€</span>
                   <input
+                    id="rebalancer-cash-inject"
                     type="number"
                     step="500"
-                    min="500"
-                    max="100000"
+                    min="0"
+                    max="1000000"
                     value={cashToInject}
-                    onChange={(e) => setCashToInject(Math.max(0, Number(e.target.value)))}
+                    onChange={(e) => {
+                      const next = Number(e.target.value);
+                      setCashToInject(Number.isFinite(next) ? Math.min(1000000, Math.max(0, next)) : 0);
+                    }}
                     className="w-28 pl-6 pr-2 py-1.5 text-xs font-bold font-mono bg-white border border-slate-300 rounded-lg text-slate-900 focus:outline-emerald-600 shadow-xs"
                   />
                 </div>
                 <button
+                  type="button"
                   onClick={() => setCashToInject(12000)}
                   className="px-2 py-1 bg-white hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded text-[11px] font-bold cursor-pointer"
                   title="Set to Budget 2027 PSIA annual limit"
@@ -547,15 +637,27 @@ export const AssetRebalancer: React.FC<AssetRebalancerProps> = ({
 
         {/* Step 3: Calculated Buy & Sell Orders Matrix */}
         <div>
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-900">
               3. Calculated Order Checklist & Allocation Target
             </span>
             <span className="text-xs font-mono text-slate-500">
-              Portfolio Base: €{Math.round(currentAllocation.totalEUR).toLocaleString()}
+              Portfolio Base: {fmt(currentAllocation.totalEUR)}
             </span>
           </div>
 
+          {!targetsValid ? (
+            <div className="p-4 rounded-xl border border-rose-200 bg-rose-50 text-xs text-rose-800 flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 shrink-0 text-rose-600" />
+              <span>Your custom targets add up to {targetSum}%. Adjust the sliders so they total exactly 100% to see buy and sell orders.</span>
+            </div>
+          ) : !hasHoldings && mode === 'portfolio' ? (
+            <div className="p-5 rounded-xl border border-dashed border-slate-300 bg-slate-50 text-center text-xs text-slate-600">
+              <Scale className="w-6 h-6 text-slate-400 mx-auto mb-2" />
+              <p className="font-bold text-slate-800">No holdings to rebalance yet</p>
+              <p className="mt-1">Add holdings to your portfolio to calculate buy and sell orders, or switch to <strong>Tax-Smart Cash Inflow</strong> to plan how to invest fresh savings.</p>
+            </div>
+          ) : (
           <div className="space-y-3">
             {rebalancePlan.items.map((item) => {
               const isBuy = item.action === 'BUY';
@@ -593,7 +695,7 @@ export const AssetRebalancer: React.FC<AssetRebalancerProps> = ({
                             {item.action === 'BUY' ? 'BUY / TOP-UP' : item.action === 'SELL' ? 'TRIM / SELL' : 'IN BALANCE'}
                           </span>
                         </div>
-                        <div className="flex items-center gap-2 mt-1 text-xs text-slate-600">
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-1 text-xs text-slate-600">
                           <span>Current: <strong className="font-mono text-slate-900">{item.currentPct.toFixed(1)}%</strong></span>
                           <span>&rarr;</span>
                           <span>Target: <strong className="font-mono text-slate-900">{item.targetPct}%</strong></span>
@@ -626,12 +728,11 @@ export const AssetRebalancer: React.FC<AssetRebalancerProps> = ({
                       <div className={`text-lg font-black font-mono mt-0.5 ${
                         isBuy ? 'text-emerald-700' : isSell ? 'text-amber-800' : 'text-slate-600'
                       }`}>
-                        {isHold ? '€0' : `${isBuy ? '+' : '-'}€${Math.round(Math.abs(item.diffEUR)).toLocaleString()}`}
+                        {isHold ? fmt(0) : `${isBuy ? '+' : '-'}${fmt(Math.abs(item.diffEUR))}`}
                       </div>
-                      {item.localCurrency !== 'EUR' && !isHold && (
+                      {item.localCurrency !== currentCurrency && !isHold && (
                         <div className="text-[11px] font-mono text-slate-500 mt-0.5">
-                          ~{item.localCurrency === 'INR' ? '₹' : '$'}
-                          {Math.round(Math.abs(item.localVal)).toLocaleString()} {item.localCurrency}
+                          ~{formatCurrency(Math.abs(item.localVal), item.localCurrency)} {item.localCurrency}
                         </div>
                       )}
                     </div>
@@ -641,17 +742,18 @@ export const AssetRebalancer: React.FC<AssetRebalancerProps> = ({
               );
             })}
           </div>
+          )}
         </div>
 
         {/* Step 4: Before vs After Allocation Preview */}
         <div className="p-4 bg-slate-900 text-white rounded-xl">
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
               <Scale className="w-3.5 h-3.5 text-emerald-400" />
               <span>Simulated Portfolio Balance (Before vs After)</span>
             </span>
             <span className="text-[11px] font-mono text-emerald-400">
-              Projected Post-Rebalance Value: €{Math.round(rebalancePlan.postTotalEUR).toLocaleString()}
+              Projected Post-Rebalance Value: {fmt(rebalancePlan.postTotalEUR)}
             </span>
           </div>
 
@@ -674,7 +776,7 @@ export const AssetRebalancer: React.FC<AssetRebalancerProps> = ({
                 />
               </div>
               <div className="mt-1.5 text-[10px] text-slate-400">
-                Target: €{Math.round((rebalancePlan.postTotalEUR * activeTargets.ireland) / 100).toLocaleString()}
+                Target: {fmt((rebalancePlan.postTotalEUR * activeTargets.ireland) / 100)}
               </div>
             </div>
 
@@ -695,7 +797,7 @@ export const AssetRebalancer: React.FC<AssetRebalancerProps> = ({
                 />
               </div>
               <div className="mt-1.5 text-[10px] text-slate-400">
-                Target: €{Math.round((rebalancePlan.postTotalEUR * activeTargets.india) / 100).toLocaleString()}
+                Target: {fmt((rebalancePlan.postTotalEUR * activeTargets.india) / 100)}
               </div>
             </div>
 
@@ -716,7 +818,7 @@ export const AssetRebalancer: React.FC<AssetRebalancerProps> = ({
                 />
               </div>
               <div className="mt-1.5 text-[10px] text-slate-400">
-                Target: €{Math.round((rebalancePlan.postTotalEUR * activeTargets.us) / 100).toLocaleString()}
+                Target: {fmt((rebalancePlan.postTotalEUR * activeTargets.us) / 100)}
               </div>
             </div>
 

@@ -52,6 +52,15 @@ import {
   Flame
 } from 'lucide-react';
 
+const MAX_ASSET_NAME_LENGTH = 150;
+const MAX_PROVIDER_LENGTH = 100;
+const MAX_HOLDING_VALUE = 1_000_000_000_000;
+
+const todayISODate = () => {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+};
+
 interface DashboardViewProps {
   currentCurrency: Currency;
   holdings: Holding[];
@@ -117,27 +126,28 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [newAssetName, setNewAssetName] = useState('');
   const [newAssetType, setNewAssetType] = useState<Holding['assetType']>('ETF');
-  const [newUnits, setNewUnits] = useState(10);
-  const [newValue, setNewValue] = useState(5000);
+  const [newUnits, setNewUnits] = useState('1');
+  const [newValue, setNewValue] = useState('');
   const [newCurrency, setNewCurrency] = useState<Currency>('EUR');
   const [newCountry, setNewCountry] = useState<CountryExposure>('Ireland');
-  const [newProvider, setNewProvider] = useState('Davy Select');
+  const [newProvider, setNewProvider] = useState('');
+  const [holdingFormError, setHoldingFormError] = useState<string | null>(null);
 
   // Add contribution modal for Investment Account
   const [isContributionModalOpen, setIsContributionModalOpen] = useState(false);
-  const [contribAmount, setContribAmount] = useState(1000);
-  const [contribProvider, setContribProvider] = useState('Personal Bank Transfer (AIB)');
+  const [contribAmount, setContribAmount] = useState('1000');
+  const [contribProvider, setContribProvider] = useState('');
+  const [contribError, setContribError] = useState<string | null>(null);
 
   // PDF Export Modal State
   const [isExportPdfOpen, setIsExportPdfOpen] = useState(false);
   const [isInvAccountPdfOpen, setIsInvAccountPdfOpen] = useState(false);
 
-  // CSV Import simulation
+  // Statement import (parsing is not available yet; only an example preview is shown)
   const [importedFile, setImportedFile] = useState<string | null>(null);
-  const [importConfirmed, setImportConfirmed] = useState(false);
 
   // Compute live metrics
-  const xray = computeFinancialXRay(holdings);
+  const xray = computeFinancialXRay(holdings, currentCurrency);
 
   const cashHoldings = holdings.filter(h => h.assetType === 'Cash / Deposit');
   const cashTotalEUR = cashHoldings.reduce((sum, h) => sum + convertToEUR(h.currentValue, h.currency), 0);
@@ -147,30 +157,85 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   const investmentTotalEUR = xray.totalAssetsEUR - cashTotalEUR - pensionTotalEUR;
 
+  const contributionHeadroom = Math.max(0, investmentAccount.annualLimit - investmentAccount.annualContributions);
+  const contributionUsedPct = investmentAccount.annualLimit > 0
+    ? Math.min(100, Math.max(0, (investmentAccount.annualContributions / investmentAccount.annualLimit) * 100))
+    : 0;
+
+  const openAddHoldingModal = () => {
+    setHoldingFormError(null);
+    setIsAddModalOpen(true);
+  };
+
+  const closeAddHoldingModal = () => {
+    setIsAddModalOpen(false);
+    setHoldingFormError(null);
+  };
+
+  const openContributionModal = () => {
+    setContribError(null);
+    setContribAmount(String(Math.min(1000, contributionHeadroom)));
+    setIsContributionModalOpen(true);
+  };
+
   const handleSaveHolding = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newAssetName) return;
+    const name = newAssetName.trim();
+    const value = Number(newValue);
+    const units = Number(newUnits);
+    if (!name) {
+      setHoldingFormError('Enter an asset name.');
+      return;
+    }
+    if (newValue.trim() === '' || !Number.isFinite(value) || value <= 0 || value > MAX_HOLDING_VALUE) {
+      setHoldingFormError('Enter a current value greater than zero.');
+      return;
+    }
+    if (newUnits.trim() === '' || !Number.isFinite(units) || units <= 0 || units > MAX_HOLDING_VALUE) {
+      setHoldingFormError('Enter a number of units greater than zero.');
+      return;
+    }
     const item: Holding = {
-      id: `h-${Date.now()}`,
-      assetName: newAssetName,
+      id: `h-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      assetName: name.slice(0, MAX_ASSET_NAME_LENGTH),
       assetType: newAssetType,
-      units: Number(newUnits),
-      unitPrice: Number(newValue) / Number(newUnits || 1),
-      currentValue: Number(newValue),
+      units,
+      unitPrice: value / units,
+      currentValue: value,
       currency: newCurrency,
       country: newCountry,
-      provider: newProvider,
-      updatedAt: new Date().toISOString().split('T')[0]
+      provider: newProvider.trim().slice(0, MAX_PROVIDER_LENGTH),
+      updatedAt: todayISODate()
     };
     onAddHolding(item);
-    setIsAddModalOpen(false);
+    closeAddHoldingModal();
     setNewAssetName('');
+    setNewValue('');
+    setNewUnits('1');
+  };
+
+  const handleDeleteHolding = (holding: Holding) => {
+    if (window.confirm(`Delete "${holding.assetName}" from your holdings? This cannot be undone.`)) {
+      onDeleteHolding(holding.id);
+    }
   };
 
   const handleSaveContribution = (e: React.FormEvent) => {
     e.preventDefault();
-    if (contribAmount <= 0) return;
-    onAddContribution(Number(contribAmount), contribProvider);
+    const amount = Number(contribAmount);
+    if (contributionHeadroom <= 0) {
+      setContribError("You have already reached this year's contribution limit.");
+      return;
+    }
+    if (contribAmount.trim() === '' || !Number.isFinite(amount) || amount <= 0) {
+      setContribError('Enter an amount greater than zero.');
+      return;
+    }
+    if (amount > contributionHeadroom) {
+      setContribError(`The most you can add this year is €${contributionHeadroom.toLocaleString('en-IE')}.`);
+      return;
+    }
+    onAddContribution(Math.round(amount * 100) / 100, contribProvider.trim().slice(0, MAX_PROVIDER_LENGTH) || 'Not specified');
     setIsContributionModalOpen(false);
   };
 
@@ -224,12 +289,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
                     {greeting}, {userName}
                   </h1>
-                  {isSignedIn && activeUser.emailVerified ? (
+                  {isSignedIn && (
                     <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
                       <UserCheck className="w-3.5 h-3.5" />
-                      <span>Verified Member</span>
+                      <span>Signed in</span>
                     </span>
-                  ) : (
+                  )}
+                  {!(isSignedIn && activeUser.emailVerified) && (
                     <button
                       type="button"
                       onClick={() => openAuthModal()}
@@ -240,6 +306,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     </button>
                   )}
                   <button
+                    type="button"
                     onClick={() => { setTempName(userName); setIsEditingName(true); }}
                     className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold text-slate-600 hover:text-emerald-700 hover:bg-emerald-50 border border-slate-200 hover:border-emerald-300 transition-all cursor-pointer"
                     title="Click to personalize your dashboard name"
@@ -248,9 +315,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     <span>Edit Name</span>
                   </button>
                   <button
+                    type="button"
                     onClick={() => setShowPersonaInfo(!showPersonaInfo)}
                     className="text-slate-400 hover:text-slate-600 p-1 rounded-md hover:bg-slate-100 transition-colors cursor-pointer"
-                    title="Why did the dashboard show Priya?"
+                    title="Where does this name come from?"
+                    aria-label="Where does this name come from?"
                   >
                     <HelpCircle className="w-4 h-4" />
                   </button>
@@ -262,13 +331,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             {showPersonaInfo && (
               <div className="mt-2.5 p-3.5 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-950 flex items-start justify-between gap-3 max-w-xl shadow-2xs">
                 <div>
-                  <span className="font-bold text-blue-900 block mb-0.5">Why was it showing "Good morning, Priya"?</span>
+                  <span className="font-bold text-blue-900 block mb-0.5">Where does this name come from?</span>
                   <p className="text-[11px] text-blue-800 leading-relaxed">
-                    The platform initialized with a realistic cross-border demo persona (Priya Sharma, a Dublin tech lead holding Irish PRSA pensions, Indian Zerodha mutual funds, and US tech RSUs). You can customize this to your own name or register your credentials to receive automated email reports!
+                    {isSignedIn
+                      ? 'This is the display name on your account. Use "Edit Name" to change it.'
+                      : 'As a guest, the dashboard uses a demo persona name ("Priya Sharma") until you set your own. Use "Edit Name" to personalise it on this device, or sign in to save your portfolio to your account.'}
                   </p>
                 </div>
                 <button
+                  type="button"
                   onClick={() => setShowPersonaInfo(false)}
+                  aria-label="Close"
                   className="text-blue-500 hover:text-blue-700 p-0.5 rounded cursor-pointer shrink-0"
                 >
                   <X className="w-3.5 h-3.5" />
@@ -292,22 +365,27 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <span>{isSignedIn ? activeUser.name : 'Sign in'}</span>
             </button>
             <button
+              type="button"
               onClick={() => setIsExportPdfOpen(true)}
               className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-white border border-slate-300 hover:border-emerald-600 hover:text-emerald-700 text-slate-700 transition-all cursor-pointer shadow-xs"
-              title="Export your current portfolio and budget analytics as an official PDF summary"
+              title="Export your current portfolio and budget analytics as a printable PDF summary"
             >
               <FileDown className="w-3.5 h-3.5 text-emerald-600" />
               <span className="hidden sm:inline">Export PDF</span>
             </button>
             <button
-              onClick={() => setIsAddModalOpen(true)}
+              type="button"
+              onClick={openAddHoldingModal}
               className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-emerald-700 hover:bg-emerald-800 text-white shadow-sm transition-all cursor-pointer"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>Add Holding</span>
             </button>
             <button
-              onClick={() => setIsContributionModalOpen(true)}
+              type="button"
+              onClick={openContributionModal}
+              aria-label="Record Investment Account contribution"
+              title="Record Investment Account contribution"
               className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-white border border-slate-300 hover:bg-slate-50 text-slate-800 transition-all cursor-pointer"
             >
               <Coins className="w-3.5 h-3.5 text-emerald-600" />
@@ -333,6 +411,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             { id: 'import', label: 'Import Statement', icon: <FileUp className="w-4 h-4" /> }
           ].map((tab) => (
             <button
+              type="button"
               key={tab.id}
               onClick={() => setActiveTab(tab.id as any)}
               className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
@@ -363,7 +442,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 </div>
                 <div className="text-[11px] text-emerald-800 font-medium mt-1 flex items-center gap-1">
                   <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>Cross-border unified across 3 currencies</span>
+                  <span>{holdings.length === 0 ? 'Add holdings to see your total' : `Unified across ${new Set(holdings.map(h => h.currency)).size} ${new Set(holdings.map(h => h.currency)).size === 1 ? 'currency' : 'currencies'}`}</span>
                 </div>
               </div>
 
@@ -441,7 +520,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               holdings={holdings}
               currentCurrency={currentCurrency}
               onOpenInvestmentAccount={() => setActiveTab('investment_account')}
-              onOpenAuthModal={() => setIsAuthModalOpen(true)}
+              onOpenAuthModal={() => openAuthModal()}
             />
 
             {/* Currency Volatility Heatmap Widget (30-day FX vs Foreign Holdings Overlay) */}
@@ -462,14 +541,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     <span className="text-xs text-slate-500">Commencement: 1 July 2027</span>
                   </div>
                   <h3 className="text-xl font-bold text-slate-900 mt-1">
-                    €{investmentAccount.annualContributions.toLocaleString()} of €{investmentAccount.annualLimit.toLocaleString()} Allocated
+                    €{investmentAccount.annualContributions.toLocaleString('en-IE')} of €{investmentAccount.annualLimit.toLocaleString('en-IE')} Allocated
                   </h3>
                   <p className="text-xs text-slate-600 mt-0.5">
-                    {((investmentAccount.annualContributions / investmentAccount.annualLimit) * 100).toFixed(1)}% used &middot; €{(investmentAccount.annualLimit - investmentAccount.annualContributions).toLocaleString()} remaining contribution headroom this tax year.
+                    {contributionUsedPct.toFixed(1)}% used &middot; €{contributionHeadroom.toLocaleString('en-IE')} remaining contribution headroom this tax year.
                   </p>
                 </div>
 
                 <button
+                  type="button"
                   onClick={() => setActiveTab('investment_account')}
                   className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold rounded-xl transition-all cursor-pointer whitespace-nowrap self-start sm:self-auto"
                 >
@@ -480,7 +560,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <div className="w-full bg-emerald-200/60 h-2.5 rounded-full overflow-hidden mt-4">
                 <div 
                   className="bg-emerald-600 h-2.5 rounded-full transition-all"
-                  style={{ width: `${(investmentAccount.annualContributions / investmentAccount.annualLimit) * 100}%` }}
+                  style={{ width: `${contributionUsedPct}%` }}
                 />
               </div>
             </div>
@@ -491,11 +571,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 <Sparkles className="w-4 h-4" />
               </div>
               <div className="flex-1">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="text-xs font-bold text-emerald-800 uppercase tracking-wider">
                     AI Portfolio Insight
                   </span>
-                  <button 
+                  <button
+                    type="button"
                     onClick={() => setActiveTab('xray')}
                     className="text-xs font-bold text-emerald-700 hover:underline cursor-pointer"
                   >
@@ -503,8 +584,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   </button>
                 </div>
                 <p className="text-xs sm:text-sm text-slate-700 mt-1 leading-relaxed">
-                  "Your largest single holding represents {xray.concentration.topHoldingPct}% of your total portfolio, and your top 5 assets represent {xray.concentration.top5Pct}%. You have {xray.liquidity.cashPct}% in cash reserves. When Ireland's Investment Account launches on 1 July 2027, you can shelter up to €12,000/year out of standard deposit interest retention tax (DIRT) and 41% exit tax."
+                  {holdings.length === 0
+                    ? `Add your first holding to get personalised concentration and liquidity insights. When Ireland's proposed Investment Account launches on 1 July 2027, you could shelter up to €${investmentAccount.annualLimit.toLocaleString('en-IE')}/year from DIRT and exit tax.`
+                    : `Your largest single holding represents ${xray.concentration.topHoldingPct}% of your total portfolio, and your top 5 assets represent ${xray.concentration.top5Pct}%. You have ${xray.liquidity.cashPct}% in cash reserves. When Ireland's proposed Investment Account launches on 1 July 2027, you could shelter up to €${investmentAccount.annualLimit.toLocaleString('en-IE')}/year from deposit interest retention tax (DIRT) and exit tax.`}
                 </p>
+                <p className="text-[10px] text-slate-400 mt-1">Rule-based summary of your holdings &middot; educational only, not financial advice.</p>
               </div>
             </div>
 
@@ -522,12 +606,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     </span>
                   </div>
                   <p className="text-xs text-slate-400 mt-0.5">
-                    Generate an official, printable dossier summarizing your cross-border portfolio (IE, India, US), Budget 2027 allowances, and X-Ray diagnostics.
+                    Generate a printable summary summarizing your cross-border portfolio (IE, India, US), Budget 2027 allowances, and X-Ray diagnostics.
                   </p>
                 </div>
               </div>
 
               <button
+                type="button"
                 onClick={() => setIsExportPdfOpen(true)}
                 className="px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold transition-all cursor-pointer whitespace-nowrap shadow-sm self-stretch sm:self-auto text-center"
               >
@@ -545,7 +630,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               holdings={holdings} 
               currentCurrency={currentCurrency}
               onOpenInvestmentAccount={() => setActiveTab('investment_account')}
-              onOpenAuthModal={() => setIsAuthModalOpen(true)}
+              onOpenAuthModal={() => openAuthModal()}
             />
           </div>
         )}
@@ -583,6 +668,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   </p>
                 </div>
                 <button
+                  type="button"
                   onClick={() => setActiveTab('tax_estimator')}
                   className="mt-3 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-all cursor-pointer whitespace-nowrap self-start"
                 >
@@ -601,6 +687,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   </p>
                 </div>
                 <button
+                  type="button"
                   onClick={() => setActiveTab('investment_account')}
                   className="mt-3 px-3 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold transition-all cursor-pointer whitespace-nowrap self-start"
                 >
@@ -619,6 +706,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   </p>
                 </div>
                 <button
+                  type="button"
                   onClick={() => setActiveTab('rebalance')}
                   className="mt-3 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-all cursor-pointer whitespace-nowrap self-start"
                 >
@@ -646,6 +734,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   <p className="text-[11px] text-slate-500 mt-0.5">Restore your portfolio target weights in the Asset Rebalancer.</p>
                 </div>
                 <button
+                  type="button"
                   onClick={() => setActiveTab('rebalance')}
                   className="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-all cursor-pointer whitespace-nowrap"
                 >
@@ -659,6 +748,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   <p className="text-[11px] text-slate-500 mt-0.5">Explore the upcoming €50,000 personal tax-sheltered investment account.</p>
                 </div>
                 <button
+                  type="button"
                   onClick={() => setActiveTab('investment_account')}
                   className="px-3 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold transition-all cursor-pointer whitespace-nowrap"
                 >
@@ -712,6 +802,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
                 <div className="flex items-center gap-2 flex-wrap">
                   <button
+                    type="button"
                     onClick={() => setIsInvAccountPdfOpen(true)}
                     className="inline-flex items-center gap-1.5 px-3.5 py-2.5 bg-slate-900 hover:bg-black text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
                     title="Export Investment Account summary and transaction ledger to PDF"
@@ -721,7 +812,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   </button>
 
                   <button
-                    onClick={() => setIsContributionModalOpen(true)}
+                    type="button"
+                    onClick={openContributionModal}
                     className="inline-flex items-center gap-1.5 px-4 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
                   >
                     <Plus className="w-4 h-4" />
@@ -736,7 +828,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
                   <span className="text-xs font-bold text-slate-500 uppercase">Current Account Value</span>
                   <div className="text-3xl font-extrabold text-slate-900 font-mono mt-1">
-                    €{investmentAccount.accountValue.toLocaleString()}
+                    €{investmentAccount.accountValue.toLocaleString('en-IE')}
                   </div>
                   <p className="text-[11px] text-slate-500 mt-1">
                     Accumulated growth and planned early allocation
@@ -746,20 +838,20 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
                   <span className="text-xs font-bold text-slate-500 uppercase">Annual Contribution Allowance</span>
                   <div className="text-3xl font-extrabold text-emerald-800 font-mono mt-1">
-                    €{investmentAccount.annualContributions.toLocaleString()} <span className="text-base text-slate-400 font-normal">/ €12,000</span>
+                    €{investmentAccount.annualContributions.toLocaleString('en-IE')} <span className="text-base text-slate-400 font-normal">/ €{investmentAccount.annualLimit.toLocaleString('en-IE')}</span>
                   </div>
                   <p className="text-[11px] text-emerald-700 mt-1">
-                    €{(investmentAccount.annualLimit - investmentAccount.annualContributions).toLocaleString()} remaining headroom
+                    {contributionHeadroom > 0 ? `€${contributionHeadroom.toLocaleString('en-IE')} remaining headroom` : 'Annual limit reached for this tax year'}
                   </p>
                 </div>
 
                 <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-                  <span className="text-xs font-bold text-slate-500 uppercase">Distance to €50k Tax Threshold</span>
+                  <span className="text-xs font-bold text-slate-500 uppercase">Distance to €{Math.round(investmentAccount.taxFreeThreshold / 1000)}k Tax Threshold</span>
                   <div className="text-3xl font-extrabold text-teal-800 font-mono mt-1">
-                    €{(investmentAccount.taxFreeThreshold - investmentAccount.accountValue).toLocaleString()}
+                    €{Math.max(0, investmentAccount.taxFreeThreshold - investmentAccount.accountValue).toLocaleString('en-IE')}
                   </div>
                   <p className="text-[11px] text-teal-700 mt-1">
-                    100% tax-free growth shelter remaining
+                    {investmentAccount.accountValue >= investmentAccount.taxFreeThreshold ? 'Threshold reached' : 'Tax-free growth shelter remaining'}
                   </p>
                 </div>
 
@@ -782,15 +874,22 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 text-slate-700 font-mono">
+                      {investmentAccount.history.length === 0 && (
+                        <tr>
+                          <td colSpan={5} className="py-8 px-3 text-center font-sans text-slate-500">
+                            No planned deposits recorded yet. Use &ldquo;Record Planned Deposit&rdquo; to log one.
+                          </td>
+                        </tr>
+                      )}
                       {investmentAccount.history.map((tx) => (
                         <tr key={tx.id} className="hover:bg-slate-50/50">
-                          <td className="py-2.5 px-3">{tx.date}</td>
+                          <td className="py-2.5 px-3 whitespace-nowrap">{tx.date}</td>
                           <td className="py-2.5 px-3 font-sans font-semibold text-slate-900">{tx.type}</td>
-                          <td className="py-2.5 px-3 font-bold text-emerald-800">€{tx.amount.toLocaleString()}</td>
+                          <td className="py-2.5 px-3 font-bold text-emerald-800 whitespace-nowrap">€{tx.amount.toLocaleString('en-IE')}</td>
                           <td className="py-2.5 px-3 font-sans text-slate-600">{tx.provider}</td>
                           <td className="py-2.5 px-3 font-sans">
-                            <span className="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded text-[10px] font-bold">
-                              Eligible (2027 Rules)
+                            <span className="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap">
+                              Planned (2027 rules)
                             </span>
                           </td>
                         </tr>
@@ -819,7 +918,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 </div>
 
                 <button
-                  onClick={() => setIsAddModalOpen(true)}
+                  type="button"
+                  onClick={openAddHoldingModal}
                   className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
                 >
                   <Plus className="w-4 h-4" />
@@ -836,18 +936,35 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       <th className="py-3 px-3">Type</th>
                       <th className="py-3 px-3">Country</th>
                       <th className="py-3 px-3">Original Value</th>
-                      <th className="py-3 px-3">Value (EUR)</th>
+                      <th className="py-3 px-3">Value ({currentCurrency})</th>
                       <th className="py-3 px-3">Provider</th>
                       <th className="py-3 px-3 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 text-slate-700">
+                    {holdings.length === 0 && (
+                      <tr>
+                        <td colSpan={7} className="py-12 px-3 text-center">
+                          <PieChart className="w-8 h-8 mx-auto text-slate-300" />
+                          <p className="mt-2 font-semibold text-slate-800">No holdings yet</p>
+                          <p className="mt-1 text-slate-500">Add your pensions, ETFs, funds, shares or cash to see your unified portfolio.</p>
+                          <button
+                            type="button"
+                            onClick={openAddHoldingModal}
+                            className="mt-3 inline-flex items-center gap-1.5 px-3.5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold rounded-xl cursor-pointer"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            <span>Add your first holding</span>
+                          </button>
+                        </td>
+                      </tr>
+                    )}
                     {holdings.map((h) => {
                       const valEUR = convertToEUR(h.currentValue, h.currency);
                       return (
                         <tr key={h.id} className="hover:bg-slate-50/50">
                           <td className="py-3 px-3 font-bold text-slate-900">
-                            <div>{h.assetName}</div>
+                            <div className="break-words max-w-[220px]">{h.assetName}</div>
                             {h.notes && <div className="text-[10px] text-slate-400 font-normal">{h.notes}</div>}
                           </td>
                           <td className="py-3 px-3">
@@ -855,23 +972,25 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                               {h.assetType}
                             </span>
                           </td>
-                          <td className="py-3 px-3 font-semibold">
+                          <td className="py-3 px-3 font-semibold whitespace-nowrap">
                             {h.country === 'Ireland' ? '🇮🇪 Ireland' : h.country === 'India' ? '🇮🇳 India' : h.country === 'US' ? '🇺🇸 US' : '🇪🇺 Europe'}
                           </td>
-                          <td className="py-3 px-3 font-mono font-bold text-slate-900">
+                          <td className="py-3 px-3 font-mono font-bold text-slate-900 whitespace-nowrap">
                             {formatCurrency(h.currentValue, h.currency)}
                           </td>
-                          <td className="py-3 px-3 font-mono font-bold text-emerald-800">
-                            €{Math.round(valEUR).toLocaleString('en-IE')}
+                          <td className="py-3 px-3 font-mono font-bold text-emerald-800 whitespace-nowrap">
+                            {formatCurrency(convertFromEUR(valEUR, currentCurrency), currentCurrency)}
                           </td>
                           <td className="py-3 px-3 text-slate-500">
                             {h.provider}
                           </td>
                           <td className="py-3 px-3 text-right">
                             <button
-                              onClick={() => onDeleteHolding(h.id)}
+                              type="button"
+                              onClick={() => handleDeleteHolding(h)}
                               className="text-slate-400 hover:text-rose-600 p-1 cursor-pointer transition-colors"
                               title="Delete position"
+                              aria-label={`Delete ${h.assetName}`}
                             >
                               <Trash2 className="w-4 h-4" />
                             </button>
@@ -912,7 +1031,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                           <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: a.color }} />
                           <span>{a.category}</span>
                         </span>
-                        <span className="font-mono font-bold">€{a.valueEUR.toLocaleString()} ({a.percentage}%)</span>
+                        <span className="font-mono font-bold">{formatCurrency(convertFromEUR(a.valueEUR, currentCurrency), currentCurrency)} ({a.percentage}%)</span>
                       </div>
                     ))}
                   </div>
@@ -927,7 +1046,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                           <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: g.color }} />
                           <span>{g.country}</span>
                         </span>
-                        <span className="font-mono font-bold">€{g.valueEUR.toLocaleString()} ({g.percentage}%)</span>
+                        <span className="font-mono font-bold">{formatCurrency(convertFromEUR(g.valueEUR, currentCurrency), currentCurrency)} ({g.percentage}%)</span>
                       </div>
                     ))}
                   </div>
@@ -958,20 +1077,20 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 CSV Statement &amp; Document AI Importer
               </h2>
               <p className="text-xs sm:text-sm text-slate-500 mt-1 max-w-md mx-auto">
-                Upload broker statements from Davy, Degiro, Zerodha, Morgan Stanley, or Irish Life. The system parses your holdings and prompts for confirmation before adding.
+                Automatic parsing of broker statements (Davy, Degiro, Zerodha, Morgan Stanley, Irish Life) is coming soon. For now, add your positions manually &mdash; nothing is imported without your confirmation.
               </p>
             </div>
 
             {!importedFile ? (
-              <div className="mt-8 border-2 border-dashed border-slate-300 hover:border-emerald-500 rounded-2xl p-8 text-center cursor-pointer transition-all bg-slate-50/50">
+              <div className="mt-8 border-2 border-dashed border-slate-300 hover:border-emerald-500 rounded-2xl p-6 sm:p-8 text-center cursor-pointer transition-all bg-slate-50/50">
                 <input
                   type="file"
                   accept=".csv,.xlsx,.pdf"
                   onChange={(e) => {
                     if (e.target.files?.[0]) {
                       setImportedFile(e.target.files[0].name);
-                      setImportConfirmed(false);
                     }
+                    e.target.value = '';
                   }}
                   className="hidden"
                   id="csv-file-input"
@@ -982,89 +1101,79 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     Click to select CSV or Broker PDF statement
                   </span>
                   <span className="text-xs text-slate-400 mt-1 block">
-                    Supports Davy, Degiro, Zerodha, Schwab, Trade Republic &middot; Max 10MB
+                    Preview only &middot; your file stays on this device and is not uploaded
                   </span>
                 </label>
               </div>
             ) : (
-              <div className="mt-8 bg-slate-50 p-5 rounded-xl border border-slate-200 space-y-4">
-                <div className="flex items-center justify-between text-xs font-bold text-slate-800">
-                  <span>Detected File: {importedFile}</span>
-                  <span className="text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded font-mono">
-                    PARSED SUCCESSFULLY
+              <div className="mt-8 bg-slate-50 p-4 sm:p-5 rounded-xl border border-slate-200 space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-bold text-slate-800">
+                  <span className="break-all">Selected file: {importedFile}</span>
+                  <span className="text-amber-800 bg-amber-100 px-2 py-0.5 rounded font-mono">
+                    EXAMPLE PREVIEW
                   </span>
                 </div>
 
-                <div className="p-3 bg-white rounded-lg border border-slate-200 text-xs space-y-1.5 font-mono">
-                  <div className="text-slate-500 font-sans font-semibold">Extracted Positions Preview:</div>
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-900 flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>Statement parsing isn&rsquo;t available yet, so your file was not read. The positions below are an illustrative example of what the importer will extract &mdash; they are not your data.</span>
+                </div>
+
+                <div className="p-3 bg-white rounded-lg border border-slate-200 text-xs space-y-1.5 font-mono break-words">
+                  <div className="text-slate-500 font-sans font-semibold">Example extracted positions:</div>
                   <div className="text-slate-800">&bull; Vanguard S&amp;P 500 UCITS ETF &mdash; 50 units &mdash; €4,850 (EUR)</div>
                   <div className="text-slate-800">&bull; Mirae Asset Large Cap Fund &mdash; 1,200 units &mdash; ₹1,80,000 (INR)</div>
                   <div className="text-slate-800">&bull; Microsoft Corp (MSFT) &mdash; 15 units &mdash; $6,450 (USD)</div>
                 </div>
 
-                <div className="flex items-center justify-between pt-2">
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
                   <button
+                    type="button"
                     onClick={() => setImportedFile(null)}
                     className="text-xs text-slate-500 hover:text-slate-800 cursor-pointer"
                   >
-                    Cancel
+                    Choose another file
                   </button>
                   <button
-                    onClick={() => {
-                      setImportConfirmed(true);
-                      // Add sample parsed holding
-                      onAddHolding({
-                        id: `h-${Date.now()}`,
-                        assetName: 'Vanguard S&P 500 UCITS ETF (VUAA)',
-                        assetType: 'ETF',
-                        ticker: 'VUAA.L',
-                        units: 50,
-                        unitPrice: 97,
-                        currentValue: 4850,
-                        currency: 'EUR',
-                        country: 'Europe',
-                        provider: 'Degiro Ireland',
-                        notes: 'Imported via CSV statement parser',
-                        updatedAt: new Date().toISOString().split('T')[0]
-                      });
-                      setTimeout(() => setImportedFile(null), 2000);
-                    }}
+                    type="button"
+                    onClick={() => { setImportedFile(null); openAddHoldingModal(); }}
                     className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer"
                   >
-                    Confirm &amp; Add to Portfolio
+                    Add holdings manually
                   </button>
                 </div>
-
-                {importConfirmed && (
-                  <div className="p-3 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-lg text-xs font-semibold flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                    <span>Positions safely appended to your holdings. Never silently overwrites.</span>
-                  </div>
-                )}
               </div>
             )}
           </div>
         )}
 
       </div>
-
       {/* MODAL 1: ADD HOLDING */}
       {isAddModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200">
+        <div
+          className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="add-holding-title"
+          onKeyDown={(e) => { if (e.key === 'Escape') closeAddHoldingModal(); }}
+        >
+          <div className="bg-white rounded-2xl max-w-md w-full max-h-[90vh] overflow-y-auto p-5 sm:p-6 shadow-2xl border border-slate-200">
             <div className="flex items-center justify-between pb-4 border-b border-slate-100">
-              <h3 className="text-lg font-bold text-slate-900">Add Investment Holding</h3>
-              <button onClick={() => setIsAddModalOpen(false)} className="text-slate-400 hover:text-slate-700 cursor-pointer">
+              <h3 id="add-holding-title" className="text-lg font-bold text-slate-900">Add Investment Holding</h3>
+              <button type="button" onClick={closeAddHoldingModal} aria-label="Close" className="text-slate-400 hover:text-slate-700 cursor-pointer">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleSaveHolding} className="mt-4 space-y-3.5 text-xs">
+            <form onSubmit={handleSaveHolding} noValidate className="mt-4 space-y-3.5 text-xs">
               <div>
-                <label className="block font-bold text-slate-700 mb-1">Asset Name *</label>
+                <label htmlFor="holding-name" className="block font-bold text-slate-700 mb-1">Asset Name *</label>
                 <input
+                  id="holding-name"
                   type="text"
                   required
+                  autoFocus
+                  maxLength={MAX_ASSET_NAME_LENGTH}
                   value={newAssetName}
                   onChange={(e) => setNewAssetName(e.target.value)}
                   placeholder="e.g. HDFC Top 100 or iShares Core MSCI World"
@@ -1072,12 +1181,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">Asset Type</label>
+                  <label htmlFor="holding-type" className="block font-bold text-slate-700 mb-1">Asset Type</label>
                   <select
+                    id="holding-type"
                     value={newAssetType}
-                    onChange={(e) => setNewAssetType(e.target.value as any)}
+                    onChange={(e) => setNewAssetType(e.target.value as Holding['assetType'])}
                     className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-medium"
                   >
                     <option value="ETF">UCITS ETF</option>
@@ -1089,10 +1199,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   </select>
                 </div>
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">Currency</label>
+                  <label htmlFor="holding-currency" className="block font-bold text-slate-700 mb-1">Currency</label>
                   <select
+                    id="holding-currency"
                     value={newCurrency}
-                    onChange={(e) => setNewCurrency(e.target.value as any)}
+                    onChange={(e) => setNewCurrency(e.target.value as Currency)}
                     className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-medium"
                   >
                     <option value="EUR">Euro (€ EUR)</option>
@@ -1103,22 +1214,47 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">Current Value ({newCurrency})</label>
+                  <label htmlFor="holding-value" className="block font-bold text-slate-700 mb-1">Current Value ({newCurrency}) *</label>
                   <input
+                    id="holding-value"
                     type="number"
                     required
+                    min="0.01"
+                    step="any"
+                    max={MAX_HOLDING_VALUE}
+                    inputMode="decimal"
                     value={newValue}
-                    onChange={(e) => setNewValue(Number(e.target.value))}
+                    onChange={(e) => setNewValue(e.target.value)}
+                    placeholder="e.g. 5000"
                     className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-mono font-bold"
                   />
                 </div>
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">Country Jurisdiction</label>
+                  <label htmlFor="holding-units" className="block font-bold text-slate-700 mb-1">Units *</label>
+                  <input
+                    id="holding-units"
+                    type="number"
+                    required
+                    min="0.0001"
+                    step="any"
+                    max={MAX_HOLDING_VALUE}
+                    inputMode="decimal"
+                    value={newUnits}
+                    onChange={(e) => setNewUnits(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-mono font-bold"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label htmlFor="holding-country" className="block font-bold text-slate-700 mb-1">Country Jurisdiction</label>
                   <select
+                    id="holding-country"
                     value={newCountry}
-                    onChange={(e) => setNewCountry(e.target.value as any)}
+                    onChange={(e) => setNewCountry(e.target.value as CountryExposure)}
                     className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-medium"
                   >
                     <option value="Ireland">Ireland</option>
@@ -1127,30 +1263,38 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     <option value="Europe">Europe / Global</option>
                   </select>
                 </div>
+                <div>
+                  <label htmlFor="holding-provider" className="block font-bold text-slate-700 mb-1">Provider / Platform</label>
+                  <input
+                    id="holding-provider"
+                    type="text"
+                    maxLength={MAX_PROVIDER_LENGTH}
+                    value={newProvider}
+                    onChange={(e) => setNewProvider(e.target.value)}
+                    placeholder="e.g. Davy, Zerodha, Bunq"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-medium"
+                  />
+                </div>
               </div>
 
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">Provider / Platform</label>
-                <input
-                  type="text"
-                  value={newProvider}
-                  onChange={(e) => setNewProvider(e.target.value)}
-                  placeholder="e.g. Davy, Zerodha, Morgan Stanley, Bunq"
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-medium"
-                />
-              </div>
+              {holdingFormError && (
+                <p role="alert" className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">
+                  {holdingFormError}
+                </p>
+              )}
 
               <div className="pt-2 flex justify-end gap-2">
                 <button
                   type="button"
-                  onClick={() => setIsAddModalOpen(false)}
-                  className="px-4 py-2 border border-slate-300 rounded-lg text-slate-700 font-bold"
+                  onClick={closeAddHoldingModal}
+                  className="px-4 py-2 border border-slate-300 rounded-lg text-slate-700 font-bold cursor-pointer hover:bg-slate-50"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-lg cursor-pointer"
+                  disabled={!newAssetName.trim() || newValue.trim() === ''}
+                  className="px-5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-lg cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Save Position
                 </button>
@@ -1162,53 +1306,78 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
       {/* MODAL 2: RECORD CONTRIBUTION */}
       {isContributionModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200">
+        <div
+          className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="contribution-title"
+          onKeyDown={(e) => { if (e.key === 'Escape') setIsContributionModalOpen(false); }}
+        >
+          <div className="bg-white rounded-2xl max-w-md w-full max-h-[90vh] overflow-y-auto p-5 sm:p-6 shadow-2xl border border-slate-200">
             <div className="flex items-center justify-between pb-4 border-b border-slate-100">
-              <h3 className="text-lg font-bold text-slate-900">Record 2027 Scheme Contribution</h3>
-              <button onClick={() => setIsContributionModalOpen(false)} className="text-slate-400 hover:text-slate-700 cursor-pointer">
+              <h3 id="contribution-title" className="text-lg font-bold text-slate-900">Record 2027 Scheme Contribution</h3>
+              <button type="button" onClick={() => setIsContributionModalOpen(false)} aria-label="Close" className="text-slate-400 hover:text-slate-700 cursor-pointer">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleSaveContribution} className="mt-4 space-y-4 text-xs">
+            <form onSubmit={handleSaveContribution} noValidate className="mt-4 space-y-4 text-xs">
+              {contributionHeadroom <= 0 && (
+                <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                  You have used the full €{investmentAccount.annualLimit.toLocaleString('en-IE')} allowance for this year. No further contributions can be recorded.
+                </p>
+              )}
               <div>
-                <label className="block font-bold text-slate-700 mb-1">Contribution Amount (€ EUR) *</label>
+                <label htmlFor="contribution-amount" className="block font-bold text-slate-700 mb-1">Contribution Amount (€ EUR) *</label>
                 <input
+                  id="contribution-amount"
                   type="number"
                   required
-                  min="100"
-                  max={investmentAccount.annualLimit - investmentAccount.annualContributions}
+                  min="1"
+                  step="any"
+                  max={contributionHeadroom}
+                  inputMode="decimal"
+                  disabled={contributionHeadroom <= 0}
                   value={contribAmount}
-                  onChange={(e) => setContribAmount(Number(e.target.value))}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-mono font-bold text-base"
+                  onChange={(e) => setContribAmount(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-mono font-bold text-base disabled:opacity-60"
                 />
                 <span className="text-[11px] text-slate-500 mt-1 block">
-                  Remaining headroom: €{(investmentAccount.annualLimit - investmentAccount.annualContributions).toLocaleString()}
+                  Remaining headroom: €{contributionHeadroom.toLocaleString('en-IE')}
                 </span>
               </div>
 
               <div>
-                <label className="block font-bold text-slate-700 mb-1">Funding Account / Source</label>
+                <label htmlFor="contribution-source" className="block font-bold text-slate-700 mb-1">Funding Account / Source</label>
                 <input
+                  id="contribution-source"
                   type="text"
+                  maxLength={MAX_PROVIDER_LENGTH}
                   value={contribProvider}
                   onChange={(e) => setContribProvider(e.target.value)}
+                  placeholder="e.g. Bank transfer (AIB)"
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-medium"
                 />
               </div>
+
+              {contribError && (
+                <p role="alert" className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">
+                  {contribError}
+                </p>
+              )}
 
               <div className="pt-2 flex justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => setIsContributionModalOpen(false)}
-                  className="px-4 py-2 border border-slate-300 rounded-lg text-slate-700 font-bold"
+                  className="px-4 py-2 border border-slate-300 rounded-lg text-slate-700 font-bold cursor-pointer hover:bg-slate-50"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-lg cursor-pointer"
+                  disabled={contributionHeadroom <= 0}
+                  className="px-5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-lg cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Log Contribution
                 </button>
@@ -1217,7 +1386,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
         </div>
       )}
-
       {/* MODAL 3: EXPORT FULL PORTFOLIO PDF SUMMARY */}
       <ExportPdfModal
         isOpen={isExportPdfOpen}

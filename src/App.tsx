@@ -28,7 +28,12 @@ import {
 } from './services/portfolioService';
 
 const DashboardView = lazy(() => import('./components/DashboardView').then((m) => ({ default: m.DashboardView })));
-const SellixHeroView = lazy(() => import('./components/SellixHeroView').then((m) => ({ default: m.SellixHeroView })));
+const PrivacyPage = lazy(() => import('./components/PrivacyPage').then((m) => ({ default: m.PrivacyPage })));
+
+type AppView = 'landing' | 'app' | 'privacy';
+const PRIVACY_PATH = '/privacy';
+const viewFromLocation = (): AppView =>
+  typeof window !== 'undefined' && window.location.pathname.replace(/\/+$/, '') === PRIVACY_PATH ? 'privacy' : 'landing';
 
 const ViewFallback = () => (
   <div role="status" aria-live="polite" className="flex min-h-[50vh] items-center justify-center text-sm font-semibold text-slate-500">
@@ -42,18 +47,23 @@ const EMPTY_INVESTMENT_ACCOUNT: InvestmentAccountState = { ...INITIAL_INVESTMENT
 
 export default function App() {
   const [currentCurrency, setCurrentCurrency] = useState<Currency>('EUR');
-  const [activeView, setActiveView] = useState<'landing' | 'app' | 'sellix'>(() => {
-    // If URL pathname is /sellix or query is ?page=sellix
-    if (typeof window !== 'undefined') {
-      const path = window.location.pathname;
-      const search = window.location.search;
-      if (path.includes('sellix') || search.includes('page=sellix') || search.includes('view=sellix')) {
-        return 'sellix';
-      }
+  const [activeView, setActiveViewState] = useState<AppView>(viewFromLocation);
+
+  // Keep /privacy as a real, shareable URL; other views live at the site root.
+  const setActiveView = useCallback((view: AppView) => {
+    const targetPath = view === 'privacy' ? PRIVACY_PATH : '/';
+    if (window.location.pathname !== targetPath) {
+      window.history.pushState(null, '', targetPath);
     }
-    return 'landing';
-  });
-  
+    setActiveViewState(view);
+  }, []);
+
+  useEffect(() => {
+    const onPopState = () => setActiveViewState(viewFromLocation());
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
+
   const [activeUserId, setActiveUserId] = useState<string>('guest');
   const activeUserIdRef = useRef(activeUserId);
   const [holdings, setHoldings] = useState<Holding[]>(INITIAL_HOLDINGS);
@@ -209,10 +219,10 @@ export default function App() {
         </div>
       )}
 
-      {/* Main View Router: Landing Page vs. Interactive App Dashboard vs. Standalone Sellix Hero Page */}
-      {activeView === 'sellix' ? (
+      {/* Main View Router: Landing Page vs. Interactive App Dashboard vs. Privacy & Cookies */}
+      {activeView === 'privacy' ? (
         <Suspense fallback={<ViewFallback />}>
-          <SellixHeroView onBack={() => setActiveView('landing')} />
+          <PrivacyPage onBack={() => setActiveView('landing')} />
         </Suspense>
       ) : activeView === 'landing' ? (
         <main>
@@ -295,6 +305,7 @@ export default function App() {
           <Footer
             onNavigateSection={handleNavigateSection}
             onOpenWaitlist={() => handleOpenWaitlist()}
+            onOpenPrivacy={() => setActiveView('privacy')}
           />
         </main>
       ) : (

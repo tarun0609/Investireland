@@ -1,19 +1,8 @@
 import React, { useState } from 'react';
 import { Currency, Holding } from '../types';
-import { computeFinancialXRay } from '../services/financialXRayService';
+import { computeFinancialXRay, TOP5_CONCENTRATION_PCT } from '../services/financialXRayService';
 import { formatCurrency, convertFromEUR } from '../services/fiscalDataService';
-import { 
-  Layers, 
-  Sparkles, 
-  AlertCircle, 
-  TrendingDown, 
-  Globe2, 
-  Coins, 
-  CheckCircle2, 
-  ArrowRight,
-  ShieldAlert,
-  Flame
-} from 'lucide-react';
+import { Layers, Sparkles, TrendingDown, Globe2, ArrowRight } from 'lucide-react';
 
 interface FinancialXRaySectionProps {
   currentCurrency: Currency;
@@ -47,7 +36,7 @@ export const FinancialXRaySection: React.FC<FinancialXRaySectionProps> = ({
     };
   });
 
-  const xray = computeFinancialXRay(activeHoldings);
+  const xray = computeFinancialXRay(activeHoldings, currentCurrency);
 
   return (
     <section id="financial-xray" className="py-20 bg-slate-50 border-b border-slate-200">
@@ -69,9 +58,11 @@ export const FinancialXRaySection: React.FC<FinancialXRaySectionProps> = ({
 
         {/* Shock Scenario Selector */}
         <div className="mt-8 flex justify-center">
-          <div className="bg-white p-1 rounded-xl border border-slate-200 shadow-xs flex items-center text-xs font-bold">
+          <div className="bg-white p-1 rounded-xl border border-slate-200 shadow-xs flex flex-wrap justify-center items-center gap-1 text-xs font-bold max-w-full" role="group" aria-label="Stress test scenario">
             <span className="text-slate-500 px-3 hidden sm:inline">Stress Test:</span>
             <button
+              type="button"
+              aria-pressed={shockScenario === 'normal'}
               onClick={() => setShockScenario('normal')}
               className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
                 shockScenario === 'normal'
@@ -82,6 +73,8 @@ export const FinancialXRaySection: React.FC<FinancialXRaySectionProps> = ({
               Baseline Snapshot
             </button>
             <button
+              type="button"
+              aria-pressed={shockScenario === 'market_drop'}
               onClick={() => setShockScenario('market_drop')}
               className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1 ${
                 shockScenario === 'market_drop'
@@ -93,6 +86,8 @@ export const FinancialXRaySection: React.FC<FinancialXRaySectionProps> = ({
               <span>Simulate -20% Market Fall</span>
             </button>
             <button
+              type="button"
+              aria-pressed={shockScenario === 'fx_shift'}
               onClick={() => setShockScenario('fx_shift')}
               className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1 ${
                 shockScenario === 'fx_shift'
@@ -101,7 +96,7 @@ export const FinancialXRaySection: React.FC<FinancialXRaySectionProps> = ({
               }`}
             >
               <Globe2 className="w-3.5 h-3.5" />
-              <span>Simulate FX Shift (INR &darr; / USD &uarr;)</span>
+              <span>Simulate FX Shift (INR &minus;10% / USD +8%)</span>
             </button>
           </div>
         </div>
@@ -115,7 +110,7 @@ export const FinancialXRaySection: React.FC<FinancialXRaySectionProps> = ({
               <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
                 Net Tracked Financial Assets
               </span>
-              <div className="flex items-baseline gap-3 mt-1">
+              <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 mt-1">
                 <span className="text-3xl sm:text-4xl font-extrabold text-slate-950 font-mono">
                   {formatCurrency(convertFromEUR(xray.totalAssetsEUR, currentCurrency), currentCurrency)}
                 </span>
@@ -129,7 +124,7 @@ export const FinancialXRaySection: React.FC<FinancialXRaySectionProps> = ({
 
             <div className="flex items-center gap-2">
               <span className="text-xs font-medium text-slate-500">
-                {activeHoldings.length} Positions tracked across Ireland, India &amp; US
+                {activeHoldings.length} {activeHoldings.length === 1 ? 'position' : 'positions'} tracked
               </span>
             </div>
           </div>
@@ -143,14 +138,14 @@ export const FinancialXRaySection: React.FC<FinancialXRaySectionProps> = ({
                 <span className="text-xs font-bold uppercase text-slate-700 tracking-wider">
                   Asset Allocation
                 </span>
-                <span className="text-xs text-slate-500 font-mono">100% Total</span>
+                <span className="text-xs text-slate-500 font-mono">% of total</span>
               </div>
 
               {/* Stacked Bar */}
               <div className="h-3 w-full rounded-full overflow-hidden flex bg-slate-200">
-                {xray.assetAllocation.map((a, idx) => (
+                {xray.assetAllocation.map((a) => (
                   <div
-                    key={idx}
+                    key={a.category}
                     style={{ width: `${a.percentage}%`, backgroundColor: a.color }}
                     title={`${a.category}: ${a.percentage}%`}
                     className="h-full transition-all"
@@ -160,10 +155,10 @@ export const FinancialXRaySection: React.FC<FinancialXRaySectionProps> = ({
 
               {/* Legend List */}
               <div className="grid grid-cols-2 gap-2 mt-4 text-xs">
-                {xray.assetAllocation.map((a, idx) => (
-                  <div key={idx} className="flex items-center justify-between">
-                    <span className="flex items-center gap-1.5 text-slate-600">
-                      <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: a.color }} />
+                {xray.assetAllocation.map((a) => (
+                  <div key={a.category} className="flex items-center justify-between gap-2 min-w-0">
+                    <span className="flex items-center gap-1.5 text-slate-600 min-w-0">
+                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: a.color }} />
                       <span className="truncate">{a.category}</span>
                     </span>
                     <span className="font-mono font-bold text-slate-900">{a.percentage}%</span>
@@ -183,9 +178,9 @@ export const FinancialXRaySection: React.FC<FinancialXRaySectionProps> = ({
 
               {/* Stacked Bar */}
               <div className="h-3 w-full rounded-full overflow-hidden flex bg-slate-200">
-                {xray.geographicExposure.map((g, idx) => (
+                {xray.geographicExposure.map((g) => (
                   <div
-                    key={idx}
+                    key={g.country}
                     style={{ width: `${g.percentage}%`, backgroundColor: g.color }}
                     title={`${g.country}: ${g.percentage}%`}
                     className="h-full transition-all"
@@ -195,8 +190,8 @@ export const FinancialXRaySection: React.FC<FinancialXRaySectionProps> = ({
 
               {/* Legend List */}
               <div className="grid grid-cols-2 gap-2 mt-4 text-xs">
-                {xray.geographicExposure.map((g, idx) => (
-                  <div key={idx} className="flex items-center justify-between">
+                {xray.geographicExposure.map((g) => (
+                  <div key={g.country} className="flex items-center justify-between gap-2">
                     <span className="flex items-center gap-1.5 text-slate-600">
                       <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: g.color }} />
                       <span>{g.country}</span>
@@ -222,9 +217,9 @@ export const FinancialXRaySection: React.FC<FinancialXRaySectionProps> = ({
 
               <div className="space-y-3 text-xs">
                 <div>
-                  <div className="flex justify-between text-slate-700 mb-1">
-                    <span>Largest Single Holding ({xray.concentration.topHoldingName}):</span>
-                    <span className="font-mono font-bold">{xray.concentration.topHoldingPct}%</span>
+                  <div className="flex justify-between gap-2 text-slate-700 mb-1">
+                    <span className="min-w-0 truncate" title={xray.concentration.topHoldingName}>Largest Single Holding ({xray.concentration.topHoldingName}):</span>
+                    <span className="font-mono font-bold shrink-0">{xray.concentration.topHoldingPct}%</span>
                   </div>
                   <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
                     <div 
@@ -241,7 +236,7 @@ export const FinancialXRaySection: React.FC<FinancialXRaySectionProps> = ({
                   </div>
                   <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
                     <div 
-                      className={`h-2 rounded-full ${xray.concentration.top5Pct > 45 ? 'bg-amber-500' : 'bg-emerald-600'}`}
+                      className={`h-2 rounded-full ${xray.concentration.top5Pct > TOP5_CONCENTRATION_PCT && activeHoldings.length > 5 ? 'bg-amber-500' : 'bg-emerald-600'}`}
                       style={{ width: `${xray.concentration.top5Pct}%` }}
                     />
                   </div>
@@ -260,7 +255,7 @@ export const FinancialXRaySection: React.FC<FinancialXRaySectionProps> = ({
 
               <div className="space-y-2 text-xs">
                 {xray.currencyExposure.map((c) => (
-                  <div key={c.currency} className="flex items-center justify-between">
+                  <div key={c.currency} className="flex items-center justify-between gap-2">
                     <span className="font-semibold text-slate-700">
                       {c.currency === 'EUR' ? 'Euro (€ EUR)' : c.currency === 'INR' ? 'Indian Rupee (₹ INR)' : c.currency === 'USD' ? 'US Dollar ($ USD)' : 'British Pound (£ GBP)'}
                     </span>
@@ -282,10 +277,13 @@ export const FinancialXRaySection: React.FC<FinancialXRaySectionProps> = ({
             </div>
             <div>
               <div className="text-xs font-bold uppercase tracking-wider text-emerald-800">
-                AI Financial Diagnosis (Plain English)
+                Automated Summary (rule-based, plain English)
               </div>
               <p className="text-sm text-slate-800 mt-1 leading-relaxed">
-                "{xray.aiDiagnosis}"
+                {xray.aiDiagnosis}
+              </p>
+              <p className="text-[11px] text-slate-500 mt-1.5">
+                Uses bundled indicative FX rates. General information only, not financial advice.
               </p>
             </div>
           </div>
@@ -295,6 +293,7 @@ export const FinancialXRaySection: React.FC<FinancialXRaySectionProps> = ({
         {/* CTA */}
         <div className="mt-10 flex justify-center">
           <button
+            type="button"
             onClick={onOpenDashboard}
             className="inline-flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold bg-emerald-700 hover:bg-emerald-800 text-white shadow-sm transition-all cursor-pointer"
           >

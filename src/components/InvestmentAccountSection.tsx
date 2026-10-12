@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { 
   Calendar, 
   Coins, 
@@ -44,6 +44,13 @@ export const InvestmentAccountSection: React.FC<InvestmentAccountSectionProps> =
   const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
   const [isDirectDownloading, setIsDirectDownloading] = useState(false);
   const [downloadSuccessToast, setDownloadSuccessToast] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const isExportingRef = useRef(false);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+  }, []);
 
   // Use props if provided, otherwise local state
   const currentAccount = propInvestmentAccount || localAccount;
@@ -56,10 +63,15 @@ export const InvestmentAccountSection: React.FC<InvestmentAccountSectionProps> =
   const threshold = currentAccount.taxFreeThreshold || 50000;
   const remainingShelter = Math.max(0, threshold - accountValue);
   const allowancePercent = Math.min(100, Math.round((annualContrib / annualLimit) * 100));
+  const allowanceFull = remainingAllowance <= 0;
 
   // Direct 1-click PDF download handler
   const handleQuickExportPdf = async () => {
+    // Guard against rapid repeated clicks before the disabled state re-renders
+    if (isExportingRef.current) return;
+    isExportingRef.current = true;
     setIsDirectDownloading(true);
+    setExportError(null);
     try {
       const { generateInvestmentAccountPdf } = await import('../services/pdfExportService');
       const doc = generateInvestmentAccountPdf({
@@ -74,10 +86,13 @@ export const InvestmentAccountSection: React.FC<InvestmentAccountSectionProps> =
       const today = new Date().toISOString().split('T')[0];
       doc.save(`InvestIreland_InvestmentAccount_Summary_${today}.pdf`);
       setDownloadSuccessToast(true);
-      setTimeout(() => setDownloadSuccessToast(false), 4000);
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+      toastTimerRef.current = setTimeout(() => setDownloadSuccessToast(false), 4000);
     } catch (err) {
       console.error('Quick PDF export error:', err);
+      setExportError('Sorry, the PDF could not be generated. Please try again.');
     } finally {
+      isExportingRef.current = false;
       setIsDirectDownloading(false);
     }
   };
@@ -89,15 +104,18 @@ export const InvestmentAccountSection: React.FC<InvestmentAccountSectionProps> =
     if (onAddContribution) {
       onAddContribution(depositAmount, provider);
     } else {
+      // Mirror the app-level rule: never record more than the remaining annual allowance
+      const allowed = Math.min(depositAmount, remainingAllowance);
+      if (allowed <= 0) return;
       const updated: InvestmentAccountState = {
         ...currentAccount,
-        accountValue: currentAccount.accountValue + depositAmount,
-        annualContributions: Math.min(annualLimit, currentAccount.annualContributions + depositAmount),
+        accountValue: accountValue + allowed,
+        annualContributions: annualContrib + allowed,
         history: [
           {
             id: `tx_${Date.now()}`,
             date: new Date().toISOString().split('T')[0],
-            amount: depositAmount,
+            amount: allowed,
             provider,
             type: 'Contribution'
           },
@@ -220,7 +238,7 @@ export const InvestmentAccountSection: React.FC<InvestmentAccountSectionProps> =
                 Budget 2027 Investment Account Ledger &amp; PDF Export
               </h3>
               <p className="text-xs text-slate-600 mt-0.5">
-                Generate and download an official, formatted PDF summary of your annual allowance, tax-free headroom, and complete transaction log.
+                Generate and download a formatted PDF summary of your annual allowance, tax-free headroom, and complete transaction log.
               </p>
             </div>
 
@@ -259,8 +277,9 @@ export const InvestmentAccountSection: React.FC<InvestmentAccountSectionProps> =
               <button
                 type="button"
                 onClick={handleAddSampleDeposit}
-                className="px-3 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs inline-flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap"
-                title="Add a sample €1,000 planned deposit to test live ledger updates"
+                disabled={allowanceFull}
+                className="px-3 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 disabled:opacity-50 disabled:cursor-not-allowed text-slate-700 font-bold text-xs inline-flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap"
+                title={allowanceFull ? 'The annual contribution allowance has been reached' : 'Add a sample €1,000 planned deposit (capped at your remaining allowance)'}
               >
                 <Plus className="w-3.5 h-3.5 text-emerald-600" />
                 <span>Record €1k Deposit</span>
@@ -273,6 +292,12 @@ export const InvestmentAccountSection: React.FC<InvestmentAccountSectionProps> =
             <div className="mt-4 p-3 bg-emerald-50 border border-emerald-300 rounded-xl text-xs font-bold text-emerald-900 flex items-center gap-2 animate-in fade-in">
               <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
               <span>Investment Account Summary PDF generated and downloaded to your device!</span>
+            </div>
+          )}
+          {exportError && (
+            <div role="alert" className="mt-4 p-3 bg-rose-50 border border-rose-300 rounded-xl text-xs font-bold text-rose-900 flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+              <span>{exportError}</span>
             </div>
           )}
 
@@ -302,7 +327,7 @@ export const InvestmentAccountSection: React.FC<InvestmentAccountSectionProps> =
                 </span>
               </div>
               <div className="text-3xl font-black text-emerald-800 font-mono mt-1">
-                €{annualContrib.toLocaleString('en-IE')} <span className="text-sm font-normal text-slate-400">/ €12,000</span>
+                €{annualContrib.toLocaleString('en-IE')} <span className="text-sm font-normal text-slate-400">/ €{annualLimit.toLocaleString('en-IE')}</span>
               </div>
               
               {/* Allowance progress bar */}
@@ -410,7 +435,7 @@ export const InvestmentAccountSection: React.FC<InvestmentAccountSectionProps> =
               <FileDown className="w-5 h-5 text-emerald-700 shrink-0" />
               <div className="text-slate-800">
                 <span className="font-bold text-emerald-950 block">Need a printable dossier for your records or tax advisor?</span>
-                <span className="text-slate-600 text-[11px]">The PDF includes official reference numbers, statutory citations (TCA 1997 s.739D), and Department of Finance guidelines.</span>
+                <span className="text-slate-600 text-[11px]">The PDF includes your ledger, statutory citations (TCA 1997 s.739D) and links to Department of Finance guidance.</span>
               </div>
             </div>
             <button
@@ -420,7 +445,7 @@ export const InvestmentAccountSection: React.FC<InvestmentAccountSectionProps> =
               className="px-4 py-2 bg-emerald-800 hover:bg-emerald-900 disabled:opacity-50 text-white font-bold rounded-xl text-xs inline-flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 shadow-2xs"
             >
               <Download className="w-3.5 h-3.5" />
-              <span>Download PDF Summary</span>
+              <span>{isDirectDownloading ? 'Preparing PDF...' : 'Download PDF Summary'}</span>
             </button>
           </div>
 
@@ -465,7 +490,7 @@ export const InvestmentAccountSection: React.FC<InvestmentAccountSectionProps> =
           <div className="mt-6 pt-5 border-t border-slate-200/80 flex items-start gap-3 text-xs text-slate-700">
             <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
             <p>
-              <strong>Official Disclaimer:</strong> These figures reflect the Budget 2027 framework announced by the Department of Finance and the Irish Government. Detailed legislation, administrative rules, and eligible provider specifications are subject to parliamentary debate and final enactment.
+              <strong>Disclaimer:</strong> These figures reflect the Budget 2027 framework as announced by the Department of Finance and the Irish Government. Detailed legislation, administrative rules, and eligible provider specifications are subject to parliamentary debate and final enactment.
             </p>
           </div>
         </div>
@@ -473,6 +498,7 @@ export const InvestmentAccountSection: React.FC<InvestmentAccountSectionProps> =
         {/* Section CTAs */}
         <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
           <button
+            type="button"
             onClick={onExploreCalculator}
             className="inline-flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-semibold bg-emerald-700 hover:bg-emerald-800 text-white shadow-sm transition-all cursor-pointer"
           >
@@ -483,13 +509,15 @@ export const InvestmentAccountSection: React.FC<InvestmentAccountSectionProps> =
           <button
             type="button"
             onClick={handleQuickExportPdf}
-            className="inline-flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-semibold bg-slate-900 hover:bg-black text-white shadow-sm transition-all cursor-pointer"
+            disabled={isDirectDownloading}
+            className="inline-flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-semibold bg-slate-900 hover:bg-black disabled:opacity-50 text-white shadow-sm transition-all cursor-pointer"
           >
             <FileDown className="w-4 h-4 text-emerald-400" />
             <span>Export Account Summary (PDF)</span>
           </button>
 
           <button
+            type="button"
             onClick={onOpenWaitlist}
             className="inline-flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-semibold bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 transition-all cursor-pointer"
           >

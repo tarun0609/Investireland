@@ -2,8 +2,6 @@ import express from 'express';
 import type { NextFunction, Request, Response } from 'express';
 import helmet from 'helmet';
 import { rateLimit } from 'express-rate-limit';
-import path from 'path';
-import fs from 'fs';
 import crypto from 'crypto';
 import { createAuthMiddleware, type AuthedRequest, type IdTokenVerifier } from './auth';
 import type { Mailer, MailTransportKind } from './mailer';
@@ -86,10 +84,10 @@ export function buildContentSecurityPolicy(isProduction: boolean) {
       objectSrc: ["'none'"],
       formAction: ["'self'"],
       scriptSrc: ["'self'", 'https://apis.google.com', 'https://www.gstatic.com'],
-      styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
-      fontSrc: ["'self'", 'https://fonts.gstatic.com', 'data:'],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      fontSrc: ["'self'", 'data:'],
       imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
-      mediaSrc: ["'self'", 'https://d8j0ntlcm91z4.cloudfront.net'],
+      mediaSrc: ["'self'"],
       connectSrc: [
         "'self'",
         'https://*.googleapis.com',
@@ -158,19 +156,6 @@ export function createApp(deps: AppDependencies) {
     list.unshift(entry);
     emailLogs.set(uid, list.slice(0, MAX_EMAIL_LOGS_PER_USER));
   };
-
-  // Standalone marketing page. It uses an inline script, so it gets its own CSP.
-  app.get(['/sellix', '/sellix.html'], (_req: Request, res: Response) => {
-    const filePath = path.resolve(process.cwd(), 'sellix.html');
-    if (!fs.existsSync(filePath)) return res.status(404).send('Page not found');
-    if (deps.isProduction) {
-      res.setHeader(
-        'Content-Security-Policy',
-        "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: https:; media-src 'self' https://d8j0ntlcm91z4.cloudfront.net; frame-ancestors 'self' https://*.run.app https://*.ai.studio; object-src 'none'; base-uri 'self'"
-      );
-    }
-    return res.sendFile(filePath);
-  });
 
   app.get('/api/health', (_req: Request, res: Response) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
