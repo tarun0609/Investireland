@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { ArrowLeft, Cookie, Database, Mail, ShieldCheck, Trash2 } from 'lucide-react';
+import { CONTACT_EMAILS } from '../config/contact';
 
 interface PrivacyPageProps {
   onBack: () => void;
@@ -148,7 +149,11 @@ export const PrivacyPage: React.FC<PrivacyPageProps> = ({ onBack }) => {
         <p className="flex items-start gap-2">
           <Mail className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" aria-hidden="true" />
           <span>
-            To make a request, reply to any email you have received from InvestIreland AI. You can also complain to the Data Protection
+            To make a request, email{' '}
+            <a href={`mailto:${CONTACT_EMAILS.support}?subject=Data%20protection%20request`} className="font-semibold text-emerald-700 underline hover:text-emerald-900">
+              {CONTACT_EMAILS.support}
+            </a>{' '}
+            from the address linked to your account. We reply within one month. You can also complain to the Data Protection
             Commission at{' '}
             <a href="https://www.dataprotection.ie" target="_blank" rel="noopener noreferrer" className="font-semibold text-emerald-700 underline hover:text-emerald-900">
               dataprotection.ie

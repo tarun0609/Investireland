@@ -27,7 +27,8 @@ export type Mailer = (mail: OutgoingMail) => Promise<MailSendResult>;
  */
 export function createMailer(env: NodeJS.ProcessEnv = process.env, isProduction = false): Mailer {
   let cached: { transporter: Transporter; kind: MailTransportKind } | null = null;
-  const from = `"InvestIreland AI" <${env.SYSTEM_DISPATCHER_EMAIL || 'notifications@investireland.ai'}>`;
+  const from = `"InvestIreland AI" <${env.SYSTEM_DISPATCHER_EMAIL || 'notifications@investirelandai.ie'}>`;
+  const replyTo = env.REPLY_TO_EMAIL || 'hello@investirelandai.ie';
 
   const getTransport = async () => {
     if (cached) return cached;
@@ -67,7 +68,7 @@ export function createMailer(env: NodeJS.ProcessEnv = process.env, isProduction 
 
   return async (mail: OutgoingMail) => {
     const { transporter, kind } = await getTransport();
-    const info = await transporter.sendMail({ from, replyTo: from, ...mail });
+    const info = await transporter.sendMail({ from, replyTo, ...mail });
     return {
       messageId: info.messageId || `msg_${Date.now()}`,
       transport: kind,
