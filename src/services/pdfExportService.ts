@@ -334,7 +334,7 @@ export interface InvestmentAccountPdfOptions {
 export function generateInvestmentAccountPdf({
   userName = typeof window !== 'undefined' ? (localStorage.getItem('investireland_user_name') || 'Valued Investor') : 'Valued Investor',
   userEmail,
-  taxResidencyStatus = 'Irish Tax Resident (PPSN Verified, TCA 1997)',
+  taxResidencyStatus = 'Self-declared tax residency',
   investmentAccount,
   currentCurrency = 'EUR',
   customNotes,

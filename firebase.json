@@ -1,0 +1,11 @@
+{
+  "firestore": {
+    "database": "ai-studio-investirelandaii-6a889693-6842-4c14-bbe8-0e5ec82a479e",
+    "rules": "firestore.rules"
+  },
+  "functions": {
+    "source": "functions",
+    "predeploy": ["npm --prefix \"$RESOURCE_DIR\" run build"]
+  }
+}
+

@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { Currency, InvestmentAccountState } from '../types';
-import { generateInvestmentAccountPdf } from '../services/pdfExportService';
 import { getActiveUser } from '../services/authEmailService';
 import { 
   FileDown, 
@@ -50,13 +49,14 @@ export const InvestmentAccountPdfModal: React.FC<InvestmentAccountPdfModalProps>
 
   if (!isOpen) return null;
 
-  const handleDownloadPdf = () => {
+  const handleDownloadPdf = async () => {
     setIsDownloading(true);
     try {
+      const { generateInvestmentAccountPdf } = await import('../services/pdfExportService');
       const doc = generateInvestmentAccountPdf({
         userName,
         userEmail: email,
-        taxResidencyStatus: activeUser?.taxResidencyStatus || 'Irish Tax Resident (PPSN Verified, TCA 1997)',
+        taxResidencyStatus: activeUser?.taxResidencyStatus || 'Self-declared tax residency',
         investmentAccount,
         currentCurrency,
         customNotes,

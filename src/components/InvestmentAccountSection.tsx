@@ -19,8 +19,7 @@ import {
 } from 'lucide-react';
 import { Currency, InvestmentAccountState } from '../types';
 import { getActiveUser } from '../services/authEmailService';
-import { loadInvestmentAccountState, saveInvestmentAccountState } from '../services/portfolioService';
-import { generateInvestmentAccountPdf } from '../services/pdfExportService';
+import { INITIAL_INVESTMENT_ACCOUNT_STATE } from '../data/mockData';
 import { InvestmentAccountPdfModal } from './InvestmentAccountPdfModal';
 
 interface InvestmentAccountSectionProps {
@@ -40,7 +39,7 @@ export const InvestmentAccountSection: React.FC<InvestmentAccountSectionProps> =
 }) => {
   const activeUser = getActiveUser();
   const [localAccount, setLocalAccount] = useState<InvestmentAccountState>(() => {
-    return propInvestmentAccount || loadInvestmentAccountState(activeUser.id);
+    return propInvestmentAccount || INITIAL_INVESTMENT_ACCOUNT_STATE;
   });
   const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
   const [isDirectDownloading, setIsDirectDownloading] = useState(false);
@@ -59,13 +58,14 @@ export const InvestmentAccountSection: React.FC<InvestmentAccountSectionProps> =
   const allowancePercent = Math.min(100, Math.round((annualContrib / annualLimit) * 100));
 
   // Direct 1-click PDF download handler
-  const handleQuickExportPdf = () => {
+  const handleQuickExportPdf = async () => {
     setIsDirectDownloading(true);
     try {
+      const { generateInvestmentAccountPdf } = await import('../services/pdfExportService');
       const doc = generateInvestmentAccountPdf({
         userName: activeUser?.name || 'Investor',
         userEmail: activeUser?.email,
-        taxResidencyStatus: activeUser?.taxResidencyStatus || 'Irish Tax Resident (PPSN Verified, TCA 1997)',
+        taxResidencyStatus: activeUser?.taxResidencyStatus || 'Self-declared tax residency',
         investmentAccount: currentAccount,
         currentCurrency,
         customNotes: 'Exported from InvestIreland Investment Account statutory overview module.'
@@ -105,7 +105,6 @@ export const InvestmentAccountSection: React.FC<InvestmentAccountSectionProps> =
         ]
       };
       setLocalAccount(updated);
-      saveInvestmentAccountState(activeUser.id, updated);
     }
   };
 

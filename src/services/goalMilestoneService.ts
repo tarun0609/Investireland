@@ -1,5 +1,6 @@
 import { FinancialGoalMilestone, GoalMilestoneSummary, LifeStageCategory, Currency, Holding } from '../types';
 import { convertToEUR, convertFromEUR } from './fiscalDataService';
+import { scopedStorageKey } from './storageScope';
 
 const STORAGE_KEY = 'investireland_goal_milestones_v1';
 
@@ -183,7 +184,7 @@ export const INITIAL_DEFAULT_GOALS: FinancialGoalMilestone[] = [
 
 export function getStoredGoalMilestones(): FinancialGoalMilestone[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(scopedStorageKey(STORAGE_KEY));
     if (!raw) {
       saveGoalMilestones(INITIAL_DEFAULT_GOALS);
       return INITIAL_DEFAULT_GOALS;
@@ -200,7 +201,7 @@ export function getStoredGoalMilestones(): FinancialGoalMilestone[] {
 
 export function saveGoalMilestones(goals: FinancialGoalMilestone[]): void {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(goals));
+    localStorage.setItem(scopedStorageKey(STORAGE_KEY), JSON.stringify(goals));
   } catch (err) {
     console.error('Failed to save goal milestones to localStorage:', err);
   }

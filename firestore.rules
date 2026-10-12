@@ -1,7 +1,7 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // 1. Global Default-Deny Catch-All
+    // Default deny. Every allowed path is listed explicitly below.
     match /{document=**} {
       allow read, write: if false;
     }
@@ -18,74 +18,94 @@ service cloud.firestore {
       return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
+    function tokenEmail() {
+      return request.auth.token.get('email', '').lower();
+    }
+
+    // Fields only the trusted backend (Admin SDK) may set.
+    function serverManagedUserFields() {
+      return ['welcomeEmailSent', 'welcomeEmailDispatchedAt'];
+    }
+
+    function optionalNumber(data, field) {
+      return !(field in data) || data[field] == null || data[field] is number;
+    }
+
     function isValidUser(data) {
       return data.keys().hasAll(['uid', 'name', 'email', 'country', 'registeredAt']) &&
-             data.uid is string &&
+             data.uid == request.auth.uid &&
              data.name is string && data.name.size() > 0 && data.name.size() <= 120 &&
-             data.email is string && data.email.size() <= 200 &&
+             data.email is string && data.email == tokenEmail() &&
              data.country is string && data.country.size() <= 100 &&
-             data.registeredAt is string;
+             data.registeredAt is string && data.registeredAt.size() <= 40 &&
+             optionalNumber(data, 'targetLifeGoalAmount');
     }
 
-    function isValidHolding(data) {
+    function isValidHolding(data, holdingId) {
       return data.keys().hasAll(['holdingId', 'userId', 'name', 'category', 'currency']) &&
-             data.holdingId is string &&
-             data.userId is string &&
-             data.name is string && data.name.size() <= 150 &&
-             data.category is string &&
-             data.currency is string;
+             data.holdingId == holdingId &&
+             data.userId == request.auth.uid &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 150 &&
+             data.category is string && data.category.size() <= 60 &&
+             data.currency in ['EUR', 'INR', 'USD', 'GBP'] &&
+             optionalNumber(data, 'units') &&
+             optionalNumber(data, 'unitPrice') &&
+             optionalNumber(data, 'currentValue') &&
+             optionalNumber(data, 'purchaseValue') &&
+             (!('notes' in data) || (data.notes is string && data.notes.size() <= 1000));
     }
 
-    function isValidMilestone(data) {
+    function isValidMilestone(data, milestoneId) {
       return data.keys().hasAll(['milestoneId', 'userId', 'title', 'targetAmountEUR']) &&
-             data.milestoneId is string &&
-             data.userId is string &&
-             data.title is string && data.title.size() <= 200 &&
-             data.targetAmountEUR is number;
+             data.milestoneId == milestoneId &&
+             data.userId == request.auth.uid &&
+             data.title is string && data.title.size() > 0 && data.title.size() <= 200 &&
+             data.targetAmountEUR is number && data.targetAmountEUR >= 0 &&
+             optionalNumber(data, 'currentAmountEUR');
     }
 
-    // User profile documents
+    function isValidAccount(data) {
+      return data.keys().hasAll(['accountValue', 'annualContributions', 'annualLimit']) &&
+             data.accountValue is number && data.accountValue >= 0 &&
+             data.annualContributions is number && data.annualContributions >= 0 &&
+             data.annualLimit is number && data.annualContributions <= data.annualLimit &&
+             (!('history' in data) || (data.history is list && data.history.size() <= 500));
+    }
+
     match /users/{userId} {
       allow get: if isOwner(userId) && isValidId(userId);
       allow list: if false;
-      allow create: if isOwner(userId) && isValidId(userId) && request.resource.data.uid == request.auth.uid && isValidUser(request.resource.data);
-      allow update: if isOwner(userId) && isValidId(userId) && request.resource.data.uid == request.auth.uid && isValidUser(request.resource.data);
+      allow create: if isOwner(userId) && isValidId(userId) &&
+                       isValidUser(request.resource.data) &&
+                       !request.resource.data.keys().hasAny(serverManagedUserFields());
+      allow update: if isOwner(userId) && isValidId(userId) &&
+                       isValidUser(request.resource.data) &&
+                       !request.resource.data.diff(resource.data).affectedKeys().hasAny(serverManagedUserFields());
       allow delete: if isOwner(userId) && isValidId(userId);
 
-      // User portfolio investment holdings
       match /holdings/{holdingId} {
         allow get, list: if isOwner(userId);
-        allow create: if isOwner(userId) && isValidId(holdingId) && request.resource.data.userId == request.auth.uid && isValidHolding(request.resource.data);
-        allow update: if isOwner(userId) && isValidId(holdingId) && request.resource.data.userId == request.auth.uid && isValidHolding(request.resource.data);
+        allow create, update: if isOwner(userId) && isValidId(holdingId) && isValidHolding(request.resource.data, holdingId);
         allow delete: if isOwner(userId) && isValidId(holdingId);
       }
 
-      // User life stage financial milestones
       match /milestones/{milestoneId} {
         allow get, list: if isOwner(userId);
-        allow create: if isOwner(userId) && isValidId(milestoneId) && request.resource.data.userId == request.auth.uid && isValidMilestone(request.resource.data);
-        allow update: if isOwner(userId) && isValidId(milestoneId) && request.resource.data.userId == request.auth.uid && isValidMilestone(request.resource.data);
+        allow create, update: if isOwner(userId) && isValidId(milestoneId) && isValidMilestone(request.resource.data, milestoneId);
         allow delete: if isOwner(userId) && isValidId(milestoneId);
       }
 
-      // Transactional email dispatch audit records
+      // Email audit records are written only by the backend (Admin SDK bypasses rules).
       match /emails/{emailId} {
         allow get, list: if isOwner(userId);
-        allow create: if isOwner(userId) && isValidId(emailId);
-        allow update, delete: if false;
+        allow write: if false;
       }
 
-      // Investment accounts state and transaction records
       match /accounts/{accountId} {
         allow get, list: if isOwner(userId);
-        allow create, update: if isOwner(userId) && isValidId(accountId);
+        allow create, update: if isOwner(userId) && accountId == 'budget2027_investment_account' && isValidAccount(request.resource.data);
         allow delete: if isOwner(userId) && isValidId(accountId);
       }
-    }
-
-    // Connection testing doc
-    match /test/connection {
-      allow read: if true;
     }
   }
 }

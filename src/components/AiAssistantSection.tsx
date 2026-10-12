@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { askFinancialAI, AIChatMessage } from '../services/aiService';
+import { askFinancialAI, AIChatMessage, AI_MAX_MESSAGE_CHARS } from '../services/aiService';
 import { 
   Sparkles, 
   Send, 
@@ -33,8 +33,8 @@ export const AiAssistantSection: React.FC = () => {
       sender: 'assistant',
       text: 'Under Ireland’s Budget 2027 framework for the Personal Savings & Investment Account, the first €50,000 of account value or gains is 100% tax-free. If your portfolio grows to €65,000, you only pay a 1.0% annual charge on the €15,000 that sits above the threshold (€150/year). Crucially, the historical 41% exit tax and 8-year deemed disposal do not apply within this account.',
       timestamp: '10:00 AM',
-      sourceCitation: 'Department of Finance Budget 2027 Framework (gov.ie/finance) & Revenue TCA 1997',
-      isGrounded: true
+      sourceCitation: 'Example answer — verify with gov.ie/finance and revenue.ie',
+      isGrounded: false
     }
   ]);
 
@@ -63,8 +63,9 @@ export const AiAssistantSection: React.FC = () => {
         sender: 'assistant',
         text: res.reply,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        sourceCitation: res.source,
-        isGrounded: res.isGrounded
+        sourceCitation: res.notice ? ` — ` : res.source,
+        isGrounded: res.isGrounded,
+        mode: res.mode
       };
       setMessages(prev => [...prev, botMsg]);
     } catch (err) {
@@ -107,7 +108,7 @@ export const AiAssistantSection: React.FC = () => {
                   <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
                 </div>
                 <div className="text-[10px] text-slate-400">
-                  Grounded in Revenue.ie &middot; Department of Finance &middot; TCA 1997
+                  General information only &middot; not tax or financial advice &middot; verify on Revenue.ie
                 </div>
               </div>
             </div>
@@ -195,6 +196,8 @@ export const AiAssistantSection: React.FC = () => {
             <input
               type="text"
               value={inputQuery}
+              maxLength={AI_MAX_MESSAGE_CHARS}
+              aria-label="Ask the InvestIreland assistant"
               onChange={(e) => setInputQuery(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
               placeholder="Ask about the €12,000 account, Indian mutual funds, US RSUs..."
@@ -205,6 +208,7 @@ export const AiAssistantSection: React.FC = () => {
               disabled={!inputQuery.trim() || isLoading}
               className="p-2.5 bg-emerald-700 hover:bg-emerald-800 disabled:opacity-40 text-white rounded-xl transition-all cursor-pointer shadow-xs"
               title="Send inquiry"
+              aria-label="Send inquiry"
             >
               <Send className="w-4 h-4" />
             </button>

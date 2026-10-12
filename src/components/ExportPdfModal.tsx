@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { Currency, Holding, InvestmentAccountState, FinancialXRayData } from '../types';
-import { generatePortfolioPdf } from '../services/pdfExportService';
 import { formatCurrency, convertToEUR } from '../services/fiscalDataService';
 import { 
   FileDown, 
@@ -45,9 +44,10 @@ export const ExportPdfModal: React.FC<ExportPdfModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleDownloadPdf = () => {
+  const handleDownloadPdf = async () => {
     setIsDownloading(true);
     try {
+      const { generatePortfolioPdf } = await import('../services/pdfExportService');
       const doc = generatePortfolioPdf({
         userName,
         holdings,

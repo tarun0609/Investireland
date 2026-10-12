@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Currency, 
   Holding, 
@@ -17,8 +17,8 @@ import { TaxImpactEstimator } from './TaxImpactEstimator';
 import { DividendTracker } from './DividendTracker';
 import { FinancialGoalMilestones } from './FinancialGoalMilestones';
 import { CurrencyVolatilityHeatmap } from './CurrencyVolatilityHeatmap';
-import { UserAuthModal } from './UserAuthModal';
-import { getActiveUser, setActiveUser as persistActiveUser } from '../services/authEmailService';
+import { UserAuthModal, type AuthModalTab } from './UserAuthModal';
+import { getActiveUser, isDemoUser, subscribeToActiveUser, updateActiveUserProfile } from '../services/authEmailService';
 import { AuthUser } from '../types';
 import { 
   LayoutDashboard, 
@@ -49,8 +49,7 @@ import {
   Target,
   Mail,
   UserCheck,
-  Flame,
-  Database
+  Flame
 } from 'lucide-react';
 
 interface DashboardViewProps {
@@ -77,15 +76,19 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   // Real User Profile & Email Auth State
   const [activeUser, setActiveUserState] = useState<AuthUser>(() => getActiveUser());
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
-  const [authModalInitialTab, setAuthModalInitialTab] = useState<'register' | 'login' | 'outbox' | 'database'>('register');
+  const [authModalInitialTab, setAuthModalInitialTab] = useState<AuthModalTab | undefined>(undefined);
+  const isSignedIn = !isDemoUser(activeUser);
 
-  // User Profile & Dynamic Greeting State
-  const [userName, setUserName] = useState<string>(() => {
-    const saved = localStorage.getItem('investireland_user_name');
-    if (saved) return saved;
-    const u = getActiveUser();
-    return u?.name || 'Damak';
-  });
+  // Guests may personalise the greeting locally; signed-in users use their profile name.
+  const [guestName, setGuestName] = useState<string>(() => localStorage.getItem('investireland_guest_display_name') || '');
+  const userName = isSignedIn ? activeUser.name : guestName || activeUser.name;
+
+  useEffect(() => subscribeToActiveUser(setActiveUserState), []);
+
+  const openAuthModal = (tab?: AuthModalTab) => {
+    setAuthModalInitialTab(tab);
+    setIsAuthModalOpen(true);
+  };
   const [isEditingName, setIsEditingName] = useState(false);
   const [tempName, setTempName] = useState(userName);
   const [showPersonaInfo, setShowPersonaInfo] = useState(false);
@@ -98,11 +101,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     return 'Good evening';
   }, []);
 
-  const handleSaveName = (e: React.FormEvent) => {
+  const handleSaveName = async (e: React.FormEvent) => {
     e.preventDefault();
-    const trimmed = tempName.trim() || 'Investor';
-    setUserName(trimmed);
-    localStorage.setItem('investireland_user_name', trimmed);
+    const trimmed = tempName.trim().slice(0, 120) || 'Investor';
+    if (isSignedIn) {
+      await updateActiveUserProfile({ name: trimmed });
+    } else {
+      setGuestName(trimmed);
+      localStorage.setItem('investireland_guest_display_name', trimmed);
+    }
     setIsEditingName(false);
   };
 
@@ -215,20 +222,21 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               ) : (
                 <div className="flex flex-wrap items-center gap-2.5">
                   <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-                    {greeting}, {activeUser.name || userName}
+                    {greeting}, {userName}
                   </h1>
-                  {activeUser.emailVerified && activeUser.email !== 'priya.sharma@investireland.demo' ? (
+                  {isSignedIn && activeUser.emailVerified ? (
                     <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
                       <UserCheck className="w-3.5 h-3.5" />
                       <span>Verified Member</span>
                     </span>
                   ) : (
                     <button
-                      onClick={() => setIsAuthModalOpen(true)}
+                      type="button"
+                      onClick={() => openAuthModal()}
                       className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-200 transition-colors cursor-pointer"
                     >
                       <Mail className="w-3 h-3 text-emerald-600" />
-                      <span>Connect Email / Register</span>
+                      <span>{isSignedIn ? 'Verify email' : 'Sign in / Register'}</span>
                     </button>
                   )}
                   <button
@@ -275,30 +283,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
           <div className="flex flex-wrap items-center gap-2">
             <button
-              onClick={() => {
-                setAuthModalInitialTab('register');
-                setIsAuthModalOpen(true);
-              }}
+              type="button"
+              onClick={() => openAuthModal()}
               className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-emerald-50 border border-emerald-300 hover:bg-emerald-100 text-emerald-900 transition-all cursor-pointer shadow-xs"
-              title="Manage user registration, password credentials, and auto email outbox"
+              title="Sign in, register, or manage your account"
             >
               <Mail className="w-3.5 h-3.5 text-emerald-700" />
-              <span>{activeUser.email && activeUser.email !== 'priya.sharma@investireland.demo' ? activeUser.name : 'Account & Auto-Email'}</span>
-            </button>
-            <button
-              onClick={() => {
-                setAuthModalInitialTab('database');
-                setIsAuthModalOpen(true);
-              }}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-white border border-slate-300 hover:border-emerald-500 hover:text-emerald-900 text-slate-700 transition-all cursor-pointer shadow-xs"
-              title="Inspect Firebase Cloud Firestore database, collections & live sync"
-            >
-              <Database className="w-3.5 h-3.5 text-emerald-600" />
-              <span className="hidden sm:inline">Database</span>
-              <span className="flex items-center gap-1 text-[10px] text-emerald-800 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded font-bold">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                Connected
-              </span>
+              <span>{isSignedIn ? activeUser.name : 'Sign in'}</span>
             </button>
             <button
               onClick={() => setIsExportPdfOpen(true)}
@@ -1250,15 +1241,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
       {/* MODAL 4: USER AUTHENTICATION & EMAIL AUTO-RESPONSE ENGINE */}
       <UserAuthModal
-        key={authModalInitialTab}
+        key={authModalInitialTab ?? 'default'}
         isOpen={isAuthModalOpen}
         initialTab={authModalInitialTab}
         onClose={() => setIsAuthModalOpen(false)}
-        onUserChange={(newUser) => {
-          setActiveUserState(newUser);
-          setUserName(newUser.name);
-          localStorage.setItem('investireland_user_name', newUser.name);
-        }}
+        onUserChange={() => setActiveUserState(getActiveUser())}
       />
 
     </div>

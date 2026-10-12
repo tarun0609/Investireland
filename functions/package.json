@@ -2,10 +2,13 @@
   "name": "investireland-functions",
   "description": "Firebase Cloud Functions for InvestIreland AI - Auth Triggers & Transactional Emails",
   "scripts": {
+    "sync": "node scripts/sync-shared.mjs",
+    "prelint": "npm run sync",
     "lint": "tsc --noEmit",
+    "prebuild": "npm run sync",
     "build": "tsc",
-    "serve": "firebase emulators:start --only functions",
-    "shell": "firebase functions:shell",
+    "serve": "npm run build && firebase emulators:start --only functions",
+    "shell": "npm run build && firebase functions:shell",
     "start": "npm run shell",
     "deploy": "firebase deploy --only functions"
   },

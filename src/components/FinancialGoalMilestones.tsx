@@ -16,7 +16,7 @@ import {
   autoAllocatePortfolioToGoals
 } from '../services/goalMilestoneService';
 import { formatCurrency, convertToEUR, convertFromEUR } from '../services/fiscalDataService';
-import { sendMilestoneAutoEmail, getActiveUser } from '../services/authEmailService';
+import { sendMilestoneAutoEmail, getActiveUser, isDemoUser } from '../services/authEmailService';
 import { 
   Target, 
   Plus, 
@@ -228,24 +228,30 @@ export const FinancialGoalMilestones: React.FC<FinancialGoalMilestonesProps> = (
     const currentUser = getActiveUser();
     setActiveUser(currentUser);
 
+    if (isDemoUser(currentUser)) {
+      setEmailStatus({ loading: false, sent: false, message: 'Sign in or create an account to email milestone summaries to yourself.' });
+      return;
+    }
+    if (!currentUser.emailVerified) {
+      setEmailStatus({ loading: false, sent: false, message: 'Please verify your email address first (see Account > Resend verification email).' });
+      return;
+    }
+
     const targetGoal = goal || goals[0];
     const goalTitle = targetGoal ? targetGoal.title : 'All Life Stage Milestones';
     const targetAmount = targetGoal ? targetGoal.targetAmountEUR : summary.totalTargetEUR;
 
-    const res = await sendMilestoneAutoEmail({
-      email: currentUser.email,
-      name: currentUser.name,
-      goalTitle,
-      targetAmount,
-      triggerType: 'MILESTONE_UPDATE'
-    });
+    const res = await sendMilestoneAutoEmail({ goalTitle, targetAmount, currency: 'EUR' });
 
     if (res.success) {
+      const simulated = res.emailDispatch?.status === 'SIMULATED';
       setEmailStatus({
         loading: false,
         sent: true,
         previewUrl: res.emailDispatch?.previewUrl,
-        message: `Auto-response email sent to ${currentUser.email} with your milestone progress!`
+        message: simulated
+          ? 'The email was generated but not delivered because outgoing mail (SMTP) is not configured on this server.'
+          : `We sent your milestone summary to ${currentUser.email}.`
       });
     } else {
       setEmailStatus({
@@ -845,20 +851,17 @@ export const FinancialGoalMilestones: React.FC<FinancialGoalMilestonesProps> = (
                 <div className="w-14 h-14 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center mx-auto mb-3">
                   <CheckCircle2 className="w-8 h-8" />
                 </div>
-                <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-800 bg-emerald-50 px-3 py-1 rounded-full">
-                  Auto-Response Delivered
-                </span>
                 <h3 className="text-xl font-black text-slate-900 mt-3">
-                  Email Sent Successfully!
+                  Milestone summary
                 </h3>
-                <p className="text-xs text-slate-600 mt-2 leading-relaxed">
-                  We dispatched your full cross-border milestone roadmap to <strong className="text-slate-800">{activeUser.email}</strong>.
+                <p role="status" className="text-xs text-slate-600 mt-2 leading-relaxed">
+                  {emailStatus.message}
                 </p>
 
-                {emailStatus.previewUrl && (
+                {emailStatus.previewUrl && /^https?:\/\//.test(emailStatus.previewUrl) && (
                   <div className="mt-4 p-3 bg-blue-50 rounded-xl border border-blue-200 text-left">
                     <span className="text-[11px] font-bold text-blue-900 block mb-1">
-                      📬 Live Mailbox Preview URL (Ethereal SMTP):
+                      Test mailbox preview (development only):
                     </span>
                     <a
                       href={emailStatus.previewUrl}
@@ -887,7 +890,7 @@ export const FinancialGoalMilestones: React.FC<FinancialGoalMilestonesProps> = (
                       }}
                       className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 font-bold text-xs cursor-pointer hover:bg-slate-50"
                     >
-                      Manage Email Credentials
+                      Manage account
                     </button>
                   )}
                 </div>
