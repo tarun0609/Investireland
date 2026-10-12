@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
 import { Currency, Holding, InvestmentAccountState } from './types';
 import { INITIAL_HOLDINGS, INITIAL_INVESTMENT_ACCOUNT_STATE } from './data/mockData';
 import { Navbar } from './components/Navbar';
@@ -18,9 +18,7 @@ import { PricingSection } from './components/PricingSection';
 import { FAQSection } from './components/FAQSection';
 import { Footer } from './components/Footer';
 import { EarlyAccessModal } from './components/EarlyAccessModal';
-import { DashboardView } from './components/DashboardView';
-import { SellixHeroView } from './components/SellixHeroView';
-import { getActiveUser } from './services/authEmailService';
+import { isDemoUser, subscribeToActiveUser, waitForAuthReady } from './services/authEmailService';
 import { 
   loadUserHoldings, 
   saveUserHolding, 
@@ -28,6 +26,19 @@ import {
   loadInvestmentAccountState, 
   saveInvestmentAccountState 
 } from './services/portfolioService';
+
+const DashboardView = lazy(() => import('./components/DashboardView').then((m) => ({ default: m.DashboardView })));
+const SellixHeroView = lazy(() => import('./components/SellixHeroView').then((m) => ({ default: m.SellixHeroView })));
+
+const ViewFallback = () => (
+  <div role="status" aria-live="polite" className="flex min-h-[50vh] items-center justify-center text-sm font-semibold text-slate-500">
+    Loading…
+  </div>
+);
+
+// Must match the history size limit in firestore.rules.
+const MAX_ACCOUNT_HISTORY = 500;
+const EMPTY_INVESTMENT_ACCOUNT: InvestmentAccountState = { ...INITIAL_INVESTMENT_ACCOUNT_STATE, accountValue: 0, annualContributions: 0, history: [] };
 
 export default function App() {
   const [currentCurrency, setCurrentCurrency] = useState<Currency>('EUR');
@@ -43,30 +54,51 @@ export default function App() {
     return 'landing';
   });
   
-  const [activeUserId, setActiveUserId] = useState<string>(() => {
-    const user = getActiveUser();
-    return user?.id || 'usr_default';
-  });
-
+  const [activeUserId, setActiveUserId] = useState<string>('guest');
+  const activeUserIdRef = useRef(activeUserId);
   const [holdings, setHoldings] = useState<Holding[]>(INITIAL_HOLDINGS);
   const [investmentAccount, setInvestmentAccount] = useState<InvestmentAccountState>(INITIAL_INVESTMENT_ACCOUNT_STATE);
   const [isWaitlistOpen, setIsWaitlistOpen] = useState(false);
   const [waitlistPrefill, setWaitlistPrefill] = useState<any>(null);
+  const [dataError, setDataError] = useState<string | null>(null);
+  // Writes are blocked until the active user's own data has loaded, so stale data can never be saved into another account.
+  const [isDataReady, setIsDataReady] = useState(false);
+  const isDataReadyRef = useRef(false);
 
-  // Load real user holdings and account data on mount & user change
+  // Reload portfolio data whenever the signed-in user changes.
   useEffect(() => {
-    const user = getActiveUser();
-    const uid = user?.id || 'usr_default';
-    setActiveUserId(uid);
-
-    loadUserHoldings(uid).then(loadedHoldings => {
-      if (loadedHoldings && loadedHoldings.length > 0) {
-        setHoldings(loadedHoldings);
-      }
+    let cancelled = false;
+    let unsubscribe: (() => void) | undefined;
+    waitForAuthReady().then(() => {
+      if (cancelled) return;
+      unsubscribe = subscribeToActiveUser((user) => {
+        const uid = isDemoUser(user) ? 'guest' : user.id;
+        if (uid === activeUserIdRef.current && uid !== 'guest') return;
+        activeUserIdRef.current = uid;
+        isDataReadyRef.current = false;
+        setIsDataReady(false);
+        setActiveUserId(uid);
+        setHoldings([]);
+        setInvestmentAccount(EMPTY_INVESTMENT_ACCOUNT);
+        Promise.all([loadUserHoldings(uid), loadInvestmentAccountState(uid)])
+          .then(([loadedHoldings, accountState]) => {
+            if (activeUserIdRef.current !== uid) return;
+            setHoldings(loadedHoldings);
+            setInvestmentAccount(accountState);
+            isDataReadyRef.current = true;
+            setIsDataReady(true);
+            setDataError(null);
+          })
+          .catch((err) => {
+            console.error('Failed to load portfolio', err);
+            if (activeUserIdRef.current === uid) setDataError('We could not load your saved portfolio. Please refresh to try again.');
+          });
+      });
     });
-
-    const accountState = loadInvestmentAccountState(uid);
-    setInvestmentAccount(accountState);
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
   }, []);
 
   const handleOpenWaitlist = (prefillData?: any) => {
@@ -87,38 +119,67 @@ export default function App() {
     }
   };
 
-  const handleAddHolding = (newHolding: Holding) => {
+  const ensureDataReady = () => {
+    if (isDataReadyRef.current) return true;
+    setDataError('Your portfolio is still loading. Please wait a moment and try again.');
+    return false;
+  };
+
+  const handleAddHolding = useCallback(async (newHolding: Holding) => {
+    if (!ensureDataReady()) return;
     setHoldings(prev => [newHolding, ...prev]);
-    saveUserHolding(activeUserId, newHolding);
-  };
+    const result = await saveUserHolding(activeUserId, newHolding);
+    if (!result.success) {
+      setHoldings(prev => prev.filter(h => h.id !== newHolding.id));
+      setDataError(result.error ?? 'Could not save the holding.');
+    }
+  }, [activeUserId]);
 
-  const handleDeleteHolding = (id: string) => {
+  const handleDeleteHolding = useCallback(async (id: string) => {
+    if (!ensureDataReady()) return;
+    const removed = holdings.find(h => h.id === id);
     setHoldings(prev => prev.filter(h => h.id !== id));
-    removeUserHolding(activeUserId, id);
-  };
+    const result = await removeUserHolding(activeUserId, id);
+    if (!result.success) {
+      if (removed) setHoldings(prev => [removed, ...prev]);
+      setDataError(result.error ?? 'Could not delete the holding.');
+    }
+  }, [activeUserId, holdings]);
 
-  const handleAddContribution = (amount: number, provider: string) => {
-    setInvestmentAccount(prev => {
-      const newTotal = prev.annualContributions + amount;
-      const updated: InvestmentAccountState = {
-        ...prev,
-        accountValue: prev.accountValue + amount,
-        annualContributions: Math.min(prev.annualLimit, newTotal),
-        history: [
-          {
-            id: `tx-${Date.now()}`,
-            date: new Date().toISOString().split('T')[0],
-            amount,
-            provider,
-            type: 'Contribution'
-          },
-          ...prev.history
-        ]
-      };
-      saveInvestmentAccountState(activeUserId, updated);
-      return updated;
-    });
-  };
+  const handleAddContribution = useCallback(async (amount: number, provider: string) => {
+    if (!Number.isFinite(amount) || amount <= 0) return;
+    if (!ensureDataReady()) return;
+    const previous = investmentAccount;
+    const allowed = Math.max(0, Math.min(amount, previous.annualLimit - previous.annualContributions));
+    if (allowed <= 0) {
+      setDataError(`You have already reached the €${previous.annualLimit.toLocaleString()} annual contribution limit.`);
+      return;
+    }
+    const updated: InvestmentAccountState = {
+      ...previous,
+      accountValue: previous.accountValue + allowed,
+      annualContributions: previous.annualContributions + allowed,
+      history: [
+        {
+          id: `tx-${Date.now()}`,
+          date: new Date().toISOString().split('T')[0],
+          amount: allowed,
+          provider,
+          type: 'Contribution' as const
+        },
+        ...previous.history
+      ].slice(0, MAX_ACCOUNT_HISTORY)
+    };
+    setInvestmentAccount(updated);
+    if (allowed < amount) {
+      setDataError(`Only €${allowed.toLocaleString()} was added: contributions are capped at €${previous.annualLimit.toLocaleString()} per year.`);
+    }
+    const result = await saveInvestmentAccountState(activeUserId, updated);
+    if (!result.success) {
+      setInvestmentAccount(previous);
+      setDataError(result.error ?? 'Could not save the contribution.');
+    }
+  }, [activeUserId, investmentAccount]);
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-slate-900 font-sans selection:bg-emerald-100 selection:text-emerald-900">
@@ -133,9 +194,26 @@ export default function App() {
         onNavigateSection={handleNavigateSection}
       />
 
+      {dataError && (
+        <div role="alert" className="sticky top-16 z-40 mx-auto mt-2 flex max-w-3xl items-start justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900 shadow-sm">
+          <span>{dataError}</span>
+          <button type="button" onClick={() => setDataError(null)} aria-label="Dismiss" className="shrink-0 cursor-pointer font-bold text-rose-700 hover:text-rose-900">
+            ×
+          </button>
+        </div>
+      )}
+
+      {!isDataReady && activeView === 'app' && !dataError && (
+        <div role="status" aria-live="polite" className="sticky top-16 z-40 mx-auto mt-2 max-w-3xl rounded-xl border border-slate-200 bg-white px-4 py-2 text-center text-xs font-medium text-slate-600 shadow-sm">
+          Loading your portfolio…
+        </div>
+      )}
+
       {/* Main View Router: Landing Page vs. Interactive App Dashboard vs. Standalone Sellix Hero Page */}
       {activeView === 'sellix' ? (
-        <SellixHeroView onBack={() => setActiveView('landing')} />
+        <Suspense fallback={<ViewFallback />}>
+          <SellixHeroView onBack={() => setActiveView('landing')} />
+        </Suspense>
       ) : activeView === 'landing' ? (
         <main>
           {/* 1. Hero Section & Product Demo Mockup */}
@@ -221,7 +299,9 @@ export default function App() {
         </main>
       ) : (
         /* Interactive App Mode */
+        <Suspense fallback={<ViewFallback />}>
         <DashboardView
+          key={activeUserId}
           currentCurrency={currentCurrency}
           holdings={holdings}
           onAddHolding={handleAddHolding}
@@ -230,6 +310,7 @@ export default function App() {
           onAddContribution={handleAddContribution}
           onOpenWaitlist={handleOpenWaitlist}
         />
+        </Suspense>
       )}
 
       {/* Early Access / Calculation Saver Modal */}

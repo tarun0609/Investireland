@@ -10,7 +10,7 @@ import {
   ExternalLink,
   Mail
 } from 'lucide-react';
-import { registerWithCredentials } from '../services/authEmailService';
+import { MIN_PASSWORD_LENGTH, getSignedInUser, registerWithCredentials } from '../services/authEmailService';
 
 interface EarlyAccessModalProps {
   isOpen: boolean;
@@ -30,9 +30,12 @@ export const EarlyAccessModal: React.FC<EarlyAccessModalProps> = ({
   const [assetRegions, setAssetRegions] = useState<string[]>(['Ireland', 'India']);
   const [experience, setExperience] = useState('Some experience');
   const [primaryGoal, setPrimaryGoal] = useState('Investment Account');
-  const [agreedTerms, setAgreedTerms] = useState(true);
+  const [password, setPassword] = useState('');
+  const [agreedTerms, setAgreedTerms] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
-  const [queueNumber, setQueueNumber] = useState(384);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [verificationSent, setVerificationSent] = useState(false);
+  const signedInUser = getSignedInUser();
   const [isSending, setIsSending] = useState(false);
   const [emailReceipt, setEmailReceipt] = useState<any>(null);
 
@@ -48,35 +51,44 @@ export const EarlyAccessModal: React.FC<EarlyAccessModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email || !firstName || !agreedTerms) return;
+    if (!agreedTerms) return;
+    setFormError(null);
+
+    if (signedInUser) {
+      setFirstName(signedInUser.name);
+      setEmail(signedInUser.email);
+      setIsSubmitted(true);
+      return;
+    }
+    if (!email || !firstName) return;
 
     setIsSending(true);
-    try {
-      const res = await registerWithCredentials({
-        name: firstName,
-        email: email,
-        country: country as any,
-        primaryLifeStageGoal: 'house_deposit',
-        targetLifeGoalAmount: 85000,
-        hasOverseasAssets: hasOverseasAssets === 'yes'
-      });
-      if (res.emailDispatch) {
-        setEmailReceipt(res.emailDispatch);
-      }
-    } catch (err) {
-      console.warn('Registration dispatch completed locally:', err);
-    }
+    const res = await registerWithCredentials({
+      name: firstName,
+      email,
+      password,
+      country: country as 'Ireland' | 'India' | 'United States' | 'United Kingdom' | 'Other EU',
+      primaryLifeStageGoal: primaryGoal === 'Retirement' ? 'retirement' : 'house_deposit',
+      hasOverseasAssets: hasOverseasAssets === 'yes'
+    });
     setIsSending(false);
+    if (!res.success) {
+      setFormError(res.error || 'Registration failed. Please try again.');
+      return;
+    }
+    setEmailReceipt(res.emailDispatch ?? null);
+    setVerificationSent(Boolean(res.verificationEmailSent));
     setIsSubmitted(true);
-    setQueueNumber(Math.floor(Math.random() * 50) + 340);
   };
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-      <div className="bg-white rounded-2xl max-w-lg w-full p-6 sm:p-8 shadow-2xl border border-slate-200 relative my-8 animate-in fade-in zoom-in-95 duration-150">
+      <div role="dialog" aria-modal="true" aria-label="Join early access" className="bg-white rounded-2xl max-w-lg w-full p-6 sm:p-8 shadow-2xl border border-slate-200 relative my-8 animate-in fade-in zoom-in-95 duration-150">
         
         {/* Close button */}
         <button
+          type="button"
+          aria-label="Close"
           onClick={onClose}
           className="absolute top-5 right-5 p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
         >
@@ -114,7 +126,17 @@ export const EarlyAccessModal: React.FC<EarlyAccessModalProps> = ({
             )}
 
             <form onSubmit={handleSubmit} className="mt-6 space-y-4 text-xs">
-              
+              {formError && (
+                <div role="alert" className="p-3 rounded-lg border border-rose-200 bg-rose-50 text-rose-900 font-medium">
+                  {formError}
+                </div>
+              )}
+              {signedInUser ? (
+                <div className="p-3 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-900 font-medium">
+                  You're signed in as <strong>{signedInUser.email}</strong>. Confirm below to register your interest.
+                </div>
+              ) : (
+              <>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">First Name *</label>
@@ -132,7 +154,7 @@ export const EarlyAccessModal: React.FC<EarlyAccessModalProps> = ({
                     <label className="font-bold text-slate-700">Email Address *</label>
                     <span className="text-[10px] text-emerald-700 font-medium flex items-center gap-1">
                       <ShieldCheck className="w-3 h-3 text-emerald-600 inline" />
-                      <span>Instant automated confirmation</span>
+                      <span>Verification email sent on sign-up</span>
                     </span>
                   </div>
                   <input
@@ -145,6 +167,23 @@ export const EarlyAccessModal: React.FC<EarlyAccessModalProps> = ({
                   />
                 </div>
               </div>
+
+              <div>
+                <label htmlFor="early-access-password" className="block font-bold text-slate-700 mb-1">Create a password *</label>
+                <input
+                  id="early-access-password"
+                  type="password"
+                  required
+                  minLength={MIN_PASSWORD_LENGTH}
+                  autoComplete="new-password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500 font-medium"
+                />
+                <p className="mt-1 text-[10px] text-slate-500">At least {MIN_PASSWORD_LENGTH} characters. Your account lets you save your portfolio and goals securely.</p>
+              </div>
+              </>
+              )}
 
               <div>
                 <label className="block font-bold text-slate-700 mb-1">Country of Residence</label>
@@ -253,10 +292,10 @@ export const EarlyAccessModal: React.FC<EarlyAccessModalProps> = ({
 
               <button
                 type="submit"
-                disabled={!agreedTerms || !firstName || !email}
+                disabled={isSending || !agreedTerms || (!signedInUser && (!firstName || !email || password.length < MIN_PASSWORD_LENGTH))}
                 className="w-full py-3 px-4 rounded-xl font-bold text-sm bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
               >
-                <span>Request Early Access Invite</span>
+                <span>{isSending ? 'Creating account…' : 'Request Early Access'}</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
 
@@ -268,23 +307,24 @@ export const EarlyAccessModal: React.FC<EarlyAccessModalProps> = ({
               <CheckCircle2 className="w-8 h-8" />
             </div>
 
-            <span className="text-xs font-bold text-emerald-800 uppercase tracking-wider bg-emerald-50 px-3 py-1 rounded-full">
-              Position #{queueNumber} in Early Access Queue
-            </span>
 
             <h3 className="text-2xl font-extrabold text-slate-900 mt-3">
               You’re on the priority list, {firstName}!
             </h3>
 
             <p className="text-xs sm:text-sm text-slate-600 mt-2 max-w-sm mx-auto leading-relaxed">
-              We’ve reserved your early beta position. An automated confirmation and cross-border milestone starter guide has been dispatched to <strong className="text-slate-800">{email}</strong>.
+              {signedInUser
+                ? <>Thanks for registering your interest. We'll contact you at <strong className="text-slate-800">{email}</strong> when new features launch.</>
+                : verificationSent
+                  ? <>Your account is ready. Please confirm your address using the verification link we sent to <strong className="text-slate-800">{email}</strong>.</>
+                  : <>Your account is ready. We couldn't send a verification email just now; you can resend it from the Account panel.</>}
             </p>
 
-            {emailReceipt?.previewUrl && (
+            {emailReceipt?.previewUrl && /^https?:\/\//.test(emailReceipt.previewUrl) && (
               <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-xl text-left max-w-sm mx-auto">
                 <span className="text-[11px] font-bold text-blue-900 block mb-0.5 flex items-center gap-1.5">
                   <Mail className="w-3.5 h-3.5 text-blue-700" />
-                  Live Delivered Email Preview (Ethereal SMTP):
+                  Test mailbox preview (development only):
                 </span>
                 <a
                   href={emailReceipt.previewUrl}

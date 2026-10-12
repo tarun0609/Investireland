@@ -1,992 +1,451 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  X, 
-  Mail, 
-  Lock, 
-  User, 
-  Globe2, 
-  CheckCircle2, 
-  ExternalLink, 
-  Send, 
-  Sparkles, 
-  ArrowRight, 
-  ShieldCheck, 
-  Inbox, 
-  Clock, 
-  AlertCircle,
-  KeyRound,
-  RefreshCw,
-  LogOut,
-  Database
-} from 'lucide-react';
-import { 
-  AuthUser, 
-  RegistrationCredentials, 
-  EmailDispatchLog, 
-  LifeStageCategory, 
-  Currency 
-} from '../types';
-import { 
-  getActiveUser, 
-  setActiveUser, 
-  clearActiveUser, 
-  registerWithCredentials, 
-  fetchSentEmailLogs, 
+import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { AlertCircle, CheckCircle2, ExternalLink, Inbox, Loader2, LogOut, Mail, RefreshCw, X } from 'lucide-react';
+import type { AuthUser, Currency, EmailDispatchLog, LifeStageCategory } from '../types';
+import {
+  MIN_PASSWORD_LENGTH,
+  fetchSentEmailLogs,
+  getSignedInUser,
+  registerWithCredentials,
+  requestPasswordReset,
+  resendVerificationEmail,
   sendMilestoneAutoEmail,
-  fetchDatabaseStatus,
-  BackendDatabaseInfo,
-  syncMilestoneToBackend,
+  signInWithCredentials,
   signInWithGoogleOAuth,
-  OAUTH_CONFIG,
-  AuthErrorInfo,
-  subscribeToAuthErrors,
-  clearLastAuthError
+  signOutUser,
+  subscribeToActiveUser,
+  type AuthErrorInfo,
+  type ResidencyCountry,
 } from '../services/authEmailService';
-import { emailService } from '../services/emailService';
-import { LIFE_STAGE_PRESETS } from '../services/goalMilestoneService';
+
+export type AuthModalTab = 'register' | 'login' | 'account';
 
 interface UserAuthModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onUserChange?: (user: AuthUser) => void;
-  initialTab?: 'register' | 'login' | 'outbox' | 'database';
+  onUserChange?: (user: AuthUser | null) => void;
+  initialTab?: AuthModalTab;
 }
 
-export const UserAuthModal: React.FC<UserAuthModalProps> = ({
-  isOpen,
-  onClose,
-  onUserChange,
-  initialTab = 'register'
-}) => {
-  const [activeTab, setActiveTab] = useState<'register' | 'login' | 'outbox' | 'database'>(initialTab);
-  const [currentUser, setCurrentUserState] = useState<AuthUser>(() => getActiveUser());
-  
-  // Registration form
+const COUNTRY_OPTIONS: ResidencyCountry[] = ['Ireland', 'India', 'United States', 'United Kingdom', 'Other EU'];
+const CURRENCY_OPTIONS: Currency[] = ['EUR', 'INR', 'USD', 'GBP'];
+const GOAL_OPTIONS: { value: LifeStageCategory; label: string }[] = [
+  { value: 'house_deposit', label: 'Home deposit' },
+  { value: 'retirement', label: 'Retirement' },
+  { value: 'family_education', label: 'Family & education' },
+  { value: 'emergency_buffer', label: 'Emergency buffer' },
+  { value: 'financial_independence', label: 'Financial independence' },
+  { value: 'cross_border_repatriation', label: 'Cross-border repatriation' },
+  { value: 'entrepreneurship', label: 'Entrepreneurship' },
+];
+
+const inputClass =
+  'w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500';
+const labelClass = 'block text-xs font-semibold text-slate-700 mb-1';
+const primaryButton =
+  'w-full inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-emerald-800 disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer';
+const secondaryButton =
+  'w-full inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer';
+
+const STATUS_STYLES: Record<EmailDispatchLog['status'], string> = {
+  DELIVERED: 'bg-emerald-100 text-emerald-800',
+  SENT: 'bg-sky-100 text-sky-800',
+  SIMULATED: 'bg-amber-100 text-amber-800',
+};
+
+export const UserAuthModal: React.FC<UserAuthModalProps> = ({ isOpen, onClose, onUserChange, initialTab }) => {
+  const [signedIn, setSignedIn] = useState<AuthUser | null>(() => getSignedInUser());
+  const [tab, setTab] = useState<AuthModalTab>(() => initialTab ?? (getSignedInUser() ? 'account' : 'register'));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<{ title: string; message: string } | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [country, setCountry] = useState<'Ireland' | 'India' | 'United States' | 'United Kingdom' | 'Other EU'>('Ireland');
-  const [preferredCurrency, setPreferredCurrency] = useState<Currency>('EUR');
-  const [primaryGoal, setPrimaryGoal] = useState<LifeStageCategory>('house_deposit');
-  const [targetAmount, setTargetAmount] = useState<number>(85000);
-  const [hasOverseasAssets, setHasOverseasAssets] = useState(true);
+  const [country, setCountry] = useState<ResidencyCountry>('Ireland');
+  const [currency, setCurrency] = useState<Currency>('EUR');
+  const [goal, setGoal] = useState<LifeStageCategory>('house_deposit');
+  const [targetAmount, setTargetAmount] = useState('85000');
 
-  // Status & Feedback
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [submissionSuccess, setSubmissionSuccess] = useState<{
-    user: AuthUser;
-    emailDispatch?: any;
-  } | null>(null);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [authErrorDetails, setAuthErrorDetails] = useState<AuthErrorInfo | null>(null);
-
-  // Email outbox state
   const [emailLogs, setEmailLogs] = useState<EmailDispatchLog[]>([]);
-  const [isLoadingLogs, setIsLoadingLogs] = useState(false);
+  const [logsLoading, setLogsLoading] = useState(false);
 
-  // Cloud database state
-  const [dbInfo, setDbInfo] = useState<BackendDatabaseInfo | null>(null);
-  const [isLoadingDb, setIsLoadingDb] = useState(false);
-  const [dbSyncMessage, setDbSyncMessage] = useState<string | null>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const titleId = useId();
+  const fieldId = useId();
+
+  useEffect(() => subscribeToActiveUser(() => setSignedIn(getSignedInUser())), []);
 
   useEffect(() => {
-    // Listen for global auth error events
-    const unsubscribe = subscribeToAuthErrors((errorInfo) => {
-      setAuthErrorDetails(errorInfo);
-      setErrorMsg(`${errorInfo.message} ${errorInfo.actionHint}`);
-    });
-
-    return () => {
-      unsubscribe();
+    if (!isOpen) return;
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
     };
+    document.addEventListener('keydown', onKeyDown);
+    dialogRef.current?.querySelector<HTMLElement>('input, button:not([data-close])')?.focus();
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      previouslyFocused?.focus?.();
+    };
+  }, [isOpen, onClose]);
+
+  const loadLogs = useCallback(async () => {
+    setLogsLoading(true);
+    setEmailLogs(await fetchSentEmailLogs());
+    setLogsLoading(false);
   }, []);
 
   useEffect(() => {
-    if (isOpen) {
-      const u = getActiveUser();
-      setCurrentUserState(u);
-      setName(u.name !== 'Priya Sharma' ? u.name : '');
-      setEmail(u.email !== 'priya.sharma@investireland.demo' ? u.email : '');
-      loadEmails(u.email);
-      loadDatabaseStatus();
-    }
-  }, [isOpen]);
-
-  const loadDatabaseStatus = async () => {
-    setIsLoadingDb(true);
-    const res = await fetchDatabaseStatus();
-    if (res.backendDatabase) {
-      setDbInfo(res.backendDatabase);
-    }
-    setIsLoadingDb(false);
-  };
-
-  const handleTestDatabaseSync = async () => {
-    setIsSubmitting(true);
-    setDbSyncMessage(null);
-    const success = await syncMilestoneToBackend({
-      userId: currentUser.id || 'usr_demo_user',
-      milestoneId: 'ms_house_deposit',
-      title: 'Irish Home Deposit (Dublin)',
-      category: 'Property & Wealth',
-      targetAmountEUR: 85000,
-      currentAmountEUR: 28400
-    });
-    setIsSubmitting(false);
-    if (success) {
-      setDbSyncMessage('Successfully synced milestone and user profile to Firebase Firestore!');
-      await loadDatabaseStatus();
-    } else {
-      setDbSyncMessage('Sync request completed.');
-    }
-  };
-
-  const loadEmails = async (filterEmail?: string) => {
-    setIsLoadingLogs(true);
-    const logs = await fetchSentEmailLogs(filterEmail);
-    setEmailLogs(logs);
-    setIsLoadingLogs(false);
-  };
+    if (isOpen && tab === 'account' && signedIn) void loadLogs();
+  }, [isOpen, tab, signedIn, loadLogs]);
 
   if (!isOpen) return null;
 
-  const handleGoogleOAuthSignIn = async () => {
-    setIsSubmitting(true);
-    setErrorMsg(null);
-    setAuthErrorDetails(null);
-    clearLastAuthError();
-    const result = await signInWithGoogleOAuth();
-    setIsSubmitting(false);
-
-    if (result.success && result.user) {
-      setAuthErrorDetails(null);
-      setErrorMsg(null);
-      setCurrentUserState(result.user);
-      setSubmissionSuccess({
-        user: result.user,
-        emailDispatch: result.emailDispatch
-      });
-      if (onUserChange) onUserChange(result.user);
-      loadEmails(result.user.email);
-    } else {
-      setAuthErrorDetails(result.errorDetails || null);
-      setErrorMsg(result.error || 'Google Sign-In failed');
-    }
+  const switchTab = (next: AuthModalTab) => {
+    setTab(next);
+    setError(null);
+    setNotice(null);
   };
 
-  const handleTriggerAuthCloudFunction = async () => {
-    if (!currentUser.email) return;
-    setIsSubmitting(true);
-    setDbSyncMessage(null);
-    try {
-      const res = await fetch('/api/functions/trigger-auth-welcome', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: currentUser.email,
-          name: currentUser.name,
-          userId: currentUser.id
-        })
-      });
-      const data = await res.json();
-      setIsSubmitting(false);
-      if (res.ok) {
-        setDbSyncMessage(`Firebase Auth onCreate Cloud Function executed: Delivered personalized welcome email to ${currentUser.email}.`);
-        loadEmails(currentUser.email);
-      } else {
-        setErrorMsg(data.error || 'Failed to trigger Cloud Function');
-      }
-    } catch (err: any) {
-      setIsSubmitting(false);
-      setErrorMsg(err.message || 'Error executing Cloud Function');
-    }
-  };
+  const showError = (message?: string, details?: AuthErrorInfo) =>
+    setError({ title: details?.title ?? 'Something went wrong', message: message ?? 'Please try again.' });
 
-  const handleRegister = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!name || !email) {
-      setErrorMsg('Please enter your name and email address.');
-      return;
-    }
-
-    setIsSubmitting(true);
-    setErrorMsg(null);
-
-    const goalLabel = LIFE_STAGE_PRESETS.find(p => p.category === primaryGoal)?.defaultTitle || 'Dublin House Deposit';
-
+  const handleRegister = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setBusy(true);
+    setError(null);
     const result = await registerWithCredentials({
       name,
       email,
-      password: password || undefined,
+      password,
       country,
-      preferredCurrency,
-      primaryLifeStageGoal: primaryGoal,
-      targetLifeGoalAmount: targetAmount,
-      hasOverseasAssets
+      preferredCurrency: currency,
+      primaryLifeStageGoal: goal,
+      targetLifeGoalAmount: Number(targetAmount) || undefined,
+      hasOverseasAssets: country !== 'Ireland',
     });
-
-    setIsSubmitting(false);
-
-    if (result.success && result.user) {
-      setCurrentUserState(result.user);
-      setSubmissionSuccess({
-        user: result.user,
-        emailDispatch: result.emailDispatch
-      });
-      if (onUserChange) {
-        onUserChange(result.user);
-      }
-      loadEmails(result.user.email);
-    } else {
-      setErrorMsg(result.error || 'Registration failed. Please try again.');
-    }
+    setBusy(false);
+    if (!result.success || !result.user) return showError(result.error, result.errorDetails);
+    setPassword('');
+    onUserChange?.(result.user);
+    setNotice(
+      result.verificationEmailSent
+        ? `Account created. We sent a verification link to ${result.user.email}.`
+        : 'Account created. We could not send a verification email right now; you can resend it from this page.'
+    );
+    setTab('account');
   };
 
-  const handleQuickLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!email) return;
+  const handleLogin = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setBusy(true);
+    setError(null);
+    const result = await signInWithCredentials(email, password);
+    setBusy(false);
+    if (!result.success || !result.user) return showError(result.error, result.errorDetails);
+    setPassword('');
+    onUserChange?.(result.user);
+    setNotice(`Welcome back, ${result.user.name}.`);
+    setTab('account');
+  };
 
-    setIsSubmitting(true);
-    setErrorMsg(null);
+  const handleGoogle = async () => {
+    setBusy(true);
+    setError(null);
+    const result = await signInWithGoogleOAuth();
+    setBusy(false);
+    if (!result.success || !result.user) return showError(result.error, result.errorDetails);
+    onUserChange?.(result.user);
+    setNotice(`Signed in as ${result.user.email}.`);
+    setTab('account');
+  };
 
+  const handleReset = async () => {
+    setBusy(true);
+    setError(null);
+    const result = await requestPasswordReset(email);
+    setBusy(false);
+    if (!result.success) return showError(result.error);
+    setNotice('If an account exists for that address, a password reset email is on its way.');
+  };
+
+  const handleSignOut = async () => {
+    setBusy(true);
     try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email })
-      });
-      const data = await res.json();
-      setIsSubmitting(false);
-
-      if (res.ok && data.user) {
-        setActiveUser(data.user);
-        setCurrentUserState(data.user);
-        if (onUserChange) onUserChange(data.user);
-        setActiveTab('outbox');
-        loadEmails(data.user.email);
-      } else {
-        setErrorMsg(data.error || 'Account not found. Please register.');
-      }
-    } catch (err: any) {
-      setIsSubmitting(false);
-      setErrorMsg(err.message || 'Login failed');
+      await signOutUser();
+      onUserChange?.(null);
+      setEmailLogs([]);
+      switchTab('login');
+    } catch {
+      showError('Sign-out failed. Please try again.');
+    } finally {
+      setBusy(false);
     }
   };
 
-  const handleSendTestEmail = async () => {
-    if (!currentUser.email) return;
-    setIsSubmitting(true);
-    const res = await emailService.sendMilestoneProgressUpdate({
-      userId: currentUser.id || 'usr_active',
-      email: currentUser.email,
-      name: currentUser.name,
-      milestoneTitle: 'Live Irish Home Deposit & Wealth Milestone',
-      targetAmount: 85000,
-      currentProgressAmount: 28400,
-      currency: currentUser.preferredCurrency || 'EUR'
-    });
-    setIsSubmitting(false);
-    if (res.success) {
-      loadEmails(currentUser.email);
-    }
+  const handleSendReport = async () => {
+    if (!signedIn) return;
+    setBusy(true);
+    setError(null);
+    const goalLabel = GOAL_OPTIONS.find((g) => g.value === signedIn.primaryLifeStageGoal)?.label ?? 'My investment goal';
+    const result = await sendMilestoneAutoEmail({ goalTitle: goalLabel, targetAmount: Number(targetAmount) || 0 });
+    setBusy(false);
+    if (!result.success) return showError(result.error);
+    setNotice(
+      result.emailDispatch?.status === 'SIMULATED'
+        ? 'Email recorded but not delivered: SMTP is not configured on this server.'
+        : `Milestone summary sent to ${signedIn.email}.`
+    );
+    void loadLogs();
   };
 
-  const handleSignOut = () => {
-    clearActiveUser();
-    const demo = getActiveUser();
-    setCurrentUserState(demo);
-    if (onUserChange) onUserChange(demo);
-    setSubmissionSuccess(null);
-    setEmailLogs([]);
+  const handleResendVerification = async () => {
+    setBusy(true);
+    const ok = await resendVerificationEmail();
+    setBusy(false);
+    if (ok) setNotice('Verification email sent. Refresh this page after confirming.');
+    else showError('Could not send the verification email. Please wait a minute and try again.');
+  };
+
+  const tabs: { id: AuthModalTab; label: string }[] = signedIn
+    ? [{ id: 'account', label: 'My account' }]
+    : [
+        { id: 'register', label: 'Create account' },
+        { id: 'login', label: 'Sign in' },
+      ];
+  const activeTab: AuthModalTab = signedIn ? 'account' : tab === 'account' ? 'login' : tab;
+
+  const titles: Record<AuthModalTab, string> = {
+    register: 'Create your account',
+    login: 'Sign in to your portfolio',
+    account: 'Your account',
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-      <div className="bg-white rounded-2xl max-w-xl w-full p-6 sm:p-7 shadow-2xl border border-slate-200 relative my-8 animate-in fade-in zoom-in-95 duration-150">
-        
-        {/* Close button */}
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-900/60 p-4 backdrop-blur-xs"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        className="relative my-8 w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl sm:p-7"
+      >
         <button
+          type="button"
+          data-close
           onClick={onClose}
-          className="absolute top-5 right-5 p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
+          aria-label="Close"
+          className="absolute right-5 top-5 cursor-pointer rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
         >
-          <X className="w-5 h-5" />
+          <X className="h-5 w-5" />
         </button>
 
-        {/* Modal Header */}
-        <div className="flex items-center gap-2 mb-2">
-          <span className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold text-xs">
-            ☘️
-          </span>
-          <span className="text-xs font-bold text-emerald-800 uppercase tracking-wider">
-            InvestIreland Account &amp; Email Integration
-          </span>
-        </div>
+        <p className="text-xs font-bold uppercase tracking-wider text-emerald-800">InvestIreland account</p>
+        <h2 id={titleId} className="mt-1 text-2xl font-black tracking-tight text-slate-900">
+          {titles[activeTab]}
+        </h2>
 
-        <h3 className="text-2xl font-black text-slate-900 tracking-tight">
-          {activeTab === 'register' ? 'Register with Credentials' :
-           activeTab === 'login' ? 'Sign In to Your Portfolio' :
-           activeTab === 'outbox' ? 'Automated Email Receipts & Outbox' :
-           'Firebase Cloud Database & Sync'}
-        </h3>
-        <p className="text-xs text-slate-600 mt-1">
-          {activeTab === 'register' 
-            ? 'Create your account to unlock personalized milestone tracking and receive instant automated email confirmations.' 
-            : activeTab === 'login'
-            ? 'Sign in to access your registered milestones, tax estimates, and portfolio sync.'
-            : activeTab === 'outbox'
-            ? 'Track real-time automated emails, dispatch receipts, and live browser previews.'
-            : 'Inspect your persistent Firebase Cloud Firestore backend database, collections, and zero-trust security rules.'}
-        </p>
-
-        {/* Tab Switcher */}
-        <div className="flex border-b border-slate-200 mt-5 mb-5 flex-wrap gap-y-1">
-          <button
-            onClick={() => { setActiveTab('register'); setSubmissionSuccess(null); }}
-            className={`pb-2.5 px-3 text-xs font-bold border-b-2 cursor-pointer transition-colors ${
-              activeTab === 'register'
-                ? 'border-emerald-600 text-emerald-800'
-                : 'border-transparent text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            Register Account
-          </button>
-          <button
-            onClick={() => { setActiveTab('login'); setSubmissionSuccess(null); }}
-            className={`pb-2.5 px-3 text-xs font-bold border-b-2 cursor-pointer transition-colors ${
-              activeTab === 'login'
-                ? 'border-emerald-600 text-emerald-800'
-                : 'border-transparent text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            Sign In
-          </button>
-          <button
-            onClick={() => { setActiveTab('outbox'); loadEmails(currentUser.email); }}
-            className={`pb-2.5 px-3 text-xs font-bold border-b-2 cursor-pointer transition-colors flex items-center gap-1.5 ${
-              activeTab === 'outbox'
-                ? 'border-emerald-600 text-emerald-800'
-                : 'border-transparent text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            <Inbox className="w-3.5 h-3.5" />
-            <span>Email Outbox ({emailLogs.length})</span>
-          </button>
-          <button
-            onClick={() => { setActiveTab('database'); loadDatabaseStatus(); }}
-            className={`pb-2.5 px-3 text-xs font-bold border-b-2 cursor-pointer transition-colors flex items-center gap-1.5 ${
-              activeTab === 'database'
-                ? 'border-emerald-600 text-emerald-800'
-                : 'border-transparent text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            <Database className="w-3.5 h-3.5 text-emerald-600" />
-            <span>Cloud Database</span>
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-          </button>
-        </div>
-
-        {/* UI-FRIENDLY ERROR NOTICE */}
-        {(authErrorDetails || errorMsg) && (
-          <div className="mb-5 p-3.5 bg-rose-50/90 border border-rose-200 rounded-xl text-xs text-rose-900 shadow-2xs animate-in fade-in-50">
-            <div className="flex items-start justify-between gap-2.5">
-              <div className="flex items-start gap-2.5">
-                <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 mt-0.5" />
-                <div>
-                  <h4 className="font-bold text-rose-950 text-xs">
-                    {authErrorDetails?.title || 'Authentication Notice'}
-                  </h4>
-                  <p className="text-rose-800 text-[11px] mt-0.5 leading-relaxed">
-                    {authErrorDetails?.message || errorMsg}
-                  </p>
-
-                  {authErrorDetails?.actionHint && (
-                    <div className="mt-2 p-2 bg-white/70 border border-rose-200/70 rounded-lg text-[11px] text-slate-700 leading-normal flex items-start gap-1.5">
-                      <span className="font-bold text-rose-700 shrink-0">Action:</span>
-                      <span>{authErrorDetails.actionHint}</span>
-                    </div>
-                  )}
-
-                  {authErrorDetails?.technicalDetails && (
-                    <div className="mt-1.5 text-[10px] font-mono text-slate-500">
-                      Code: {authErrorDetails.code}
-                    </div>
-                  )}
-
-                  {authErrorDetails?.isRecoverable && (
-                    <div className="mt-2.5 flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={handleGoogleOAuthSignIn}
-                        disabled={isSubmitting}
-                        className="px-2.5 py-1 bg-rose-700 hover:bg-rose-800 text-white rounded-md text-[11px] font-bold inline-flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
-                      >
-                        <RefreshCw className={`w-3 h-3 ${isSubmitting ? 'animate-spin' : ''}`} />
-                        <span>Retry Google Sign-In</span>
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setErrorMsg(null);
-                  setAuthErrorDetails(null);
-                  clearLastAuthError();
-                }}
-                className="text-slate-400 hover:text-slate-600 p-1 rounded-md transition-colors cursor-pointer shrink-0"
-                title="Dismiss message"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* TAB 1: REGISTRATION */}
-        {activeTab === 'register' && (
-          <div>
-            {!submissionSuccess ? (
-              <div>
-                {/* Firebase Google OAuth Fast Flow */}
-                <button
-                  type="button"
-                  onClick={handleGoogleOAuthSignIn}
-                  disabled={isSubmitting}
-                  className="w-full py-2.5 px-4 rounded-xl border border-slate-300 hover:border-emerald-600 hover:bg-emerald-50/50 text-slate-800 font-bold text-xs flex items-center justify-center gap-2.5 transition-all shadow-2xs cursor-pointer mb-3.5 bg-white disabled:opacity-50"
-                  title="Sign up instantly with your Google Account"
-                >
-                  <svg className="w-4 h-4" viewBox="0 0 24 24">
-                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
-                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
-                  </svg>
-                  <span>Sign up with Google (OAuth Instant Sync)</span>
-                </button>
-
-                <div className="flex items-center gap-2 mb-3.5">
-                  <div className="flex-1 h-px bg-slate-200"></div>
-                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">or register with email</span>
-                  <div className="flex-1 h-px bg-slate-200"></div>
-                </div>
-
-                <form onSubmit={handleRegister} className="space-y-4 text-xs">
-                
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block font-bold text-slate-700 mb-1 flex items-center gap-1">
-                      <User className="w-3.5 h-3.5 text-slate-400" />
-                      Full Name *
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                      placeholder="e.g. Damak Taneja"
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500 font-medium"
-                    />
-                  </div>
-                  <div>
-                    <label className="block font-bold text-slate-700 mb-1 flex items-center justify-between">
-                      <span className="flex items-center gap-1">
-                        <Mail className="w-3.5 h-3.5 text-slate-400" />
-                        Email Address *
-                      </span>
-                      <span className="text-[10px] text-emerald-700 font-medium flex items-center gap-1">
-                        <ShieldCheck className="w-3 h-3 text-emerald-600 inline" />
-                        <span>Instant secure automated confirmation</span>
-                      </span>
-                    </label>
-                    <input
-                      type="email"
-                      required
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      placeholder="e.g. yourname@example.com"
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500 font-medium"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block font-bold text-slate-700 mb-1 flex items-center gap-1">
-                      <Lock className="w-3.5 h-3.5 text-slate-400" />
-                      Password / Security PIN
-                    </label>
-                    <input
-                      type="password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder="••••••••••••"
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500 font-medium"
-                    />
-                  </div>
-                  <div>
-                    <label className="block font-bold text-slate-700 mb-1 flex items-center gap-1">
-                      <Globe2 className="w-3.5 h-3.5 text-slate-400" />
-                      Tax Residence
-                    </label>
-                    <select
-                      value={country}
-                      onChange={(e) => setCountry(e.target.value as any)}
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-medium"
-                    >
-                      <option value="Ireland">Ireland (Tax Resident — TCA 1997)</option>
-                      <option value="India">India (Non-Resident Indian / DTAA)</option>
-                      <option value="United States">United States</option>
-                      <option value="United Kingdom">United Kingdom</option>
-                      <option value="Other EU">Other European Union</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block font-bold text-slate-700 mb-1">Primary Life Stage Goal</label>
-                    <select
-                      value={primaryGoal}
-                      onChange={(e) => {
-                        const cat = e.target.value as LifeStageCategory;
-                        setPrimaryGoal(cat);
-                        const preset = LIFE_STAGE_PRESETS.find(p => p.category === cat);
-                        if (preset) setTargetAmount(preset.recommendedEUR);
-                      }}
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-medium"
-                    >
-                      {LIFE_STAGE_PRESETS.map((p) => (
-                        <option key={p.category} value={p.category}>
-                          {p.categoryLabel} ({p.defaultTitle})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block font-bold text-slate-700 mb-1">Target Milestone Amount (€)</label>
-                    <input
-                      type="number"
-                      min={1000}
-                      value={targetAmount}
-                      onChange={(e) => setTargetAmount(Number(e.target.value))}
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-medium"
-                    />
-                  </div>
-                </div>
-
-                <div className="p-3 bg-emerald-50/70 border border-emerald-200 rounded-xl text-[11px] text-emerald-900 leading-relaxed flex items-start gap-2">
-                  <Sparkles className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
-                  <span>
-                    <strong>Automated Email Integration:</strong> Upon clicking Register, our server will immediately dispatch a personalized <strong>InvestIreland Welcome &amp; Milestone Blueprint email</strong> to your email address, including official Revenue TCA 1997 guidance and Budget 2027 investment account rules.
-                  </span>
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={isSubmitting || !name || !email}
-                  className="w-full py-3 px-4 rounded-xl font-bold text-xs bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
-                >
-                  {isSubmitting ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      <span>Registering &amp; Dispatching Email...</span>
-                    </>
-                  ) : (
-                    <>
-                      <span>Complete Registration &amp; Send Auto-Response Email</span>
-                      <ArrowRight className="w-4 h-4" />
-                    </>
-                  )}
-                </button>
-              </form>
-            </div>
-          ) : (
-              <div className="text-center py-4">
-                <div className="w-14 h-14 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center mx-auto mb-3">
-                  <CheckCircle2 className="w-8 h-8" />
-                </div>
-
-                <span className="text-[11px] font-bold text-emerald-800 uppercase tracking-wider bg-emerald-50 px-3 py-1 rounded-full flex items-center gap-1.5 w-fit mx-auto">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                  Firebase Firestore Synced &bull; Transactional Email Dispatched
-                </span>
-
-                <h3 className="text-2xl font-black text-slate-900 mt-3">
-                  Welcome to InvestIreland, {submissionSuccess.user.name}!
-                </h3>
-
-                <p className="text-xs text-slate-600 mt-2 max-w-md mx-auto leading-relaxed">
-                  Your credentials and cross-border portfolio profile have been persisted to Firebase Cloud Firestore. A transactional confirmation email was dispatched to <strong className="text-slate-800">{submissionSuccess.user.email}</strong>.
-                </p>
-
-                {submissionSuccess.emailDispatch?.previewUrl && (
-                  <div className="mt-4 p-3.5 bg-blue-50 border border-blue-200 rounded-xl text-left max-w-md mx-auto">
-                    <span className="text-xs font-bold text-blue-900 block mb-1 flex items-center gap-1.5">
-                      <Mail className="w-3.5 h-3.5 text-blue-700" />
-                      Live Mailbox Delivery Receipt (Ethereal SMTP):
-                    </span>
-                    <a
-                      href={submissionSuccess.emailDispatch.previewUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 text-xs font-extrabold text-blue-700 hover:text-blue-900 underline mt-1"
-                    >
-                      <span>Open Real Delivered HTML Email in New Tab</span>
-                      <ExternalLink className="w-3.5 h-3.5" />
-                    </a>
-                    <span className="text-[10px] text-blue-700 block mt-1">
-                      Message ID: {submissionSuccess.emailDispatch.messageId}
-                    </span>
-                  </div>
-                )}
-
-                <div className="mt-6 flex flex-wrap gap-2 justify-center">
-                  <button
-                    onClick={onClose}
-                    className="px-6 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs cursor-pointer"
-                  >
-                    Enter Dashboard
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('outbox')}
-                    className="px-4 py-2.5 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-50 font-bold text-xs cursor-pointer"
-                  >
-                    View Email Outbox
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* TAB 2: QUICK LOGIN */}
-        {activeTab === 'login' && (
-          <div>
-            {/* Firebase Google OAuth Fast Flow */}
+        <div role="tablist" aria-label="Account" className="mb-5 mt-4 flex gap-1 border-b border-slate-200">
+          {tabs.map((t) => (
             <button
+              key={t.id}
               type="button"
-              onClick={handleGoogleOAuthSignIn}
-              disabled={isSubmitting}
-              className="w-full py-2.5 px-4 rounded-xl border border-slate-300 hover:border-emerald-600 hover:bg-emerald-50/50 text-slate-800 font-bold text-xs flex items-center justify-center gap-2.5 transition-all shadow-2xs cursor-pointer mb-3.5 bg-white disabled:opacity-50"
-              title="Sign in instantly with your Google Account"
+              role="tab"
+              aria-selected={activeTab === t.id}
+              onClick={() => switchTab(t.id)}
+              className={`cursor-pointer border-b-2 px-3 pb-2.5 text-xs font-bold transition-colors ${
+                activeTab === t.id ? 'border-emerald-600 text-emerald-800' : 'border-transparent text-slate-500 hover:text-slate-800'
+              }`}
             >
-              <svg className="w-4 h-4" viewBox="0 0 24 24">
-                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
-                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
-              </svg>
-              <span>Sign in with Google</span>
+              {t.label}
             </button>
+          ))}
+        </div>
 
-            <div className="flex items-center gap-2 mb-3.5">
-              <div className="flex-1 h-px bg-slate-200"></div>
-              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">or sign in with password</span>
-              <div className="flex-1 h-px bg-slate-200"></div>
+        {error && (
+          <div role="alert" className="mb-4 flex items-start gap-2.5 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-900">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" />
+            <div>
+              <p className="font-bold">{error.title}</p>
+              <p className="mt-0.5 leading-relaxed">{error.message}</p>
             </div>
+          </div>
+        )}
+        {notice && (
+          <div role="status" className="mb-4 flex items-start gap-2.5 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-900">
+            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+            <p className="leading-relaxed">{notice}</p>
+          </div>
+        )}
 
-            <form onSubmit={handleQuickLogin} className="space-y-4 text-xs">
+        {activeTab === 'register' && (
+          <form onSubmit={handleRegister} className="space-y-3" noValidate={false}>
             <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="font-bold text-slate-700">Email Address</label>
-                <span className="text-[10px] text-slate-400 font-medium">
-                  Enter your registered account email
-                </span>
-              </div>
-              <input
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="e.g. yourname@example.com"
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-medium"
-              />
+              <label htmlFor={`${fieldId}-name`} className={labelClass}>Full name</label>
+              <input id={`${fieldId}-name`} className={inputClass} value={name} onChange={(e) => setName(e.target.value)} required maxLength={120} autoComplete="name" />
             </div>
             <div>
-              <label className="block font-bold text-slate-700 mb-1">Password</label>
+              <label htmlFor={`${fieldId}-email`} className={labelClass}>Email</label>
+              <input id={`${fieldId}-email`} type="email" className={inputClass} value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="email" />
+            </div>
+            <div>
+              <label htmlFor={`${fieldId}-password`} className={labelClass}>Password</label>
               <input
+                id={`${fieldId}-password`}
                 type="password"
+                className={inputClass}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••••••"
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-medium"
+                required
+                minLength={MIN_PASSWORD_LENGTH}
+                autoComplete="new-password"
+                aria-describedby={`${fieldId}-password-hint`}
               />
+              <p id={`${fieldId}-password-hint`} className="mt-1 text-[11px] text-slate-500">At least {MIN_PASSWORD_LENGTH} characters.</p>
             </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label htmlFor={`${fieldId}-country`} className={labelClass}>Tax residency</label>
+                <select id={`${fieldId}-country`} className={inputClass} value={country} onChange={(e) => setCountry(e.target.value as ResidencyCountry)}>
+                  {COUNTRY_OPTIONS.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+              <div>
+                <label htmlFor={`${fieldId}-currency`} className={labelClass}>Currency</label>
+                <select id={`${fieldId}-currency`} className={inputClass} value={currency} onChange={(e) => setCurrency(e.target.value as Currency)}>
+                  {CURRENCY_OPTIONS.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+              <div>
+                <label htmlFor={`${fieldId}-goal`} className={labelClass}>Primary goal</label>
+                <select id={`${fieldId}-goal`} className={inputClass} value={goal} onChange={(e) => setGoal(e.target.value as LifeStageCategory)}>
+                  {GOAL_OPTIONS.map((g) => <option key={g.value} value={g.value}>{g.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <label htmlFor={`${fieldId}-target`} className={labelClass}>Target amount</label>
+                <input id={`${fieldId}-target`} type="number" min={0} step={1000} inputMode="numeric" className={inputClass} value={targetAmount} onChange={(e) => setTargetAmount(e.target.value)} />
+              </div>
+            </div>
+            <button type="submit" disabled={busy} className={primaryButton}>
+              {busy && <Loader2 className="h-4 w-4 animate-spin" />} Create account
+            </button>
+            <GoogleButton onClick={handleGoogle} disabled={busy} />
+            <p className="text-[11px] leading-relaxed text-slate-500">
+              Your profile is stored in your private Firebase account. Estimates in this app are educational and are not tax or investment advice.
+            </p>
+          </form>
+        )}
 
+        {activeTab === 'login' && (
+          <form onSubmit={handleLogin} className="space-y-3">
+            <div>
+              <label htmlFor={`${fieldId}-login-email`} className={labelClass}>Email</label>
+              <input id={`${fieldId}-login-email`} type="email" className={inputClass} value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="email" />
+            </div>
+            <div>
+              <label htmlFor={`${fieldId}-login-password`} className={labelClass}>Password</label>
+              <input id={`${fieldId}-login-password`} type="password" className={inputClass} value={password} onChange={(e) => setPassword(e.target.value)} required autoComplete="current-password" />
+            </div>
+            <button type="submit" disabled={busy} className={primaryButton}>
+              {busy && <Loader2 className="h-4 w-4 animate-spin" />} Sign in
+            </button>
+            <button type="button" onClick={handleReset} disabled={busy} className="cursor-pointer text-xs font-semibold text-emerald-800 hover:underline">
+              Forgot password?
+            </button>
+            <GoogleButton onClick={handleGoogle} disabled={busy} />
+          </form>
+        )}
+
+        {activeTab === 'account' && signedIn && (
+          <div className="space-y-4">
+            <dl className="grid grid-cols-2 gap-x-4 gap-y-2 rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs">
+              <dt className="text-slate-500">Name</dt>
+              <dd className="font-semibold text-slate-900">{signedIn.name}</dd>
+              <dt className="text-slate-500">Email</dt>
+              <dd className="break-all font-semibold text-slate-900">{signedIn.email}</dd>
+              <dt className="text-slate-500">Verified</dt>
+              <dd className={signedIn.emailVerified ? 'font-semibold text-emerald-700' : 'font-semibold text-amber-700'}>
+                {signedIn.emailVerified ? 'Yes' : 'Not yet'}
+              </dd>
+              <dt className="text-slate-500">Residency / currency</dt>
+              <dd className="font-semibold text-slate-900">{signedIn.country} · {signedIn.preferredCurrency}</dd>
+            </dl>
+
+            {!signedIn.emailVerified && (
+              <button type="button" onClick={handleResendVerification} disabled={busy} className={secondaryButton}>
+                <Mail className="h-4 w-4" /> Resend verification email
+              </button>
+            )}
             <button
-              type="submit"
-              disabled={isSubmitting || !email}
-              className="w-full py-2.5 px-4 rounded-xl font-bold text-xs bg-slate-900 hover:bg-slate-800 text-white cursor-pointer transition-colors"
+              type="button"
+              onClick={handleSendReport}
+              disabled={busy || !signedIn.emailVerified}
+              title={signedIn.emailVerified ? undefined : 'Verify your email address first'}
+              className={primaryButton}
             >
-              {isSubmitting ? 'Verifying...' : 'Sign In'}
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />} Email me a milestone summary
             </button>
 
-            <div className="pt-2 text-center text-slate-500">
-              Don't have an account yet?{' '}
-              <button
-                type="button"
-                onClick={() => setActiveTab('register')}
-                className="font-bold text-emerald-700 hover:underline cursor-pointer"
-              >
-                Register here
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
-
-        {/* TAB 3: EMAIL OUTBOX & RECEIPTS */}
-        {activeTab === 'outbox' && (
-          <div>
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-bold text-slate-700">
-                Dispatched Auto-Responses for: <span className="text-emerald-700">{currentUser.email}</span>
-              </span>
-              <button
-                onClick={handleSendTestEmail}
-                disabled={isSubmitting}
-                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 hover:bg-emerald-100 font-bold text-[11px] cursor-pointer"
-              >
-                <Send className="w-3 h-3" />
-                <span>Send Milestone Report</span>
-              </button>
-            </div>
-
-            {isLoadingLogs ? (
-              <div className="py-8 text-center text-xs text-slate-500">
-                <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-slate-400" />
-                Fetching mail transport logs...
+            <section aria-labelledby={`${fieldId}-outbox`}>
+              <div className="mb-2 flex items-center justify-between">
+                <h3 id={`${fieldId}-outbox`} className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
+                  <Inbox className="h-3.5 w-3.5" /> Recent emails
+                </h3>
+                <button type="button" onClick={loadLogs} aria-label="Refresh emails" className="cursor-pointer rounded p-1 text-slate-500 hover:bg-slate-100">
+                  <RefreshCw className={`h-3.5 w-3.5 ${logsLoading ? 'animate-spin' : ''}`} />
+                </button>
               </div>
-            ) : emailLogs.length === 0 ? (
-              <div className="py-8 text-center bg-slate-50 rounded-xl border border-dashed border-slate-200 p-6">
-                <Mail className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-                <p className="text-xs font-bold text-slate-700">No automated emails recorded yet</p>
-                <p className="text-[11px] text-slate-500 mt-1">
-                  Complete registration or click "Send Milestone Report" above to test the auto-mailer.
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1">
-                {emailLogs.map((log) => (
-                  <div key={log.id} className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-left">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-extrabold text-slate-900 truncate">
-                        {log.subject}
-                      </span>
-                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 shrink-0">
-                        {log.status}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between text-[11px] text-slate-500 mt-1">
-                      <span>To: {log.recipientEmail}</span>
-                      <span>{new Date(log.dispatchedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                    </div>
-
-                    <p className="text-[11px] text-slate-600 mt-1 line-clamp-1">
-                      {log.summary}
-                    </p>
-
-                    {log.previewUrl && (
-                      <div className="mt-2 pt-2 border-t border-slate-200 flex items-center justify-between">
-                        <span className="text-[10px] text-blue-700 font-medium">Ethereal Live Mailbox</span>
-                        <a
-                          href={log.previewUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-700 hover:text-blue-900 underline"
-                        >
-                          <span>View Rendered Email</span>
-                          <ExternalLink className="w-3 h-3" />
-                        </a>
+              {emailLogs.length === 0 ? (
+                <p className="text-xs text-slate-500">{logsLoading ? 'Loading…' : 'No emails sent from this session yet.'}</p>
+              ) : (
+                <ul className="max-h-48 space-y-2 overflow-y-auto">
+                  {emailLogs.map((log) => (
+                    <li key={log.id} className="rounded-lg border border-slate-200 p-2.5 text-xs">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="truncate font-semibold text-slate-900">{log.subject}</span>
+                        <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold ${STATUS_STYLES[log.status]}`}>{log.status}</span>
                       </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
+                      <div className="mt-1 flex items-center justify-between text-[11px] text-slate-500">
+                        <time dateTime={log.dispatchedAt}>{new Date(log.dispatchedAt).toLocaleString()}</time>
+                        {log.previewUrl && /^https?:\/\//.test(log.previewUrl) && (
+                          <a href={log.previewUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-semibold text-emerald-800 hover:underline">
+                            Preview <ExternalLink className="h-3 w-3" />
+                          </a>
+                        )}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
 
-            <div className="mt-5 pt-3 border-t border-slate-200 flex items-center justify-between">
-              <span className="text-[11px] text-slate-500">
-                Logged in as: <strong>{currentUser.name}</strong>
-              </span>
-              <button
-                onClick={handleSignOut}
-                className="text-[11px] font-bold text-slate-500 hover:text-rose-600 flex items-center gap-1 cursor-pointer"
-              >
-                <LogOut className="w-3 h-3" />
-                <span>Sign Out / Switch Demo</span>
-              </button>
-            </div>
+            <button type="button" onClick={handleSignOut} disabled={busy} className={secondaryButton}>
+              <LogOut className="h-4 w-4" /> Sign out
+            </button>
           </div>
         )}
-
-        {/* TAB 4: FIREBASE BACKEND DATABASE INSPECTOR */}
-        {activeTab === 'database' && (
-          <div className="space-y-4">
-            <div className="p-4 bg-emerald-50/80 border border-emerald-200 rounded-xl">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center font-bold text-sm shadow-xs">
-                    🔥
-                  </div>
-                  <div>
-                    <h4 className="font-extrabold text-sm text-slate-900">
-                      Firebase Cloud Firestore
-                    </h4>
-                    <p className="text-[11px] text-emerald-800 font-medium">
-                      Cloud NoSQL Database &bull; Backend Layer Connected
-                    </p>
-                  </div>
-                </div>
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                  LIVE &amp; READY
-                </span>
-              </div>
-            </div>
-
-            {/* Config Specs */}
-            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-2 text-xs">
-              <div className="flex justify-between py-1 border-b border-slate-200">
-                <span className="text-slate-500 font-medium">Database Provider:</span>
-                <span className="font-bold text-slate-900">Google Cloud Firestore</span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-slate-200">
-                <span className="text-slate-500 font-medium">Firebase Project ID:</span>
-                <span className="font-mono text-[11px] font-semibold text-slate-800">
-                  {dbInfo?.projectId || 'inbound-lyceum-cpthm'}
-                </span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-slate-200">
-                <span className="text-slate-500 font-medium">Database ID:</span>
-                <span className="font-mono text-[10px] font-semibold text-slate-800 truncate max-w-[220px]" title={dbInfo?.databaseId}>
-                  {dbInfo?.databaseId || 'ai-studio-investirelandaii-6a889693-6842-4c14-bbe8-0e5ec82a479e'}
-                </span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-slate-200">
-                <span className="text-slate-500 font-medium">Security Rules:</span>
-                <span className="font-bold text-emerald-700 flex items-center gap-1">
-                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                  Deployed (Zero-Trust ABAC)
-                </span>
-              </div>
-              <div className="flex justify-between py-1">
-                <span className="text-slate-500 font-medium">Blueprint Architecture:</span>
-                <span className="font-mono text-[11px] font-semibold text-slate-800">
-                  firebase-blueprint.json
-                </span>
-              </div>
-            </div>
-
-            {/* Provisioned Collections */}
-            <div>
-              <div className="text-[11px] font-extrabold uppercase text-slate-500 tracking-wider mb-2">
-                Provisioned Firestore Collections
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                <div className="p-2.5 bg-white border border-slate-200 rounded-lg">
-                  <div className="font-mono font-bold text-slate-900 text-[11px] text-emerald-800">
-                    /users/{'{userId}'}
-                  </div>
-                  <div className="text-[11px] text-slate-500 mt-0.5">
-                    User account, country tax residency &amp; goal target
-                  </div>
-                </div>
-                <div className="p-2.5 bg-white border border-slate-200 rounded-lg">
-                  <div className="font-mono font-bold text-slate-900 text-[11px] text-emerald-800">
-                    /users/{'{userId}'}/milestones
-                  </div>
-                  <div className="text-[11px] text-slate-500 mt-0.5">
-                    Deposit, PSIA, pension &amp; wealth milestones
-                  </div>
-                </div>
-                <div className="p-2.5 bg-white border border-slate-200 rounded-lg">
-                  <div className="font-mono font-bold text-slate-900 text-[11px] text-emerald-800">
-                    /users/{'{userId}'}/holdings
-                  </div>
-                  <div className="text-[11px] text-slate-500 mt-0.5">
-                    Cross-border assets (EUR, INR, USD, GBP)
-                  </div>
-                </div>
-                <div className="p-2.5 bg-white border border-slate-200 rounded-lg">
-                  <div className="font-mono font-bold text-slate-900 text-[11px] text-emerald-800">
-                    /users/{'{userId}'}/emails
-                  </div>
-                  <div className="text-[11px] text-slate-500 mt-0.5">
-                    Transactional registration &amp; auto-mail audit log
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Sync Feedback Message */}
-            {dbSyncMessage && (
-              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span>{dbSyncMessage}</span>
-              </div>
-            )}
-
-            {/* Firebase Cloud Function Auth Trigger Module */}
-            <div className="p-3 bg-violet-50/70 border border-violet-200 rounded-xl text-xs space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-violet-900 flex items-center gap-1.5">
-                  <Mail className="w-3.5 h-3.5 text-violet-700" />
-                  Firebase Cloud Function Auth Trigger
-                </span>
-                <span className="text-[10px] font-mono font-bold bg-violet-100 text-violet-800 px-2 py-0.5 rounded">
-                  functions.auth.user().onCreate
-                </span>
-              </div>
-              <p className="text-[11px] text-violet-800 leading-relaxed">
-                Production Endpoint: <span className="font-mono text-[10px] text-violet-950 font-bold break-all">https://europe-west1-inbound-lyceum-cpthm.cloudfunctions.net/onUserCreatedSendWelcomeEmail</span>
-              </p>
-              <button
-                type="button"
-                onClick={handleTriggerAuthCloudFunction}
-                disabled={isSubmitting || !currentUser.email}
-                className="w-full py-2 px-3 rounded-lg bg-violet-600 hover:bg-violet-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 shadow-2xs"
-              >
-                <Send className="w-3.5 h-3.5" />
-                <span>Test Trigger Cloud Function Welcome Email to {currentUser.email || 'Active User'}</span>
-              </button>
-            </div>
-
-            {/* Action Bar */}
-            <div className="pt-2 flex flex-col sm:flex-row items-center gap-2">
-              <button
-                onClick={handleTestDatabaseSync}
-                disabled={isSubmitting}
-                className="w-full sm:w-auto flex-1 py-2.5 px-4 rounded-xl font-bold text-xs bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center gap-2 shadow-xs cursor-pointer disabled:opacity-50"
-              >
-                {isSubmitting ? (
-                  <>
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                    <span>Syncing with Cloud Firestore...</span>
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="w-3.5 h-3.5" />
-                    <span>Sync Active User &amp; Milestone to Firestore</span>
-                  </>
-                )}
-              </button>
-              <button
-                onClick={loadDatabaseStatus}
-                disabled={isLoadingDb}
-                className="w-full sm:w-auto py-2.5 px-4 rounded-xl font-bold text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${isLoadingDb ? 'animate-spin' : ''}`} />
-                <span>Refresh Status</span>
-              </button>
-            </div>
-          </div>
-        )}
-
       </div>
     </div>
   );
 };
+
+const GoogleButton: React.FC<{ onClick: () => void; disabled: boolean }> = ({ onClick, disabled }) => (
+  <button type="button" onClick={onClick} disabled={disabled} className={secondaryButton}>
+    <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4">
+      <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.27-4.74 3.27-8.1z" />
+      <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84A11 11 0 0 0 12 23z" />
+      <path fill="#FBBC05" d="M5.84 14.1A6.6 6.6 0 0 1 5.5 12c0-.73.13-1.44.34-2.1V7.06H2.18A11 11 0 0 0 1 12c0 1.78.43 3.45 1.18 4.94l3.66-2.84z" />
+      <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1A11 11 0 0 0 2.18 7.06L5.84 9.9C6.71 7.3 9.14 5.38 12 5.38z" />
+    </svg>
+    Continue with Google
+  </button>
+);
+
+export default UserAuthModal;

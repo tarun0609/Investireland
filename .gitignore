@@ -6,3 +6,11 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Local runtime data (never commit user data)
+data/
+functions/lib/
+.firebase/
+
+functions/shared/
+functions/node_modules/

@@ -47,6 +47,10 @@ export interface HoldingTaxDetail {
   estimatedTaxLocal: number;
   taxJurisdiction: 'Ireland' | 'India' | 'US';
   dtaaCreditEligible: boolean;
+  /** True when purchaseValue was missing and the cost basis was estimated (80% of current value). */
+  isEstimatedCostBasis: boolean;
+  /** True when the EUR cost basis uses an assumed historical acquisition FX rate rather than the actual trade-date rate. */
+  isEstimatedAcquisitionFx: boolean;
   notes: string;
 }
 
@@ -82,6 +86,8 @@ export interface TaxEstimatorResult {
   holdingDetails: HoldingTaxDetail[];
   psialSavingsPotentialEUR: number; // Potential savings if funds moved to Budget 2027 PSIA
   taxHarvestingInsights: string[];
+  /** Explicit list of estimates/fallbacks used because input data was missing. */
+  assumptions: string[];
 }
 
 export const DEFAULT_TAX_INPUTS: TaxSimulationInputs = {
@@ -94,14 +100,20 @@ export const DEFAULT_TAX_INPUTS: TaxSimulationInputs = {
   eurInrAdjustmentPct: 0,
 };
 
-// Historical acquisition FX assumptions (when positions were entered)
-// Parag Parikh & TCS acquired around 88.50 INR/EUR; US RSUs around 1.05 USD/EUR
-const HISTORICAL_FX_ACQUISITION: Record<Currency, number> = {
+// ASSUMED historical acquisition FX rates (holdings do not record trade-date FX).
+// Parag Parikh & TCS acquired around 88.50 INR/EUR; US RSUs around 1.05 USD/EUR.
+// Holdings converted with these rates are flagged via isEstimatedAcquisitionFx and result.assumptions.
+export const HISTORICAL_FX_ACQUISITION: Record<Currency, number> = {
   EUR: 1,
   USD: 1.05,
   INR: 88.50,
   GBP: 0.86,
 };
+
+// Fallback cost basis ratio when purchaseValue is missing (flagged via isEstimatedCostBasis)
+export const ESTIMATED_COST_BASIS_RATIO = 0.8;
+const IRISH_CGT_RATE = 0.33;
+const IRISH_EXIT_TAX_RATE = 0.41;
 
 export function calculateTaxImpact(
   holdings: Holding[],
@@ -141,8 +153,12 @@ export function calculateTaxImpact(
 
   // Process each holding
   const holdingDetails: HoldingTaxDetail[] = holdings.map((h) => {
-    // If purchaseValue is not explicitly provided, estimate purchase basis as 80% of current value
-    const purchaseValLocal = h.purchaseValue !== undefined ? h.purchaseValue : (h.assetType === 'Cash / Deposit' ? h.currentValue : h.currentValue * 0.8);
+    // Cash principal has no capital gain, so a missing basis there is not an estimate.
+    const isEstimatedCostBasis = h.purchaseValue === undefined && h.assetType !== 'Cash / Deposit';
+    const purchaseValLocal = h.purchaseValue !== undefined
+      ? h.purchaseValue
+      : (h.assetType === 'Cash / Deposit' ? h.currentValue : h.currentValue * ESTIMATED_COST_BASIS_RATIO);
+    const isEstimatedAcquisitionFx = h.currency !== 'EUR';
     const currentValLocal = h.currentValue;
     const gainLocal = currentValLocal - purchaseValLocal;
     const gainPct = purchaseValLocal > 0 ? (gainLocal / purchaseValLocal) * 100 : 0;
@@ -265,6 +281,8 @@ export function calculateTaxImpact(
       estimatedTaxLocal,
       taxJurisdiction,
       dtaaCreditEligible,
+      isEstimatedCostBasis,
+      isEstimatedAcquisitionFx,
       notes,
     };
   });
@@ -282,15 +300,34 @@ export function calculateTaxImpact(
     .reduce((s, h) => s + h.totalGainEUR, 0);
   const exitTaxLiabilityEUR = exitTaxGainsEUR * 0.41;
 
-  // Irish CGT Qualifying Holdings (Shares, RSUs, US Assets under Irish CGT)
+  // Irish CGT Qualifying Holdings (Shares, RSUs, US assets and Indian equities/funds).
+  // Irish residents are taxed on worldwide gains, so Indian gains are also chargeable to 33% Irish CGT;
+  // Indian tax paid is relieved separately via the capped DTAA credit below.
+  const isIrishCgtHolding = (h: HoldingTaxDetail): boolean =>
+    h.taxTreatment === 'Standard CGT' ||
+    h.taxTreatment === 'US W-8BEN (0% US / 33% IE)' ||
+    h.taxTreatment === 'Indian LTCG (12.5%)' ||
+    h.taxTreatment === 'Indian STCG (20%)';
   const cgtGainsEUR = holdingDetails
-    .filter(h => h.taxTreatment === 'Standard CGT' || h.taxTreatment === 'US W-8BEN (0% US / 33% IE)')
+    .filter(isIrishCgtHolding)
     .reduce((s, h) => s + h.totalGainEUR, 0);
 
   const IRISH_CGT_EXEMPTION_EUR = 1270;
   const appliedIrishExemptionEUR = inputs.applyIrishCgtExemption ? Math.min(cgtGainsEUR, IRISH_CGT_EXEMPTION_EUR) : 0;
   const taxableIrishCgtGainsEUR = Math.max(0, cgtGainsEUR - appliedIrishExemptionEUR);
-  const cgtLiabilityEUR = taxableIrishCgtGainsEUR * 0.33;
+  const cgtLiabilityEUR = taxableIrishCgtGainsEUR * IRISH_CGT_RATE;
+
+  // Irish tax attributable to one country's gains: CGT share (annual exemption shared pro rata
+  // across the CGT pool) plus exit tax on that country's funds.
+  const irishTaxOnCountryGainsEUR = (country: Holding['country']): number => {
+    const countryHoldings = holdingDetails.filter(h => h.country === country);
+    const countryCgtGains = countryHoldings.filter(isIrishCgtHolding).reduce((s, h) => s + h.totalGainEUR, 0);
+    const countryExitTaxGains = countryHoldings
+      .filter(h => h.taxTreatment === 'Exit Tax (41%)')
+      .reduce((s, h) => s + h.totalGainEUR, 0);
+    const cgtShare = cgtGainsEUR > 0 ? cgtLiabilityEUR * (countryCgtGains / cgtGainsEUR) : 0;
+    return cgtShare + countryExitTaxGains * IRISH_EXIT_TAX_RATE;
+  };
 
   const grossIrishTaxLiabilityEUR = exitTaxLiabilityEUR + cgtLiabilityEUR;
 
@@ -320,10 +357,10 @@ export function calculateTaxImpact(
   const grossIndiaTaxEUR = convertToSimulatedEUR(grossIndiaTaxINR, 'INR');
 
   // Double Taxation Avoidance Agreement (DTAA) Foreign Tax Credit:
-  // Ireland taxes worldwide income of Irish residents. However, Indian tax paid on Indian equities can be credited
-  // against Irish CGT liability on the same gain (up to Irish 33% rate).
-  const irishTaxOnIndianGainEUR = indiaTotalGainEUR * 0.33;
-  const indianDtaaCreditEUR = Math.min(grossIndiaTaxEUR, irishTaxOnIndianGainEUR);
+  // Ireland taxes worldwide gains of Irish residents (included in grossIrishTaxLiabilityEUR above). Indian tax paid
+  // is credited against the Irish tax on the same gains, capped at the lesser of the two.
+  const irishTaxOnIndianGainEUR = irishTaxOnCountryGainsEUR('India');
+  const indianDtaaCreditEUR = Math.max(0, Math.min(grossIndiaTaxEUR, irishTaxOnIndianGainEUR));
 
   // Calculate US Jurisdiction Summary
   const usHoldings = holdingDetails.filter(h => h.country === 'US');
@@ -348,6 +385,13 @@ export function calculateTaxImpact(
     usDirectTaxEUR = 0;
   }
 
+  // US-Ireland treaty foreign tax credit, capped at the Irish tax on the same US gains
+  const irishTaxOnUsGainEUR = irishTaxOnCountryGainsEUR('US');
+  const usForeignTaxCreditEUR = Math.max(0, Math.min(usDirectTaxEUR, irishTaxOnUsGainEUR));
+  const totalForeignTaxCreditsEUR = indianDtaaCreditEUR + usForeignTaxCreditEUR;
+  const netIrishTaxLiabilityEUR = Math.max(0, grossIrishTaxLiabilityEUR - totalForeignTaxCreditsEUR);
+  const irishTaxableBaseGainsEUR = cgtGainsEUR + exitTaxGainsEUR;
+
   // Consolidated summaries
   const irelandSummary: TaxJurisdictionSummary = {
     country: 'Ireland',
@@ -363,14 +407,15 @@ export function calculateTaxImpact(
     statutoryExemptionEUR: appliedIrishExemptionEUR,
     taxableGainsEUR: taxableIrishCgtGainsEUR + exitTaxGainsEUR,
     grossTaxLiabilityEUR: grossIrishTaxLiabilityEUR,
-    foreignTaxCreditEUR: indianDtaaCreditEUR,
-    netTaxLiabilityEUR: Math.max(0, grossIrishTaxLiabilityEUR),
-    effectiveTaxRatePct: irishTotalGainEUR > 0 ? (grossIrishTaxLiabilityEUR / irishTotalGainEUR) * 100 : 0,
+    foreignTaxCreditEUR: totalForeignTaxCreditsEUR,
+    netTaxLiabilityEUR: netIrishTaxLiabilityEUR,
+    effectiveTaxRatePct: irishTaxableBaseGainsEUR > 0 ? (netIrishTaxLiabilityEUR / irishTaxableBaseGainsEUR) * 100 : 0,
     applicableRules: [
       'Standard CGT: 33% (TCA 1997 s.28)',
       'UCITS ETF Exit Tax: 41% (s.739D) without allowance',
       `Annual Personal Exemption: €${IRISH_CGT_EXEMPTION_EUR.toLocaleString()} applies to shares/RSUs`,
-      'Foreign Asset Rule: Disposal & purchase converted at respective transaction date FX rates'
+      'Foreign Asset Rule: Disposal & purchase converted at respective transaction date FX rates',
+      'Worldwide Basis: Indian & US gains are chargeable to Irish tax, less capped DTAA / treaty foreign tax credits'
     ],
     keyAdvice: `Utilizing your €${IRISH_CGT_EXEMPTION_EUR.toLocaleString()} annual CGT allowance saves €${(appliedIrishExemptionEUR * 0.33).toFixed(2)} in tax. Transferring ETF assets to the 2027 PSIA shelters against 41% exit tax.`
   };
@@ -389,7 +434,8 @@ export function calculateTaxImpact(
     statutoryExemptionEUR: indiaExemptionEUR,
     taxableGainsEUR: taxableIndiaGainEUR,
     grossTaxLiabilityEUR: grossIndiaTaxEUR,
-    foreignTaxCreditEUR: 0,
+    // Claimed against Irish tax (not refunded in India); shown here for reference
+    foreignTaxCreditEUR: indianDtaaCreditEUR,
     netTaxLiabilityEUR: grossIndiaTaxEUR,
     effectiveTaxRatePct: indiaTotalGainEUR > 0 ? (grossIndiaTaxEUR / indiaTotalGainEUR) * 100 : 0,
     applicableRules: [
@@ -415,7 +461,8 @@ export function calculateTaxImpact(
     statutoryExemptionEUR: 0,
     taxableGainsEUR: usTotalGainEUR,
     grossTaxLiabilityEUR: usDirectTaxEUR,
-    foreignTaxCreditEUR: 0,
+    // Claimed against Irish tax; shown here for reference
+    foreignTaxCreditEUR: usForeignTaxCreditEUR,
     netTaxLiabilityEUR: usDirectTaxEUR,
     effectiveTaxRatePct: usTotalGainEUR > 0 ? (usDirectTaxEUR / usTotalGainEUR) * 100 : 0,
     applicableRules: [
@@ -431,7 +478,6 @@ export function calculateTaxImpact(
 
   // Cross-border consolidated totals
   const totalGlobalTaxLiabilityEUR = grossIrishTaxLiabilityEUR + grossIndiaTaxEUR + usDirectTaxEUR;
-  const totalForeignTaxCreditsEUR = indianDtaaCreditEUR;
   const netPayableTaxEUR = Math.max(0, totalGlobalTaxLiabilityEUR - totalForeignTaxCreditsEUR);
   const overallEffectiveRatePct = totalUnrealizedGainsEUR > 0 
     ? (netPayableTaxEUR / totalUnrealizedGainsEUR) * 100 
@@ -443,8 +489,22 @@ export function calculateTaxImpact(
     `Indian LTCG Threshold (₹1.25 Lakh): Under Section 112A, the first ₹1,25,000 (~€${indiaExemptionEUR.toFixed(0)}) of equity mutual fund gains is completely tax-free in India each fiscal year.`,
     `Budget 2027 PSIA Opportunity: You hold €${exitTaxGainsEUR.toLocaleString()} in unrealized ETF gains subject to 41% exit tax (€${exitTaxLiabilityEUR.toLocaleString()}). Transitioning these to the upcoming €50,000 Investment Account avoids exit tax & deemed disposal.`,
     `Currency Fluctuation Factor: FX movements account for €${Math.abs(totalFxGainEUR).toFixed(2)} (${totalFxGainEUR >= 0 ? 'additional taxable gain' : 'capital loss offset'}) in EUR due to exchange rate shifts since acquisition date.`,
-    `Double Taxation Relief: You have €${indianDtaaCreditEUR.toFixed(2)} in foreign tax credits claimable in Ireland under the India-Ireland DTAA, preventing double taxation.`
+    `Double Taxation Relief: You have €${indianDtaaCreditEUR.toFixed(2)}     in foreign tax credits claimable in Ireland under the India-Ireland DTAA (capped at the €${irishTaxOnIndianGainEUR.toFixed(2)} Irish tax on the same Indian gains), preventing double taxation.`
   ];
+
+      const assumptions: string[] = [];
+      const estimatedBasisHoldings = holdingDetails.filter(h => h.isEstimatedCostBasis);
+      if (estimatedBasisHoldings.length > 0) {
+        assumptions.push(
+          `Purchase value missing for ${estimatedBasisHoldings.map(h => h.assetName).join(', ')}: cost basis estimated at ${Math.round(ESTIMATED_COST_BASIS_RATIO * 100)}% of current value. Enter actual purchase values for accurate figures.`
+        );
+      }
+      const estimatedFxCurrencies = Array.from(new Set(holdingDetails.filter(h => h.isEstimatedAcquisitionFx).map(h => h.currency)));
+      if (estimatedFxCurrencies.length > 0) {
+        assumptions.push(
+          `Acquisition FX rates assumed (not trade-date actuals): ${estimatedFxCurrencies.map(c => `EUR/${c} ${HISTORICAL_FX_ACQUISITION[c]}`).join(', ')}.`
+        );
+      }
 
   return {
     simulatedFxRates: {
@@ -466,5 +526,6 @@ export function calculateTaxImpact(
     holdingDetails,
     psialSavingsPotentialEUR,
     taxHarvestingInsights,
+    assumptions,
   };
 }

@@ -1,3 +1,5 @@
+import { apiFetch } from './apiClient';
+
 export interface AIChatMessage {
   id: string;
   sender: 'user' | 'assistant';
@@ -5,40 +7,55 @@ export interface AIChatMessage {
   timestamp: string;
   sourceCitation?: string;
   isGrounded?: boolean;
+  mode?: AIResponseMode;
+}
+
+export type AIResponseMode = 'MODEL' | 'LOCAL_FALLBACK' | 'OFFLINE';
+
+export const AI_MAX_MESSAGE_CHARS = 2000;
+
+export interface AIReply {
+  reply: string;
+  source: string;
+  isGrounded: boolean;
+  mode: AIResponseMode;
+  notice?: string;
 }
 
 export async function askFinancialAI(
-  message: string, 
+  message: string,
   history: AIChatMessage[] = [],
-  context?: any
-): Promise<{ reply: string; source: string; isGrounded: boolean }> {
+  context?: unknown
+): Promise<AIReply> {
+  const trimmed = message.trim().slice(0, AI_MAX_MESSAGE_CHARS);
   try {
-    const res = await fetch('/api/ai-chat', {
+    const data = await apiFetch<{ reply?: string; source?: string; mode?: AIResponseMode; reason?: string }>('/api/ai-chat', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message, history, context })
+      body: JSON.stringify({
+        message: trimmed,
+        history: history.slice(-10).map((m) => ({ sender: m.sender, text: m.text.slice(0, AI_MAX_MESSAGE_CHARS) })),
+        context,
+      }),
     });
-
-    if (!res.ok) {
-      throw new Error(`AI API error ${res.status}`);
-    }
-
-    const data = await res.json();
+    const mode = data.mode === 'MODEL' ? 'MODEL' : 'LOCAL_FALLBACK';
     return {
       reply: data.reply || 'No response generated.',
-      source: data.source || 'InvestIreland Knowledge Base',
-      isGrounded: data.isGrounded ?? true
+      source: data.source || 'InvestIreland knowledge base',
+      isGrounded: false,
+      mode,
+      notice: mode === 'MODEL' ? undefined : data.reason,
     };
   } catch (err) {
-    console.warn('Using client fallback AI engine:', err);
+    console.warn('AI service unavailable; using offline answers:', err);
     return {
-      reply: getClientKnowledgeFallback(message),
-      source: 'InvestIreland Official Fiscal Knowledge Engine (Offline Fallback)',
-      isGrounded: true
+      reply: getClientKnowledgeFallback(trimmed),
+      source: 'Offline summary (AI service unavailable)',
+      isGrounded: false,
+      mode: 'OFFLINE',
+      notice: 'The AI service is unavailable, so this is a pre-written summary.',
     };
   }
 }
-
 function getClientKnowledgeFallback(query: string): string {
   const q = query.toLowerCase();
   if (q.includes('threshold') || q.includes('50000') || q.includes('50,000')) {

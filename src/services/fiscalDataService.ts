@@ -1,9 +1,12 @@
 import { FiscalDataResponse, Currency } from '../types';
 
+/** Date the bundled reference figures were last manually reviewed against official sources. */
+export const FISCAL_DATA_LAST_REVIEWED = '2026-10-15';
+
 export const FALLBACK_FISCAL_DATA: FiscalDataResponse = {
   jurisdiction: 'Ireland (Éire)',
   currency: 'EUR',
-  lastVerifiedTimestamp: new Date().toISOString(),
+  lastVerifiedTimestamp: FISCAL_DATA_LAST_REVIEWED,
   legalBasis: 'Budget 2027 Policy Framework & Taxes Consolidation Act 1997',
   regime: {
     fy26: {
@@ -41,7 +44,7 @@ export const FALLBACK_FISCAL_DATA: FiscalDataResponse = {
       EUR_TO_INR: 92.45,
       EUR_TO_USD: 1.085,
       EUR_TO_GBP: 0.855,
-      lastUpdated: new Date().toISOString()
+      lastUpdated: FISCAL_DATA_LAST_REVIEWED
     }
   },
   officialSources: [

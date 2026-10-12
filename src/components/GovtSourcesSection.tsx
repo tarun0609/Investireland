@@ -16,8 +16,8 @@ import {
 export const GovtSourcesSection: React.FC = () => {
   const [fiscalData, setFiscalData] = useState<FiscalDataResponse>(FALLBACK_FISCAL_DATA);
   const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [latencyMs, setLatencyMs] = useState<number>(38);
-  const [lastSyncTime, setLastSyncTime] = useState<string>(new Date().toLocaleTimeString());
+  const [latencyMs, setLatencyMs] = useState<number | null>(null);
+  const [lastSyncTime, setLastSyncTime] = useState<string>('—');
   const [showJsonInspector, setShowJsonInspector] = useState<boolean>(false);
 
   const handleSyncFromGovtAPI = async () => {
@@ -51,10 +51,10 @@ export const GovtSourcesSection: React.FC = () => {
             <span>Official Government Source of Truth</span>
           </div>
           <h2 className="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
-            Live Fiscal Data Directly from Official Databases
+            Reference Fiscal Data with Official Source Links
           </h2>
           <p className="mt-4 text-base sm:text-lg text-slate-600 leading-relaxed">
-            InvestIreland AI does not guess tax rules or scrape unverified blogs. All calculations and thresholds are verified against official statutory manuals and government whitepapers.
+            The figures below are a curated reference dataset, last reviewed on {fiscalData.lastVerifiedTimestamp.slice(0, 10)}. They are not fetched live from government systems. Always confirm current rules on the linked official sites before acting.
           </p>
         </div>
 
@@ -65,12 +65,12 @@ export const GovtSourcesSection: React.FC = () => {
               <div className="w-3 h-3 rounded-full bg-emerald-400 animate-pulse" />
               <div>
                 <div className="text-xs font-mono uppercase tracking-wider text-slate-400">
-                  Secure Fiscal API Proxy &middot; /api/fiscal-data
+                  Reference data endpoint &middot; /api/fiscal-data
                 </div>
                 <div className="text-sm sm:text-base font-bold text-white flex items-center gap-2 mt-0.5">
                   <span>Official Irish Statutory Source Feed</span>
                   <span className="text-[11px] font-mono text-emerald-400 bg-emerald-950/80 px-2 py-0.5 rounded border border-emerald-700/60">
-                    STATUS: HEALTHY_VERIFIED
+                    STATUS: REFERENCE DATASET
                   </span>
                 </div>
               </div>
@@ -78,7 +78,7 @@ export const GovtSourcesSection: React.FC = () => {
 
             <div className="flex items-center gap-3">
               <span className="text-xs font-mono text-slate-400">
-                Ping: <strong className="text-white">{latencyMs}ms</strong> &middot; Last Sync: <strong className="text-white">{lastSyncTime}</strong>
+                Response: <strong className="text-white">{latencyMs === null ? '—' : `ms`}</strong> &middot; Loaded: <strong className="text-white">{lastSyncTime}</strong>
               </span>
 
               <button
@@ -87,7 +87,7 @@ export const GovtSourcesSection: React.FC = () => {
                 className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all disabled:opacity-50 cursor-pointer"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-                <span>{isLoading ? 'Querying...' : 'Sync from Official Databases'}</span>
+                <span>{isLoading ? 'Querying...' : 'Reload reference data'}</span>
               </button>
             </div>
           </div>
@@ -127,7 +127,7 @@ export const GovtSourcesSection: React.FC = () => {
               className="text-xs font-mono text-slate-400 hover:text-white flex items-center gap-1 cursor-pointer"
             >
               <Terminal className="w-3.5 h-3.5" />
-              <span>{showJsonInspector ? 'Hide Raw API Response' : 'Inspect Raw Government API JSON'}</span>
+              <span>{showJsonInspector ? 'Hide raw JSON' : 'Inspect raw reference JSON'}</span>
             </button>
           </div>
 
@@ -161,7 +161,7 @@ export const GovtSourcesSection: React.FC = () => {
                       {source.status}
                     </span>
                     <span className="text-slate-500 font-mono">
-                      Conf: {(source.confidenceScore * 100).toFixed(0)}%
+                      Reference
                     </span>
                   </div>
                   <h4 className="font-bold text-slate-900 text-sm leading-snug">
@@ -174,7 +174,7 @@ export const GovtSourcesSection: React.FC = () => {
 
                 <div className="mt-4 pt-3 border-t border-slate-200/80 flex items-center justify-between text-xs">
                   <span className="text-slate-500 text-[11px]">
-                    Verified: {source.publicationDate}
+                    Published: {source.publicationDate}
                   </span>
                   <a
                     href={source.url}

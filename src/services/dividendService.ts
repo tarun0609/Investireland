@@ -1,5 +1,6 @@
 import { DividendRecord, DividendAnalytics, CumulativeDividendPoint, Holding, Currency, CountryExposure } from '../types';
 import { FALLBACK_FISCAL_DATA, convertToEUR, convertFromEUR } from './fiscalDataService';
+import { scopedStorageKey } from './storageScope';
 
 const STORAGE_KEY = 'investireland_dividend_records_v1';
 
@@ -576,7 +577,7 @@ export const DEFAULT_HISTORICAL_DIVIDENDS: DividendRecord[] = [
 export function getStoredDividends(): DividendRecord[] {
   if (typeof window === 'undefined') return DEFAULT_HISTORICAL_DIVIDENDS;
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(scopedStorageKey(STORAGE_KEY));
     if (!raw) return DEFAULT_HISTORICAL_DIVIDENDS;
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed) && parsed.length > 0) {
@@ -591,7 +592,7 @@ export function getStoredDividends(): DividendRecord[] {
 export function saveStoredDividends(dividends: DividendRecord[]): void {
   if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(dividends));
+    localStorage.setItem(scopedStorageKey(STORAGE_KEY), JSON.stringify(dividends));
   } catch (err) {
     console.error('Failed to store dividends in localStorage:', err);
   }

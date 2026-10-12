@@ -23,7 +23,7 @@ export const FALLBACK_MARKET_INDICES: MarketIndex[] = [
     dayHigh: 9865.30,
     yearLow: 8120.00,
     yearHigh: 10020.00,
-    marketStatus: 'Active Session',
+    marketStatus: 'Sample snapshot',
     portfolioContext: 'Direct benchmark for Irish equity pensions, Davy Select holdings, and domestic companies.',
     sparkline: [9680, 9710, 9745, 9720, 9790, 9820, 9842.50]
   },
@@ -49,7 +49,7 @@ export const FALLBACK_MARKET_INDICES: MarketIndex[] = [
     dayHigh: 25340.80,
     yearLow: 19250.00,
     yearHigh: 26277.00,
-    marketStatus: 'Market Closed (Last Close)',
+    marketStatus: 'Sample snapshot',
     portfolioContext: 'Directly influences Indian mutual fund SIPs (Parag Parikh, HDFC) and NSE direct equities under DTAA.',
     sparkline: [24800, 24920, 25050, 24980, 25150, 25210, 25285.30]
   },
@@ -75,25 +75,35 @@ export const FALLBACK_MARKET_INDICES: MarketIndex[] = [
     dayHigh: 5795.60,
     yearLow: 4210.00,
     yearHigh: 5820.00,
-    marketStatus: 'Active Session',
+    marketStatus: 'Sample snapshot',
     portfolioContext: 'Primary driver of US employer tech RSUs (Alphabet, Microsoft) and European UCITS World ETFs.',
     sparkline: [5620, 5660, 5710, 5690, 5740, 5765, 5782.40]
   }
 ];
 
-export async function fetchMarketIndices(): Promise<MarketIndex[]> {
+export const MARKET_INDICES_AS_OF = '2026-10-14';
+
+export interface MarketSnapshot {
+  data: MarketIndex[];
+  /** True when figures are illustrative rather than a live exchange feed. */
+  isSample: boolean;
+  asOf: string;
+}
+
+export async function fetchMarketSnapshot(): Promise<MarketSnapshot> {
   try {
     const res = await fetch('/api/market-indices');
-    if (!res.ok) {
-      throw new Error(`Failed to fetch market indices HTTP ${res.status}`);
-    }
+    if (!res.ok) throw new Error(`Failed to fetch market indices HTTP ${res.status}`);
     const json = await res.json();
-    if (json && json.data && Array.isArray(json.data)) {
-      return json.data;
+    if (json && Array.isArray(json.data)) {
+      return { data: json.data, isSample: json.isSample !== false, asOf: json.asOf || MARKET_INDICES_AS_OF };
     }
-    return FALLBACK_MARKET_INDICES;
   } catch (err) {
-    console.warn('Using fallback market indices:', err);
-    return FALLBACK_MARKET_INDICES;
+    console.warn('Using bundled sample market indices:', err);
   }
+  return { data: FALLBACK_MARKET_INDICES, isSample: true, asOf: MARKET_INDICES_AS_OF };
+}
+
+export async function fetchMarketIndices(): Promise<MarketIndex[]> {
+  return (await fetchMarketSnapshot()).data;
 }

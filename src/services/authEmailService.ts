@@ -1,27 +1,25 @@
-import { AuthUser, RegistrationCredentials, EmailDispatchLog, Currency } from '../types';
-import { 
-  GoogleAuthProvider, 
-  signInWithPopup, 
-  signOut as firebaseSignOut, 
+import type { AuthUser, RegistrationCredentials, EmailDispatchLog, Currency, LifeStageCategory } from '../types';
+import {
+  GoogleAuthProvider,
+  createUserWithEmailAndPassword,
   onAuthStateChanged,
-  User as FirebaseUser
+  sendEmailVerification,
+  sendPasswordResetEmail,
+  signInWithEmailAndPassword,
+  signInWithPopup,
+  signOut as firebaseSignOut,
+  updateProfile,
+  type User as FirebaseUser,
 } from 'firebase/auth';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, db } from './firebase';
-import { doc, setDoc, getDoc } from 'firebase/firestore';
-import { emailService } from './emailService';
+import { apiFetch } from './apiClient';
+import { setStorageScope } from './storageScope';
 
-const USER_STORAGE_KEY = 'investireland_active_user_v1';
-const RECENT_EMAILS_KEY = 'investireland_recent_emails_v1';
-
-export const OAUTH_CONFIG = {
-  clientId: '786632684186-jdgl9129dpb0keni6qk6vkucineelj3n.apps.googleusercontent.com',
-  authDomain: 'inbound-lyceum-cpthm.firebaseapp.com',
-  allowedOrigins: [
-    'https://ais-dev-qrlcr5odu3qypdbgjzwi5v-645067703073.europe-west1.run.app',
-    'https://ais-pre-qrlcr5odu3qypdbgjzwi5v-645067703073.europe-west1.run.app',
-    'https://investireland-ai-investment-scheme-financial-inte.ai.studio'
-  ]
-};
+export type ResidencyCountry = AuthUser['country'];
+const COUNTRIES: ResidencyCountry[] = ['Ireland', 'India', 'United States', 'United Kingdom', 'Other EU'];
+const CURRENCIES: Currency[] = ['EUR', 'INR', 'USD', 'GBP'];
+export const MIN_PASSWORD_LENGTH = 8;
 
 /**
  * Structured Firebase Auth Error Information
@@ -149,10 +147,35 @@ export function handleFirebaseAuthError(error: unknown, context: string = 'Fireb
     normalizedCode === 'auth/operation-not-allowed' ||
     normalizedMsg.includes('operation-not-allowed')
   ) {
-    title = 'Google Provider Disabled';
-    message = 'Google sign-in is not enabled in the Firebase Authentication project.';
-    actionHint = 'Enable the Google sign-in provider in Firebase Console under Authentication > Sign-in method.';
+    title = 'Sign-In Method Disabled';
+    message = 'This sign-in method is not enabled for this application.';
+    actionHint = 'An administrator must enable it in Firebase Console under Authentication > Sign-in method.';
     isRecoverable = false;
+  } else if (normalizedCode === 'auth/email-already-in-use') {
+    title = 'Email Already Registered';
+    message = 'An account with this email address already exists.';
+    actionHint = 'Sign in instead, or use "Forgot password" to reset it.';
+    isRecoverable = true;
+  } else if (normalizedCode === 'auth/weak-password' || normalizedCode === 'auth/password-does-not-meet-requirements') {
+    title = 'Password Too Weak';
+    message = 'Your password does not meet the security requirements.';
+    actionHint = 'Use at least 8 characters, mixing letters, numbers and symbols.';
+    isRecoverable = true;
+  } else if (normalizedCode === 'auth/invalid-email' || normalizedCode === 'auth/missing-email') {
+    title = 'Invalid Email';
+    message = 'Please enter a valid email address.';
+    actionHint = 'Check the address for typos and try again.';
+    isRecoverable = true;
+  } else if (
+    normalizedCode === 'auth/wrong-password' ||
+    normalizedCode === 'auth/user-not-found' ||
+    normalizedCode === 'auth/invalid-login-credentials' ||
+    normalizedCode === 'auth/missing-password'
+  ) {
+    title = 'Sign-In Failed';
+    message = 'The email or password is incorrect.';
+    actionHint = 'Check your details or use "Forgot password".';
+    isRecoverable = true;
   } else if (
     normalizedCode === 'auth/account-exists-with-different-credential' ||
     normalizedMsg.includes('account-exists-with-different-credential')
@@ -166,9 +189,9 @@ export function handleFirebaseAuthError(error: unknown, context: string = 'Fireb
     normalizedCode === 'auth/user-disabled' ||
     normalizedMsg.includes('invalid-credential')
   ) {
-    title = 'Invalid Credentials';
-    message = 'The supplied authentication credential is invalid or this account has been suspended.';
-    actionHint = 'Check your account details or contact support if your account was suspended.';
+    title = 'Sign-In Failed';
+    message = 'The email or password is incorrect, or this account has been disabled.';
+    actionHint = 'Check your details, use "Forgot password", or contact support.';
     isRecoverable = true;
   } else if (
     normalizedCode === 'auth/too-many-requests' ||
@@ -256,335 +279,405 @@ export const DEFAULT_DEMO_USER: AuthUser = {
   email: 'priya.sharma@investireland.demo',
   country: 'Ireland',
   preferredCurrency: 'EUR',
-  taxResidencyStatus: 'Irish Tax Resident (PPSN Verified, TCA 1997)',
+  taxResidencyStatus: 'Irish Tax Resident (demo profile)',
   registeredAt: '2026-01-10T09:00:00.000Z',
-  lastLoginAt: new Date().toISOString(),
+  lastLoginAt: '2026-01-10T09:00:00.000Z',
   hasOverseasAssets: true,
   primaryLifeStageGoal: 'house_deposit',
-  emailVerified: true
+  emailVerified: false,
 };
 
-/**
- * Authenticates users via Google OAuth using the provisioned client ID,
- * captures their verified email, syncs with Firestore, and triggers
- * the automated transactional welcome email confirmation service.
- */
-export async function signInWithGoogleOAuth(): Promise<{
-  success: boolean;
-  user?: AuthUser;
-  emailDispatch?: any;
-  error?: string;
-  errorDetails?: AuthErrorInfo;
-}> {
-  try {
-    const provider = new GoogleAuthProvider();
-    provider.setCustomParameters({
-      prompt: 'select_account'
-    });
-
-    const result = await signInWithPopup(auth, provider);
-    const fbUser = result.user;
-
-    if (!fbUser.email) {
-      throw new Error('Google OAuth provider did not return an email address.');
-    }
-
-    const cleanEmail = fbUser.email.trim().toLowerCase();
-    const cleanName = fbUser.displayName?.trim() || cleanEmail.split('@')[0] || 'Investor';
-
-    let country: 'Ireland' | 'India' | 'United States' | 'United Kingdom' | 'Other EU' = 'Ireland';
-    let preferredCurrency: Currency = 'EUR';
-    let primaryGoal = 'house_deposit';
-    let targetAmount = 85000;
-
-    // Check existing Firestore record
-    const userDocRef = doc(db, 'users', fbUser.uid);
-    try {
-      const snap = await getDoc(userDocRef);
-      if (snap.exists()) {
-        const data = snap.data();
-        country = data.country || country;
-        preferredCurrency = data.preferredCurrency || preferredCurrency;
-        primaryGoal = data.primaryLifeStageGoal || primaryGoal;
-        targetAmount = data.targetLifeGoalAmount || targetAmount;
-      }
-    } catch (e) {
-      console.warn('Firestore profile check note:', e);
-    }
-
-    const authUser: AuthUser = {
-      id: fbUser.uid,
-      name: cleanName,
-      email: cleanEmail,
-      country,
-      preferredCurrency,
-      taxResidencyStatus: `${country} Tax Resident (TCA 1997)`,
-      registeredAt: new Date().toISOString(),
-      lastLoginAt: new Date().toISOString(),
-      hasOverseasAssets: true,
-      primaryLifeStageGoal: primaryGoal as any,
-      emailVerified: fbUser.emailVerified
-    };
-
-    // Save locally
-    setActiveUser(authUser);
-
-    // Save to Firestore
-    try {
-      await setDoc(userDocRef, {
-        uid: fbUser.uid,
-        name: cleanName,
-        email: cleanEmail,
-        country,
-        preferredCurrency,
-        primaryLifeStageGoal: primaryGoal,
-        targetLifeGoalAmount: targetAmount,
-        photoURL: fbUser.photoURL || null,
-        provider: 'google.com',
-        authMethod: 'FIREBASE_GOOGLE_OAUTH',
-        registeredAt: authUser.registeredAt,
-        lastLoginAt: authUser.lastLoginAt,
-        updatedAt: new Date().toISOString()
-      }, { merge: true });
-      console.log(`[Google OAuth] User profile saved to Firestore: users/${fbUser.uid}`);
-    } catch (fsErr) {
-      console.warn('Firestore write note:', fsErr);
-    }
-
-    // Trigger confirmation email service for user's specific email address
-    let emailDispatch: any = null;
-    try {
-      emailDispatch = await emailService.sendRegistrationConfirmation({
-        userId: fbUser.uid,
-        name: cleanName,
-        email: cleanEmail,
-        country,
-        preferredCurrency,
-        primaryGoal: 'Irish Home Deposit & Wealth Milestone',
-        targetAmount
-      });
-      console.log(`[Google OAuth] Transactional confirmation email dispatched to ${cleanEmail}`);
-    } catch (mailErr) {
-      console.warn('Email dispatch note:', mailErr);
-    }
-
-    return {
-      success: true,
-      user: authUser,
-      emailDispatch
-    };
-  } catch (error: any) {
-    const errorInfo = handleFirebaseAuthError(error, 'Google OAuth Sign-In');
-    return {
-      success: false,
-      error: `${errorInfo.message} ${errorInfo.actionHint}`,
-      errorDetails: errorInfo
-    };
-  }
+export function isDemoUser(user: AuthUser | null | undefined): boolean {
+  return !user || user.id === DEFAULT_DEMO_USER.id;
 }
 
-export function getActiveUser(): AuthUser {
-  try {
-    const raw = localStorage.getItem(USER_STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (parsed && parsed.name && parsed.email) {
-        return parsed;
-      }
-    }
-  } catch (e) {
-    console.warn('Error reading active user from localStorage', e);
-  }
-  return DEFAULT_DEMO_USER;
+// ---------------------------------------------------------------------------
+// Auth state (single source of truth: Firebase Auth + users/{uid} profile doc)
+// ---------------------------------------------------------------------------
+
+type ActiveUserListener = (user: AuthUser) => void;
+const activeUserListeners = new Set<ActiveUserListener>();
+let signedInProfile: AuthUser | null = null;
+let authResolved = false;
+let resolveAuthReady: () => void = () => {};
+const authReady = new Promise<void>((resolve) => {
+  resolveAuthReady = resolve;
+});
+
+function pickCountry(value: unknown): ResidencyCountry {
+  return COUNTRIES.includes(value as ResidencyCountry) ? (value as ResidencyCountry) : 'Ireland';
 }
 
-export function setActiveUser(user: AuthUser): void {
-  try {
-    localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user));
-  } catch (e) {
-    console.error('Error saving active user to localStorage', e);
-  }
+function pickCurrency(value: unknown): Currency {
+  return CURRENCIES.includes(value as Currency) ? (value as Currency) : 'EUR';
 }
 
-export function clearActiveUser(): void {
-  try {
-    localStorage.removeItem(USER_STORAGE_KEY);
-  } catch (e) {
-    console.error('Error clearing active user', e);
-  }
-}
-
-export async function registerWithCredentials(credentials: RegistrationCredentials): Promise<{
-  success: boolean;
-  user: AuthUser;
-  emailDispatch?: any;
-  error?: string;
-}> {
-  try {
-    const response = await fetch('/api/auth/register', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(credentials)
-    });
-
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data.error || 'Registration failed');
-    }
-
-    if (data.user) {
-      setActiveUser(data.user);
-    }
-
-    return {
-      success: true,
-      user: data.user,
-      emailDispatch: data.emailDispatch
-    };
-  } catch (err: any) {
-    console.warn('Backend API registration failed, running resilient client fallback:', err);
-    // Resilient fallback: save user locally and simulate successful registration receipt
-    const fallbackUser: AuthUser = {
-      id: `usr_${Date.now()}`,
-      name: credentials.name,
-      email: credentials.email,
-      country: credentials.country || 'Ireland',
-      preferredCurrency: credentials.preferredCurrency || 'EUR',
-      taxResidencyStatus: `${credentials.country || 'Ireland'} Tax Resident (TCA 1997)`,
-      registeredAt: new Date().toISOString(),
-      lastLoginAt: new Date().toISOString(),
-      hasOverseasAssets: Boolean(credentials.hasOverseasAssets),
-      primaryLifeStageGoal: credentials.primaryLifeStageGoal,
-      emailVerified: true
-    };
-    setActiveUser(fallbackUser);
-
-    return {
-      success: true,
-      user: fallbackUser,
-      emailDispatch: {
-        dispatched: true,
-        recipient: credentials.email,
-        subject: `☘️ Welcome to InvestIreland AI, ${credentials.name}!`,
-        sentAt: new Date().toISOString(),
-        messageId: `sim_${Date.now()}`,
-        previewUrl: null,
-        transport: 'APP_FALLBACK',
-        summary: `Confirmation and milestone blueprint dispatched to ${credentials.email}.`
-      }
-    };
-  }
-}
-
-export async function sendMilestoneAutoEmail(params: {
-  email: string;
-  name: string;
-  goalTitle: string;
-  targetAmount: number;
-  triggerType?: string;
-}): Promise<{
-  success: boolean;
-  emailDispatch?: EmailDispatchLog;
-  error?: string;
-}> {
-  try {
-    const response = await fetch('/api/auth/send-auto-email', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(params)
-    });
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data.error || 'Failed to dispatch auto-email');
-    }
-    return {
-      success: true,
-      emailDispatch: data.emailDispatch
-    };
-  } catch (err: any) {
-    console.error('sendMilestoneAutoEmail error:', err);
-    return {
-      success: false,
-      error: err.message
-    };
-  }
-}
-
-export async function fetchSentEmailLogs(emailFilter?: string): Promise<EmailDispatchLog[]> {
-  try {
-    const query = emailFilter ? `?email=${encodeURIComponent(emailFilter)}` : '';
-    const res = await fetch(`/api/auth/emails${query}`);
-    const data = await res.json();
-    if (res.ok && Array.isArray(data.data)) {
-      return data.data;
-    }
-  } catch (err) {
-    console.warn('Could not fetch remote email logs:', err);
-  }
-  return [];
-}
-
-export interface BackendDatabaseInfo {
-  provider: string;
-  projectId: string;
-  databaseId: string;
-  status: string;
-  isLive: boolean;
-  collections: string[];
-  blueprint: string;
-  rulesStatus: string;
-  cloudRegion?: string;
-  lastVerifiedAt?: string | null;
-}
-
-export async function fetchDatabaseStatus(): Promise<{
-  success: boolean;
-  backendDatabase?: BackendDatabaseInfo;
-  localCache?: { userCount: number; emailAuditLogCount: number };
-}> {
-  try {
-    const res = await fetch('/api/database/status');
-    const data = await res.json();
-    if (res.ok) {
-      return data;
-    }
-  } catch (err) {
-    console.warn('Could not fetch database status:', err);
-  }
+function profileFromFirebase(fbUser: FirebaseUser, data?: Record<string, any> | null): AuthUser {
+  const email = (fbUser.email || data?.email || '').toLowerCase();
+  const country = pickCountry(data?.country);
   return {
-    success: true,
-    backendDatabase: {
-      provider: 'Firebase Firestore (Cloud NoSQL Database)',
-      projectId: 'inbound-lyceum-cpthm',
-      databaseId: 'ai-studio-investirelandaii-6a889693-6842-4c14-bbe8-0e5ec82a479e',
-      status: 'ONLINE_CONNECTED',
-      isLive: true,
-      collections: ['users', 'users/{userId}/holdings', 'users/{userId}/milestones', 'users/{userId}/emails'],
-      blueprint: 'firebase-blueprint.json (ABAC Zero-Trust Rules Enforced)',
-      rulesStatus: 'DEPLOYED',
-      cloudRegion: 'europe-west1'
-    }
+    id: fbUser.uid,
+    name: (typeof data?.name === 'string' && data.name) || fbUser.displayName || email.split('@')[0] || 'Investor',
+    email,
+    country,
+    preferredCurrency: pickCurrency(data?.preferredCurrency),
+    taxResidencyStatus: `${country} tax resident (self-declared)`,
+    registeredAt: data?.registeredAt || fbUser.metadata.creationTime || new Date().toISOString(),
+    lastLoginAt: fbUser.metadata.lastSignInTime || new Date().toISOString(),
+    hasOverseasAssets: Boolean(data?.hasOverseasAssets),
+    primaryLifeStageGoal: data?.primaryLifeStageGoal as LifeStageCategory | undefined,
+    emailVerified: fbUser.emailVerified,
   };
 }
 
+function notifyActiveUser() {
+  const user = getActiveUser();
+  activeUserListeners.forEach((listener) => {
+    try {
+      listener(user);
+    } catch (err) {
+      console.error('Active user listener failed', err);
+    }
+  });
+}
+
+function setSignedInProfile(profile: AuthUser | null) {
+  signedInProfile = profile;
+  setStorageScope(profile?.id);
+  notifyActiveUser();
+}
+
+async function loadProfileDoc(uid: string): Promise<Record<string, any> | null> {
+  try {
+    const snap = await getDoc(doc(db, 'users', uid));
+    return snap.exists() ? snap.data() : null;
+  } catch (err) {
+    console.warn('Could not load user profile from Firestore', err);
+    return null;
+  }
+}
+
+onAuthStateChanged(auth, async (fbUser) => {
+  if (!fbUser) {
+    setSignedInProfile(null);
+  } else {
+    const data = await loadProfileDoc(fbUser.uid);
+    // Ignore stale results if the user changed while the profile was loading.
+    if (auth.currentUser?.uid === fbUser.uid) setSignedInProfile(profileFromFirebase(fbUser, data));
+  }
+  if (!authResolved) {
+    authResolved = true;
+    resolveAuthReady();
+  }
+});
+
+/** Resolves once Firebase has restored (or ruled out) a persisted session. */
+export function waitForAuthReady(): Promise<void> {
+  return authReady;
+}
+
+/** Signed-in user's profile, or the demo persona when signed out. */
+export function getActiveUser(): AuthUser {
+  return signedInProfile ?? DEFAULT_DEMO_USER;
+}
+
+export function getSignedInUser(): AuthUser | null {
+  return signedInProfile;
+}
+
+/** Subscribes to sign-in/sign-out/profile changes. Fires immediately with the current user. */
+export function subscribeToActiveUser(listener: ActiveUserListener): () => void {
+  activeUserListeners.add(listener);
+  listener(getActiveUser());
+  return () => {
+    activeUserListeners.delete(listener);
+  };
+}
+
+export { getStorageScope, scopedStorageKey } from './storageScope';
+
+
+// ---------------------------------------------------------------------------
+// Profile persistence
+// ---------------------------------------------------------------------------
+
+interface ProfileFields {
+  name: string;
+  country: ResidencyCountry;
+  preferredCurrency: Currency;
+  primaryLifeStageGoal?: LifeStageCategory;
+  targetLifeGoalAmount?: number;
+  hasOverseasAssets?: boolean;
+  provider: string;
+}
+
+async function saveProfileDoc(fbUser: FirebaseUser, fields: ProfileFields, registeredAt: string) {
+  await setDoc(
+    doc(db, 'users', fbUser.uid),
+    {
+      uid: fbUser.uid,
+      email: (fbUser.email || '').toLowerCase(),
+      name: fields.name.slice(0, 120),
+      country: fields.country,
+      preferredCurrency: fields.preferredCurrency,
+      // Optional fields are only written when provided so partial updates never erase them.
+      ...(fields.primaryLifeStageGoal !== undefined ? { primaryLifeStageGoal: fields.primaryLifeStageGoal } : {}),
+      ...(fields.targetLifeGoalAmount !== undefined ? { targetLifeGoalAmount: fields.targetLifeGoalAmount } : {}),
+      ...(fields.hasOverseasAssets !== undefined ? { hasOverseasAssets: Boolean(fields.hasOverseasAssets) } : {}),
+      provider: fields.provider,
+      registeredAt,
+      lastLoginAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    },
+    { merge: true }
+  );
+}
+
+/** Updates editable fields on the signed-in user's profile. */
+export async function updateActiveUserProfile(updates: Partial<Pick<AuthUser, 'name' | 'country' | 'preferredCurrency'>>): Promise<boolean> {
+  const fbUser = auth.currentUser;
+  if (!fbUser || !signedInProfile) return false;
+  const next: AuthUser = { ...signedInProfile, ...updates };
+  try {
+    await saveProfileDoc(
+      fbUser,
+      {
+        name: next.name,
+        country: next.country,
+        preferredCurrency: next.preferredCurrency,
+        primaryLifeStageGoal: next.primaryLifeStageGoal,
+        hasOverseasAssets: next.hasOverseasAssets,
+        provider: fbUser.providerData[0]?.providerId || 'password',
+      },
+      next.registeredAt
+    );
+    if (updates.name && updates.name !== fbUser.displayName) await updateProfile(fbUser, { displayName: updates.name });
+    setSignedInProfile(next);
+    return true;
+  } catch (err) {
+    console.error('Failed to update profile', err);
+    return false;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Sign-up / sign-in / sign-out
+// ---------------------------------------------------------------------------
+
+export interface AuthResult {
+  success: boolean;
+  user?: AuthUser;
+  emailDispatch?: EmailDispatchLog | null;
+  verificationEmailSent?: boolean;
+  error?: string;
+  errorDetails?: AuthErrorInfo;
+}
+
+function authFailure(error: unknown, context: string): AuthResult {
+  const info = handleFirebaseAuthError(error, context);
+  return { success: false, error: `${info.message} ${info.actionHint}`, errorDetails: info };
+}
+
+export async function registerWithCredentials(credentials: RegistrationCredentials): Promise<AuthResult> {
+  const name = credentials.name?.trim();
+  const email = credentials.email?.trim().toLowerCase();
+  const password = credentials.password ?? '';
+  if (!name || !email) return { success: false, error: 'Please enter your name and email address.' };
+  if (password.length < MIN_PASSWORD_LENGTH) {
+    return { success: false, error: `Please choose a password of at least ${MIN_PASSWORD_LENGTH} characters.` };
+  }
+
+  let fbUser: FirebaseUser;
+  try {
+    fbUser = (await createUserWithEmailAndPassword(auth, email, password)).user;
+    await updateProfile(fbUser, { displayName: name });
+  } catch (err) {
+    return authFailure(err, 'Email Registration');
+  }
+
+  const fields: ProfileFields = {
+    name,
+    country: pickCountry(credentials.country),
+    preferredCurrency: pickCurrency(credentials.preferredCurrency),
+    primaryLifeStageGoal: credentials.primaryLifeStageGoal,
+    targetLifeGoalAmount: credentials.targetLifeGoalAmount,
+    hasOverseasAssets: credentials.hasOverseasAssets,
+    provider: 'password',
+  };
+  const registeredAt = new Date().toISOString();
+  try {
+    await saveProfileDoc(fbUser, fields, registeredAt);
+  } catch (err) {
+    console.error('Account created but profile could not be saved', err);
+  }
+
+  let verificationEmailSent = false;
+  try {
+    await sendEmailVerification(fbUser);
+    verificationEmailSent = true;
+  } catch (err) {
+    console.warn('Could not send verification email', err);
+  }
+
+  const user = profileFromFirebase(fbUser, { ...fields, registeredAt });
+  setSignedInProfile(user);
+  const emailDispatch = await sendWelcomeEmail(fields).catch(() => null);
+  return { success: true, user, emailDispatch, verificationEmailSent };
+}
+
+export async function signInWithCredentials(email: string, password: string): Promise<AuthResult> {
+  if (!email.trim() || !password) return { success: false, error: 'Please enter your email and password.' };
+  try {
+    const { user: fbUser } = await signInWithEmailAndPassword(auth, email.trim().toLowerCase(), password);
+    const user = profileFromFirebase(fbUser, await loadProfileDoc(fbUser.uid));
+    setSignedInProfile(user);
+    return { success: true, user };
+  } catch (err) {
+    return authFailure(err, 'Email Sign-In');
+  }
+}
+
+export async function signInWithGoogleOAuth(): Promise<AuthResult> {
+  try {
+    const provider = new GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: 'select_account' });
+    const { user: fbUser } = await signInWithPopup(auth, provider);
+    if (!fbUser.email) throw new Error('Google did not return an email address.');
+
+    const existing = await loadProfileDoc(fbUser.uid);
+    const fields: ProfileFields = {
+      name: (existing?.name as string) || fbUser.displayName?.trim() || fbUser.email.split('@')[0],
+      country: pickCountry(existing?.country),
+      preferredCurrency: pickCurrency(existing?.preferredCurrency),
+      primaryLifeStageGoal: existing?.primaryLifeStageGoal ?? 'house_deposit',
+      targetLifeGoalAmount: existing?.targetLifeGoalAmount ?? undefined,
+      hasOverseasAssets: existing?.hasOverseasAssets ?? false,
+      provider: 'google.com',
+    };
+    const registeredAt = (existing?.registeredAt as string) || new Date().toISOString();
+    try {
+      await saveProfileDoc(fbUser, fields, registeredAt);
+    } catch (err) {
+      console.warn('Could not save Google profile', err);
+    }
+
+    const user = profileFromFirebase(fbUser, { ...existing, ...fields, registeredAt });
+    setSignedInProfile(user);
+    const emailDispatch = existing ? null : await sendWelcomeEmail(fields).catch(() => null);
+    return { success: true, user, emailDispatch };
+  } catch (err) {
+    return authFailure(err, 'Google Sign-In');
+  }
+}
+
+export async function signOutUser(): Promise<void> {
+  await firebaseSignOut(auth);
+  setSignedInProfile(null);
+}
+
+export async function requestPasswordReset(email: string): Promise<{ success: boolean; error?: string }> {
+  if (!email.trim()) return { success: false, error: 'Enter your email address first.' };
+  try {
+    await sendPasswordResetEmail(auth, email.trim().toLowerCase());
+    return { success: true };
+  } catch (err) {
+    const info = handleFirebaseAuthError(err, 'Password Reset');
+    return { success: false, error: `${info.message} ${info.actionHint}` };
+  }
+}
+
+export async function resendVerificationEmail(): Promise<boolean> {
+  if (!auth.currentUser) return false;
+  try {
+    await sendEmailVerification(auth.currentUser);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Transactional email (server API, authenticated with the Firebase ID token)
+// ---------------------------------------------------------------------------
+
+async function sendWelcomeEmail(fields: ProfileFields): Promise<EmailDispatchLog | null> {
+  const data = await apiFetch<{ emailDispatch: EmailDispatchLog }>('/api/emails/welcome', {
+    method: 'POST',
+    requireAuth: true,
+    body: JSON.stringify({
+      name: fields.name,
+      country: fields.country,
+      preferredCurrency: fields.preferredCurrency,
+      primaryLifeStageGoal: fields.primaryLifeStageGoal,
+      targetLifeGoalAmount: fields.targetLifeGoalAmount,
+    }),
+  });
+  return data.emailDispatch ?? null;
+}
+
+/** Sends a milestone summary to the signed-in user's own (verified) email address. */
+export async function sendMilestoneAutoEmail(params: {
+  goalTitle: string;
+  targetAmount: number;
+  currency?: Currency;
+}): Promise<{ success: boolean; emailDispatch?: EmailDispatchLog; error?: string }> {
+  try {
+    const data = await apiFetch<{ emailDispatch: EmailDispatchLog }>('/api/emails/milestone', {
+      method: 'POST',
+      requireAuth: true,
+      body: JSON.stringify({
+        goalTitle: params.goalTitle,
+        targetAmount: params.targetAmount,
+        currency: params.currency ?? getActiveUser().preferredCurrency,
+        country: getActiveUser().country,
+      }),
+    });
+    return { success: true, emailDispatch: data.emailDispatch };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : 'Failed to send email' };
+  }
+}
+
+/** Emails sent to the signed-in user by this server instance (recent, in-memory). */
+export async function fetchSentEmailLogs(): Promise<EmailDispatchLog[]> {
+  if (!auth.currentUser) return [];
+  try {
+    const data = await apiFetch<{ data: EmailDispatchLog[] }>('/api/emails', { requireAuth: true });
+    return Array.isArray(data.data) ? data.data : [];
+  } catch (err) {
+    console.warn('Could not fetch email history', err);
+    return [];
+  }
+}
+
+/** Persists a milestone to users/{uid}/milestones (owner-only Firestore rules). */
 export async function syncMilestoneToBackend(payload: {
-  userId: string;
   milestoneId: string;
   title: string;
   category: string;
   targetAmountEUR: number;
   currentAmountEUR?: number;
 }): Promise<boolean> {
+  const uid = auth.currentUser?.uid;
+  if (!uid) return false;
+  const milestoneId = payload.milestoneId.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 128);
   try {
-    const res = await fetch('/api/database/sync-milestone', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-    return res.ok;
-  } catch (e) {
-    console.warn('Failed to sync milestone to backend database:', e);
+    await setDoc(
+      doc(db, 'users', uid, 'milestones', milestoneId),
+      {
+        milestoneId,
+        userId: uid,
+        title: payload.title.slice(0, 200),
+        category: payload.category,
+        targetAmountEUR: Number(payload.targetAmountEUR) || 0,
+        currentAmountEUR: Number(payload.currentAmountEUR) || 0,
+        updatedAt: new Date().toISOString(),
+      },
+      { merge: true }
+    );
+    return true;
+  } catch (err) {
+    console.warn('Failed to sync milestone to Firestore', err);
     return false;
   }
 }
-

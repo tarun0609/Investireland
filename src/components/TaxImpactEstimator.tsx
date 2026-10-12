@@ -202,14 +202,14 @@ Budget 2027 PSIA Savings Potential: €${taxResults.psialSavingsPotentialEUR.toL
 
           <div className="p-4 rounded-xl bg-emerald-50/70 border border-emerald-200">
             <span className="text-[11px] font-bold text-emerald-800 uppercase tracking-wider block flex items-center justify-between">
-              <span>DTAA Tax Credits</span>
+              <span>Foreign Tax Credits</span>
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
             </span>
             <div className="text-xl sm:text-2xl font-extrabold text-emerald-700 font-mono mt-1">
               -€{taxResults.totalForeignTaxCreditsEUR.toLocaleString(undefined, { maximumFractionDigits: 0 })}
             </div>
             <div className="text-[11px] text-emerald-800 font-medium mt-1">
-              Prevents double taxation on Indian gains
+              Estimated India DTAA &amp; US treaty credits (capped at Irish tax)
             </div>
           </div>
 
@@ -437,6 +437,23 @@ Budget 2027 PSIA Savings Potential: €${taxResults.psialSavingsPotentialEUR.toL
                 ))}
               </div>
             </div>
+
+            {taxResults.assumptions.length > 0 && (
+              <div className="bg-amber-50 p-5 rounded-xl border border-amber-200" role="note">
+                <h4 className="text-xs font-bold text-amber-900 uppercase tracking-wider mb-3">
+                  Assumptions used in this estimate
+                </h4>
+                <ul className="list-disc pl-5 space-y-1.5 text-xs text-amber-900">
+                  {taxResults.assumptions.map((assumption, idx) => (
+                    <li key={idx} className="leading-relaxed">{assumption}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            <p className="text-[11px] text-slate-500 leading-relaxed">
+              Estimates only, not tax advice. Deemed disposal, DIRT on deposits, loss relief and individual circumstances are simplified. Confirm with Revenue.ie or a qualified tax adviser before acting.
+            </p>
 
           </div>
         )}

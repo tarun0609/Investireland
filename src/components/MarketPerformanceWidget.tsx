@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { MarketIndex, Holding } from '../types';
-import { fetchMarketIndices, FALLBACK_MARKET_INDICES } from '../services/marketDataService';
+import { fetchMarketSnapshot, FALLBACK_MARKET_INDICES, MARKET_INDICES_AS_OF } from '../services/marketDataService';
 import { 
   TrendingUp, 
   TrendingDown, 
@@ -23,15 +23,17 @@ export const MarketPerformanceWidget: React.FC<MarketPerformanceWidgetProps> = (
   const [indices, setIndices] = useState<MarketIndex[]>(FALLBACK_MARKET_INDICES);
   const [loading, setLoading] = useState<boolean>(false);
   const [selectedTimeframe, setSelectedTimeframe] = useState<'1D' | '1W' | '1M' | 'YTD' | '1Y'>('1D');
-  const [lastUpdated, setLastUpdated] = useState<string>('Just now');
+  const [lastUpdated, setLastUpdated] = useState<string>(MARKET_INDICES_AS_OF);
+  const [isSample, setIsSample] = useState<boolean>(true);
   const [activeTab, setActiveTab] = useState<'all' | 'iseq' | 'nifty' | 'sp500'>('all');
 
   const loadData = async () => {
     setLoading(true);
     try {
-      const data = await fetchMarketIndices();
-      setIndices(data);
-      setLastUpdated(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+      const snapshot = await fetchMarketSnapshot();
+      setIndices(snapshot.data);
+      setIsSample(snapshot.isSample);
+      setLastUpdated(snapshot.asOf);
     } catch (err) {
       console.error(err);
     } finally {
@@ -60,10 +62,10 @@ export const MarketPerformanceWidget: React.FC<MarketPerformanceWidgetProps> = (
           <div>
             <div className="flex items-center gap-2">
               <h3 className="text-sm font-bold text-white tracking-tight">
-                Market Performance &amp; Real-Time Index Trends
+                Market Performance &amp; Index Trends
               </h3>
               <span className="text-[10px] font-mono bg-emerald-950 text-emerald-300 border border-emerald-800 px-2 py-0.5 rounded">
-                LIVE TICKS
+                {isSample ? 'SAMPLE DATA' : 'DELAYED FEED'}
               </span>
             </div>
             <p className="text-[11px] text-slate-400 mt-0.5">
@@ -218,13 +220,13 @@ export const MarketPerformanceWidget: React.FC<MarketPerformanceWidgetProps> = (
           <div className="flex items-center gap-2">
             <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
             <span>
-              Real-time market feeds synchronized with your tracked positions ({ieCount} IE &middot; {inCount} India &middot; {usCount} US).
+              {isSample ? 'Illustrative index figures (not live prices), shown alongside your tracked positions' : 'Delayed index figures alongside your tracked positions'} ({ieCount} IE &middot; {inCount} India &middot; {usCount} US).
             </span>
           </div>
 
           <div className="flex items-center gap-1.5 font-mono text-[11px] text-slate-400">
             <Clock className="w-3.5 h-3.5" />
-            <span>Last feed sync: {lastUpdated}</span>
+            <span>Data as of: {lastUpdated}</span>
           </div>
         </div>
 
