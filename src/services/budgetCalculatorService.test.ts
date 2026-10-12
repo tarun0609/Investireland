@@ -34,10 +34,10 @@ describe('calculateBudgetProjections - FY26 regime', () => {
     expect(tenYears.totalContributions).toBe(17000);
   });
 
-  it('applies the 41% deemed disposal on gains only at year 8 and re-bases afterwards', () => {
+  it('applies the 38% deemed disposal on gains only at year 8 and re-bases afterwards', () => {
     const result = calculateBudgetProjections(makeInputs({ startingAmount: 10000, annualReturnRate: 0.1, timeHorizonYears: 9 }));
     const grossY8 = 10000 * Math.pow(1.1, 8);
-    const deemedTax = (grossY8 - 10000) * 0.41;
+    const deemedTax = (grossY8 - 10000) * 0.38;
     const postTaxY8 = grossY8 - deemedTax;
 
     expect(result.projections[6].fy26TaxesPaid).toBe(0);
@@ -48,7 +48,7 @@ describe('calculateBudgetProjections - FY26 regime', () => {
 
     // Year 9: only growth since the year-8 re-basing is taxable on exit
     const grossY9 = postTaxY8 * 1.1;
-    expect(result.fy26FinalNetValue).toBe(Math.round(grossY9 - (grossY9 - postTaxY8) * 0.41));
+    expect(result.fy26FinalNetValue).toBe(Math.round(grossY9 - (grossY9 - postTaxY8) * 0.38));
   });
 
   it('adds each year of contributions to the cost basis before the deemed disposal', () => {
@@ -56,7 +56,7 @@ describe('calculateBudgetProjections - FY26 regime', () => {
     const result = calculateBudgetProjections(inputs);
     const gross = noTaxGross(inputs);
     const contributed = 96000;
-    const expectedTax = (gross - contributed) * 0.41;
+    const expectedTax = (gross - contributed) * 0.38;
 
     expect(result.projections[7].fy26TaxesPaid).toBe(Math.round(expectedTax));
     expect(result.fy26FinalNetValue).toBe(Math.round(gross - expectedTax));
@@ -135,6 +135,21 @@ describe('calculateBudgetProjections - FY27 PSIA regime', () => {
     const result = calculateBudgetProjections(makeInputs({ startingAmount: 20000, timeHorizonYears: 1 }));
     expect(result.fy27FinalNetValue).toBe(20000);
     expect(result.projections[0].thresholdProgressPct).toBe(24);
+  });
+
+  it('sanitises NaN, negative and zero-length inputs instead of returning NaN or an empty projection', () => {
+    const result = calculateBudgetProjections(makeInputs({
+      startingAmount: Number.NaN,
+      monthlyContribution: -500,
+      timeHorizonYears: 0,
+      annualReturnRate: Number.NaN,
+    }));
+    expect(result.projections).toHaveLength(1);
+    expect(result.totalContributions).toBe(0);
+    expect(result.fy26FinalNetValue).toBe(0);
+    expect(result.fy27FinalNetValue).toBe(0);
+    expect(result.totalWealthSaved).toBe(0);
+    expect(Number.isNaN(result.percentageTaxReduction)).toBe(false);
   });
 
   it('discounts FY27 net value for inflation when requested', () => {

@@ -76,25 +76,72 @@ export const UserAuthModal: React.FC<UserAuthModalProps> = ({ isOpen, onClose, o
 
   useEffect(() => subscribeToActiveUser(() => setSignedIn(getSignedInUser())), []);
 
+  // Parents usually pass an inline onClose; keep it in a ref so the open effect below
+  // runs only when the modal opens/closes (otherwise focus jumps on every parent render).
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
   useEffect(() => {
     if (!isOpen) return;
     const previouslyFocused = document.activeElement as HTMLElement | null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onCloseRef.current();
+        return;
+      }
+      if (event.key !== 'Tab' || !dialogRef.current) return;
+      const focusable = Array.from(
+        dialogRef.current.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])')
+      );
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     };
     document.addEventListener('keydown', onKeyDown);
-    dialogRef.current?.querySelector<HTMLElement>('input, button:not([data-close])')?.focus();
+    const raf = requestAnimationFrame(() => {
+      dialogRef.current?.querySelector<HTMLElement>('input, button:not([data-close])')?.focus();
+    });
     return () => {
+      cancelAnimationFrame(raf);
       document.removeEventListener('keydown', onKeyDown);
+      document.body.style.overflow = previousOverflow;
       previouslyFocused?.focus?.();
     };
-  }, [isOpen, onClose]);
+  }, [isOpen]);
 
   const loadLogs = useCallback(async () => {
     setLogsLoading(true);
-    setEmailLogs(await fetchSentEmailLogs());
-    setLogsLoading(false);
+    try {
+      setEmailLogs(await fetchSentEmailLogs());
+    } catch {
+      setEmailLogs([]);
+    } finally {
+      setLogsLoading(false);
+    }
   }, []);
+
+  // Runs an async auth action with a guaranteed busy reset, so a thrown network error never leaves buttons disabled.
+  const runBusy = async (action: () => Promise<void>) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await action();
+    } catch {
+      setError({ title: 'Something went wrong', message: 'We could not reach the account service. Please check your connection and try again.' });
+    } finally {
+      setBusy(false);
+    }
+  };
 
   useEffect(() => {
     if (isOpen && tab === 'account' && signedIn) void loadLogs();
@@ -111,102 +158,98 @@ export const UserAuthModal: React.FC<UserAuthModalProps> = ({ isOpen, onClose, o
   const showError = (message?: string, details?: AuthErrorInfo) =>
     setError({ title: details?.title ?? 'Something went wrong', message: message ?? 'Please try again.' });
 
-  const handleRegister = async (event: React.FormEvent) => {
+  const handleRegister = (event: React.FormEvent) => {
     event.preventDefault();
-    setBusy(true);
-    setError(null);
-    const result = await registerWithCredentials({
-      name,
-      email,
-      password,
-      country,
-      preferredCurrency: currency,
-      primaryLifeStageGoal: goal,
-      targetLifeGoalAmount: Number(targetAmount) || undefined,
-      hasOverseasAssets: country !== 'Ireland',
+    void runBusy(async () => {
+      setNotice(null);
+      const result = await registerWithCredentials({
+        name,
+        email,
+        password,
+        country,
+        preferredCurrency: currency,
+        primaryLifeStageGoal: goal,
+        targetLifeGoalAmount: Number(targetAmount) || undefined,
+        hasOverseasAssets: country !== 'Ireland',
+      });
+      if (!result.success || !result.user) return showError(result.error, result.errorDetails);
+      setPassword('');
+      onUserChange?.(result.user);
+      setNotice(
+        result.verificationEmailSent
+          ? `Account created. We sent a verification link to ${result.user.email}.`
+          : 'Account created. We could not send a verification email right now; you can resend it from this page.'
+      );
+      setTab('account');
     });
-    setBusy(false);
-    if (!result.success || !result.user) return showError(result.error, result.errorDetails);
-    setPassword('');
-    onUserChange?.(result.user);
-    setNotice(
-      result.verificationEmailSent
-        ? `Account created. We sent a verification link to ${result.user.email}.`
-        : 'Account created. We could not send a verification email right now; you can resend it from this page.'
-    );
-    setTab('account');
   };
 
-  const handleLogin = async (event: React.FormEvent) => {
+  const handleLogin = (event: React.FormEvent) => {
     event.preventDefault();
-    setBusy(true);
-    setError(null);
-    const result = await signInWithCredentials(email, password);
-    setBusy(false);
-    if (!result.success || !result.user) return showError(result.error, result.errorDetails);
-    setPassword('');
-    onUserChange?.(result.user);
-    setNotice(`Welcome back, ${result.user.name}.`);
-    setTab('account');
+    void runBusy(async () => {
+      setNotice(null);
+      const result = await signInWithCredentials(email, password);
+      if (!result.success || !result.user) return showError(result.error, result.errorDetails);
+      setPassword('');
+      onUserChange?.(result.user);
+      setNotice(`Welcome back, ${result.user.name}.`);
+      setTab('account');
+    });
   };
 
-  const handleGoogle = async () => {
-    setBusy(true);
-    setError(null);
-    const result = await signInWithGoogleOAuth();
-    setBusy(false);
-    if (!result.success || !result.user) return showError(result.error, result.errorDetails);
-    onUserChange?.(result.user);
-    setNotice(`Signed in as ${result.user.email}.`);
-    setTab('account');
-  };
+  const handleGoogle = () =>
+    runBusy(async () => {
+      setNotice(null);
+      const result = await signInWithGoogleOAuth();
+      if (!result.success || !result.user) return showError(result.error, result.errorDetails);
+      onUserChange?.(result.user);
+      setNotice(`Signed in as ${result.user.email}.`);
+      setTab('account');
+    });
 
-  const handleReset = async () => {
-    setBusy(true);
-    setError(null);
-    const result = await requestPasswordReset(email);
-    setBusy(false);
-    if (!result.success) return showError(result.error);
-    setNotice('If an account exists for that address, a password reset email is on its way.');
-  };
+  const handleReset = () =>
+    runBusy(async () => {
+      setNotice(null);
+      const result = await requestPasswordReset(email);
+      if (!result.success) return showError(result.error);
+      setNotice('If an account exists for that address, a password reset email is on its way.');
+    });
 
-  const handleSignOut = async () => {
-    setBusy(true);
-    try {
-      await signOutUser();
+  const handleSignOut = () =>
+    runBusy(async () => {
+      try {
+        await signOutUser();
+      } catch {
+        return showError('Sign-out failed. Please try again.');
+      }
       onUserChange?.(null);
       setEmailLogs([]);
       switchTab('login');
-    } catch {
-      showError('Sign-out failed. Please try again.');
-    } finally {
-      setBusy(false);
-    }
-  };
+    });
 
-  const handleSendReport = async () => {
+  const handleSendReport = () => {
     if (!signedIn) return;
-    setBusy(true);
-    setError(null);
-    const goalLabel = GOAL_OPTIONS.find((g) => g.value === signedIn.primaryLifeStageGoal)?.label ?? 'My investment goal';
-    const result = await sendMilestoneAutoEmail({ goalTitle: goalLabel, targetAmount: Number(targetAmount) || 0 });
-    setBusy(false);
-    if (!result.success) return showError(result.error);
-    setNotice(
-      result.emailDispatch?.status === 'SIMULATED'
-        ? 'Email recorded but not delivered: SMTP is not configured on this server.'
-        : `Milestone summary sent to ${signedIn.email}.`
-    );
-    void loadLogs();
+    return runBusy(async () => {
+      setNotice(null);
+      const goalLabel = GOAL_OPTIONS.find((g) => g.value === signedIn.primaryLifeStageGoal)?.label ?? 'My investment goal';
+      const result = await sendMilestoneAutoEmail({ goalTitle: goalLabel, targetAmount: Number(targetAmount) || 0 });
+      if (!result.success) return showError(result.error);
+      setNotice(
+        result.emailDispatch?.status === 'SIMULATED'
+          ? 'Email recorded but not delivered: email sending is not configured on this server.'
+          : `Milestone summary sent to ${signedIn.email}.`
+      );
+      void loadLogs();
+    });
   };
 
-  const handleResendVerification = async () => {
-    setBusy(true);
-    const ok = await resendVerificationEmail();
-    setBusy(false);
-    if (ok) setNotice('Verification email sent. Refresh this page after confirming.');
-    else showError('Could not send the verification email. Please wait a minute and try again.');
-  };
+  const handleResendVerification = () =>
+    runBusy(async () => {
+      setNotice(null);
+      const ok = await resendVerificationEmail();
+      if (ok) setNotice('Verification email sent. Refresh this page after confirming.');
+      else showError('Could not send the verification email. Please wait a minute and try again.');
+    });
 
   const tabs: { id: AuthModalTab; label: string }[] = signedIn
     ? [{ id: 'account', label: 'My account' }]

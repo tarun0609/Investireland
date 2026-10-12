@@ -136,6 +136,108 @@ describe('calculateTaxImpact - US holdings', () => {
   });
 });
 
+describe('calculateTaxImpact - losses, exit tax & edge cases', () => {
+  it('returns all-zero results for an empty portfolio', () => {
+    const r = run([]);
+    expect(r.totalPortfolioValueEUR).toBe(0);
+    expect(r.totalUnrealizedGainsEUR).toBe(0);
+    expect(r.netPayableTaxEUR).toBe(0);
+    expect(r.overallEffectiveRatePct).toBe(0);
+    expect(r.holdingDetails).toEqual([]);
+    expect(r.assumptions).toEqual([]);
+  });
+
+  it('charges no CGT on a loss and reports the loss as a negative gain', () => {
+    const loser = holding({ assetType: 'Share', purchaseValue: 10000, currentValue: 7000 });
+    const r = run([loser]);
+    expect(r.holdingDetails[0].totalGainEUR).toBeCloseTo(-3000, 6);
+    expect(r.holdingDetails[0].estimatedTaxEUR).toBe(0);
+    expect(r.totalUnrealizedGainsEUR).toBeCloseTo(-3000, 6);
+    expect(r.netPayableTaxEUR).toBe(0);
+    expect(r.overallEffectiveRatePct).toBe(0);
+  });
+
+  it('nets CGT losses against gains before applying the €1,270 exemption', () => {
+    const winner = holding({ assetType: 'Share', purchaseValue: 10000, currentValue: 20000 });
+    const loser = holding({ assetType: 'Share', purchaseValue: 10000, currentValue: 6000 });
+    const r = run([winner, loser]);
+    expect(r.cgtLossesOffsetEUR).toBeCloseTo(4000, 6);
+    expect(r.irelandSummary.statutoryExemptionEUR).toBe(1270);
+    expect(r.irishCgtEUR).toBeCloseTo((6000 - 1270) * 0.33, 6);
+    expect(r.netPayableTaxEUR).toBeCloseTo((6000 - 1270) * 0.33, 6);
+    expect(r.assumptions.some(a => a.startsWith('Losses'))).toBe(true);
+  });
+
+  it('applies 38% exit tax to ETF gains with no exemption and no offset of share losses', () => {
+    const etf = holding({ assetType: 'ETF', country: 'Europe', purchaseValue: 10000, currentValue: 15000 });
+    const loser = holding({ assetType: 'Share', purchaseValue: 10000, currentValue: 8000 });
+    const r = run([etf, loser]);
+    expect(r.holdingDetails[0].taxTreatment).toBe('Exit Tax (38%)');
+    expect(r.irishExitTaxEUR).toBeCloseTo(5000 * 0.38, 6);
+    expect(r.irishCgtEUR).toBe(0);
+    expect(r.netPayableTaxEUR).toBeCloseTo(1900, 6);
+    expect(r.overallEffectiveRatePct).toBeCloseTo(38, 6);
+    expect(r.assumptions.some(a => a.includes('deemed disposal'))).toBe(true);
+  });
+
+  it('does not let ETF losses reduce other ETF gains', () => {
+    const etfGain = holding({ assetType: 'ETF', country: 'Europe', purchaseValue: 1000, currentValue: 2000 });
+    const etfLoss = holding({ assetType: 'ETF', country: 'Europe', purchaseValue: 1000, currentValue: 500 });
+    const r = run([etfGain, etfLoss]);
+    expect(r.irishExitTaxEUR).toBeCloseTo(380, 6);
+  });
+
+  it('treats deposits as DIRT (deducted at source), not CGT, and discloses it', () => {
+    const cash = holding({ assetType: 'Cash / Deposit', purchaseValue: 10000, currentValue: 10300 });
+    const r = run([cash]);
+    expect(r.holdingDetails[0].taxTreatment).toBe('DIRT Deposit');
+    expect(r.holdingDetails[0].estimatedTaxEUR).toBe(0);
+    expect(r.netPayableTaxEUR).toBe(0);
+    expect(r.assumptions.some(a => a.includes('DIRT'))).toBe(true);
+  });
+
+  it('treats NaN values from empty inputs as zero / missing basis instead of propagating NaN', () => {
+    const broken = holding({ assetType: 'Share', currentValue: Number.NaN, purchaseValue: Number.NaN, units: Number.NaN });
+    const r = run([broken]);
+    expect(Number.isNaN(r.totalPortfolioValueEUR)).toBe(false);
+    expect(Number.isNaN(r.netPayableTaxEUR)).toBe(false);
+    expect(r.holdingDetails[0].units).toBe(0);
+    expect(r.netPayableTaxEUR).toBe(0);
+  });
+
+  it('shows the combined Irish + Indian burden per holding, not just the Indian rate', () => {
+    const indianFund = holding({
+      assetType: 'Mutual Fund', country: 'India', currency: 'INR',
+      purchaseValue: inr(10000), currentValue: inr(20000),
+    });
+    const r = run([indianFund]);
+    expect(r.holdingDetails[0].estimatedTaxEUR).toBeCloseTo(10000 * 0.33, 2);
+  });
+
+  it('computes Indian tax on the rupee gain, unaffected by EUR/INR moves', () => {
+    const indianFund = holding({
+      assetType: 'Mutual Fund', country: 'India', currency: 'INR',
+      purchaseValue: inr(10000), currentValue: inr(20000),
+    });
+    const base = run([indianFund]);
+    const weakerInr = run([indianFund], { eurInrAdjustmentPct: 10 });
+    const taxInr = (r: ReturnType<typeof run>) => r.indiaSummary.grossTaxLiabilityEUR * r.simulatedFxRates.EUR_TO_INR;
+    expect(taxInr(weakerInr)).toBeCloseTo(taxInr(base), 4);
+    expect(weakerInr.indiaSummary.totalUnrealizedGainsLocal).toBeCloseTo(inr(10000), 4);
+    // ...but the Irish EUR gain falls as the rupee weakens
+    expect(weakerInr.holdingDetails[0].totalGainEUR).toBeLessThan(base.holdingDetails[0].totalGainEUR);
+  });
+
+  it('nets Indian losses against Indian gains for Indian tax', () => {
+    const r = run([
+      holding({ assetType: 'Mutual Fund', country: 'India', currency: 'INR', purchaseValue: inr(5000), currentValue: inr(10000) }),
+      holding({ assetType: 'Share', country: 'India', currency: 'INR', purchaseValue: inr(5000), currentValue: inr(3000) }),
+    ], { applyIndianLtcgExemption: false });
+    expect(r.indiaSummary.totalUnrealizedGainsLocal).toBeCloseTo(inr(3000), 4);
+    expect(r.indiaSummary.grossTaxLiabilityEUR).toBeCloseTo(3000 * 0.125 * 1.04, 4);
+  });
+});
+
 describe('calculateTaxImpact - explicit assumptions', () => {
   it('flags an estimated cost basis when purchase value is missing', () => {
     const missing = holding({ assetName: 'Mystery Co', assetType: 'Share', currentValue: 10000 });

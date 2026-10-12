@@ -1,12 +1,18 @@
 import { Holding, FinancialXRayData, Currency } from '../types';
-import { convertToEUR, FALLBACK_FISCAL_DATA } from './fiscalDataService';
+import { convertToEUR, convertFromEUR, formatCurrency, FALLBACK_FISCAL_DATA } from './fiscalDataService';
 
-export function computeFinancialXRay(holdings: Holding[]): FinancialXRayData {
+/** A single holding at or above this share of the portfolio is flagged as concentrated. */
+export const SINGLE_HOLDING_CONCENTRATION_PCT = 25;
+/** Top-5 share above this is flagged as concentrated (only meaningful with more than 5 holdings). */
+export const TOP5_CONCENTRATION_PCT = 50;
+
+export function computeFinancialXRay(holdings: Holding[], displayCurrency: Currency = 'EUR'): FinancialXRayData {
   const fxRates = FALLBACK_FISCAL_DATA.macroIndicators.fxRates;
 
-  // Convert every holding to EUR value
+  // Convert every holding to EUR value (invalid or negative values count as 0)
   const holdingsWithEUR = holdings.map(h => {
-    const valEUR = convertToEUR(h.currentValue, h.currency, fxRates);
+    const raw = Number.isFinite(h.currentValue) && h.currentValue > 0 ? h.currentValue : 0;
+    const valEUR = convertToEUR(raw, h.currency, fxRates);
     return {
       ...h,
       valEUR
@@ -15,7 +21,7 @@ export function computeFinancialXRay(holdings: Holding[]): FinancialXRayData {
 
   const totalAssetsEUR = holdingsWithEUR.reduce((acc, h) => acc + h.valEUR, 0);
 
-  if (totalAssetsEUR === 0) {
+  if (!(totalAssetsEUR > 0)) {
     return {
       totalAssetsEUR: 0,
       assetAllocation: [],
@@ -151,7 +157,14 @@ export function computeFinancialXRay(holdings: Holding[]): FinancialXRayData {
   const largestGeo = geographicExposure[0]?.country || 'Ireland';
   const largestGeoPct = geographicExposure[0]?.percentage || 0;
 
-  const aiDiagnosis = `Your portfolio holds €${Math.round(totalAssetsEUR).toLocaleString('en-IE')} in total assets across ${holdings.length} tracked positions. You have approximately ${equityPct}% in equities and growth funds, ${cashPct}% in cash reserves, and ${Math.round((pensionEUR / totalAssetsEUR) * 100)}% in retirement accounts. Your primary geographic anchor is ${largestGeo} (${largestGeoPct}%). Your top 5 holdings represent ${top5Pct}% of your wealth${top5Pct > 50 ? ', indicating high concentration risk' : ', showing balanced asset spread'}. With Ireland’s new Investment Account launching July 2027, you have a clear pathway to shelter up to €12,000/year from 41% exit tax.`;
+  const isConcentrated = topHoldingPct >= SINGLE_HOLDING_CONCENTRATION_PCT
+    || (sortedHoldings.length > 5 && top5Pct > TOP5_CONCENTRATION_PCT);
+  const totalDisplay = formatCurrency(convertFromEUR(totalAssetsEUR, displayCurrency, fxRates), displayCurrency);
+  const concentrationText = isConcentrated
+    ? `Your largest holding (${topHolding?.assetName ?? 'one position'}) is ${topHoldingPct}% of your wealth, indicating concentration risk`
+    : `Your largest holding is ${topHoldingPct}% of your wealth, showing a reasonable spread`;
+
+  const aiDiagnosis = `Your portfolio holds ${totalDisplay} in total assets across ${holdingsWithEUR.length} tracked positions. You have approximately ${equityPct}% in equities and growth funds, ${cashPct}% in cash reserves, and ${Math.round((pensionEUR / totalAssetsEUR) * 100)}% in retirement accounts. Your primary geographic anchor is ${largestGeo} (${largestGeoPct}%). ${concentrationText}. Ireland’s proposed Investment Account (expected July 2027) would let you invest up to €12,000/year without the current 38% exit tax and 8-year deemed disposal rules.`;
 
   return {
     totalAssetsEUR: Math.round(totalAssetsEUR),
@@ -163,7 +176,7 @@ export function computeFinancialXRay(holdings: Holding[]): FinancialXRayData {
       topHoldingPct,
       top5Pct,
       top10Pct,
-      isConcentrated: top5Pct > 45
+      isConcentrated
     },
     liquidity: {
       cashEUR: Math.round(cashEUR),

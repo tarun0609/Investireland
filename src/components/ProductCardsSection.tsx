@@ -1,6 +1,5 @@
 import React from 'react';
 import { 
-  Sparkles, 
   Coins, 
   PieChart, 
   Layers, 
@@ -22,12 +21,12 @@ export const ProductCardsSection: React.FC<ProductCardsSectionProps> = ({
     {
       badge: 'Account Tracking',
       title: 'Investment Account Tracker',
-      desc: 'Be completely prepared for the July 1, 2027 launch with our real-time contribution tracker.',
+      desc: 'Get ready for the proposed 1 July 2027 launch with a contribution tracker for your planned account.',
       points: [
         'Track annual contributions towards the €12,000 cap',
-        'Monitor remaining headroom in current tax year',
-        'Visualize distance to the €50,000 tax-free ceiling',
-        'Calculate exact 1% charge on marginal excess'
+        'Monitor remaining headroom in the current tax year',
+        'Visualise distance to the €50,000 threshold',
+        'Estimate the proposed 1% charge on any excess'
       ],
       icon: <Coins className="w-5 h-5 text-emerald-700" />,
       accent: 'border-emerald-200 bg-emerald-50/30'
@@ -38,9 +37,9 @@ export const ProductCardsSection: React.FC<ProductCardsSectionProps> = ({
       desc: 'All your assets—Irish pensions, European UCITS ETFs, Indian mutual funds, and US RSUs—in one unified ledger.',
       points: [
         'Supports EUR (€), INR (₹), USD ($) and GBP (£)',
-        'Automatic ECB reference currency conversions',
+        'Converts using indicative reference exchange rates',
         'Distinguish liquid funds from locked pensions',
-        'Clean manual entry with planned CSV import'
+        'Manual entry or CSV import'
       ],
       icon: <PieChart className="w-5 h-5 text-teal-700" />,
       accent: 'border-teal-200 bg-teal-50/30'
@@ -50,23 +49,23 @@ export const ProductCardsSection: React.FC<ProductCardsSectionProps> = ({
       title: 'The Financial X-Ray',
       desc: 'Strip away the fog and see your true geographic, single-stock, and currency exposures.',
       points: [
-        'Real geographic breakdown (Ireland, India, US, EU)',
+        'Geographic breakdown (Ireland, India, US, EU)',
         'Top 5 holdings concentration analysis',
         'Currency exposure breakdown against the Euro',
-        'Stress-test against -20% market corrections'
+        'Hypothetical -20% market correction stress test'
       ],
       icon: <Layers className="w-5 h-5 text-indigo-700" />,
       accent: 'border-indigo-200 bg-indigo-50/30'
     },
     {
       badge: 'Plain English Intelligence',
-      title: 'Statutory AI Assistant',
+      title: 'Plain English AI Assistant',
       desc: 'Ask your questions in normal everyday language without worrying about finance jargon.',
       points: [
-        'Grounded strictly in Revenue and Department of Finance publications',
-        'Direct source citations and dated references',
-        'Clear separation of statutory facts from scenarios',
-        'Zero pressure, zero unregulated buy/sell instructions'
+        'Prompted to draw on Revenue and Department of Finance publications',
+        'Points you to sources so you can check answers',
+        'Separates general rules from hypothetical scenarios',
+        'No buy/sell recommendations or sales pressure'
       ],
       icon: <Bot className="w-5 h-5 text-blue-700" />,
       accent: 'border-blue-200 bg-blue-50/30'
@@ -93,14 +92,14 @@ export const ProductCardsSection: React.FC<ProductCardsSectionProps> = ({
           {features.map((f, idx) => (
             <div
               key={idx}
-              className={`p-7 rounded-2xl border ${f.accent} bg-white shadow-xs hover:shadow-md transition-all flex flex-col justify-between`}
+              className={`p-5 sm:p-7 rounded-2xl border ${f.accent} bg-white shadow-xs hover:shadow-md transition-all flex flex-col justify-between`}
             >
               <div>
-                <div className="flex items-center justify-between mb-4">
-                  <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center">
+                <div className="flex items-center justify-between gap-3 mb-4">
+                  <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center shrink-0">
                     {f.icon}
                   </div>
-                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider font-mono">
+                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider font-mono text-right">
                     {f.badge}
                   </span>
                 </div>
@@ -124,10 +123,11 @@ export const ProductCardsSection: React.FC<ProductCardsSectionProps> = ({
 
               <div className="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between">
                 <button
+                  type="button"
                   onClick={onOpenDashboard}
                   className="text-xs font-bold text-emerald-700 hover:text-emerald-800 flex items-center gap-1 cursor-pointer"
                 >
-                  <span>Test in Interactive App</span>
+                  <span>Try it in the app</span>
                   <ArrowRight className="w-3.5 h-3.5" />
                 </button>
               </div>

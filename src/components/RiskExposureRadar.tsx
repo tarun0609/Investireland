@@ -10,7 +10,7 @@ import {
   Legend 
 } from 'recharts';
 import { Holding, Currency } from '../types';
-import { convertToEUR, formatCurrency } from '../services/fiscalDataService';
+import { convertToEUR, convertFromEUR, formatCurrency } from '../services/fiscalDataService';
 import { 
   ShieldAlert, 
   Sparkles, 
@@ -45,7 +45,8 @@ export const RiskExposureRadar: React.FC<RiskExposureRadarProps> = ({
     let pensionVal = 0;
 
     holdings.forEach((h) => {
-      const valEUR = convertToEUR(h.currentValue, h.currency);
+      const rawEUR = convertToEUR(h.currentValue, h.currency);
+      const valEUR = Number.isFinite(rawEUR) && rawEUR > 0 ? rawEUR : 0;
       totalEUR += valEUR;
 
       if (h.country === 'Ireland') ieVal += valEUR;
@@ -60,14 +61,16 @@ export const RiskExposureRadar: React.FC<RiskExposureRadarProps> = ({
       }
     });
 
-    if (totalEUR === 0) totalEUR = 1; // avoid division by zero
+    const isEmpty = totalEUR <= 0;
+    const pct = (v: number) => (isEmpty ? 0 : Math.round((v / totalEUR) * 100));
 
-    const iePct = Math.round((ieVal / totalEUR) * 100);
-    const inPct = Math.round((inVal / totalEUR) * 100);
-    const usPct = Math.round((usVal / totalEUR) * 100);
-    const cashPct = Math.round((cashVal / totalEUR) * 100);
-    const equityPct = Math.round((equityVal / totalEUR) * 100);
-    const pensionPct = Math.round((pensionVal / totalEUR) * 100);
+    const iePct = pct(ieVal);
+    const inPct = pct(inVal);
+    const usPct = pct(usVal);
+    const euPct = pct(euVal);
+    const cashPct = pct(cashVal);
+    const equityPct = pct(equityVal);
+    const pensionPct = pct(pensionVal);
 
     // Radar Chart Data across multi-dimensional risk axes
     const radarData = [
@@ -115,14 +118,20 @@ export const RiskExposureRadar: React.FC<RiskExposureRadarProps> = ({
     if (cashPct > 45) score -= 15; // excessive cash drag
     if (cashPct < 10) score -= 10; // low liquidity buffer
 
+    const maxCountryPct = Math.max(iePct, inPct, usPct, euPct);
+
     return {
+      isEmpty,
       totalEUR,
       ieVal,
       inVal,
       usVal,
+      euVal,
       iePct,
       inPct,
       usPct,
+      euPct,
+      maxCountryPct,
       cashPct,
       equityPct,
       pensionPct,
@@ -130,6 +139,8 @@ export const RiskExposureRadar: React.FC<RiskExposureRadarProps> = ({
       score: Math.max(40, score)
     };
   }, [holdings]);
+
+  const money = (valueEUR: number) => formatCurrency(convertFromEUR(valueEUR, currentCurrency), currentCurrency, 0);
 
   // Custom Recharts Tooltip
   const CustomTooltip = ({ active, payload }: any) => {
@@ -143,7 +154,7 @@ export const RiskExposureRadar: React.FC<RiskExposureRadarProps> = ({
             <span className="font-bold text-white">{data.portfolio}%</span>
           </div>
           <div className="flex justify-between gap-4">
-            <span className="text-slate-400">Benchmark Model:</span>
+            <span className="text-slate-400">Illustrative Benchmark:</span>
             <span className="text-emerald-300">{data.benchmark}%</span>
           </div>
         </div>
@@ -162,34 +173,35 @@ export const RiskExposureRadar: React.FC<RiskExposureRadarProps> = ({
             <Globe2 className="w-4 h-4" />
           </div>
           <div>
-            <div className="flex items-center gap-2">
-              <h3 className="text-sm font-bold text-white tracking-tight">
-                Risk Exposure Radar &middot; Multi-Market Diversification
-              </h3>
-              <span className="text-[10px] font-mono bg-emerald-950 text-emerald-300 border border-emerald-800 px-2 py-0.5 rounded">
-                RECHARTS
-              </span>
-            </div>
+            <h3 className="text-sm font-bold text-white tracking-tight">
+              Risk Exposure Radar &middot; Multi-Market Diversification
+            </h3>
             <p className="text-[11px] text-slate-400 mt-0.5">
-              Visualizes cross-border asset concentration across Ireland 🇮🇪, India 🇮🇳, and US 🇺🇸 markets
+              Visualises cross-border asset concentration across Ireland, India, and US markets
             </p>
           </div>
         </div>
 
         {/* Header Right Badges & Actions */}
         <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
-          <div className="flex items-center gap-2 bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-700">
-            <span className="text-[11px] text-slate-400 font-medium">Diversification Health:</span>
-            <span className="font-mono font-bold text-emerald-400 text-xs">
-              {analysis.score}/100
-            </span>
-            <span className="text-[10px] bg-emerald-950 text-emerald-300 px-1.5 py-0.2 rounded font-semibold">
-              {analysis.score >= 75 ? 'Balanced' : 'Skewed'}
-            </span>
-          </div>
+          {!analysis.isEmpty && (
+            <div
+              className="flex items-center gap-2 bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-700"
+              title="Indicative score based on country concentration and cash allocation. Not financial advice."
+            >
+              <span className="text-[11px] text-slate-400 font-medium">Diversification (indicative):</span>
+              <span className={`font-mono font-bold text-xs ${analysis.score >= 75 ? 'text-emerald-400' : 'text-amber-400'}`}>
+                {analysis.score}/100
+              </span>
+              <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${analysis.score >= 75 ? 'bg-emerald-950 text-emerald-300' : 'bg-amber-950 text-amber-300'}`}>
+                {analysis.score >= 75 ? 'Balanced' : 'Skewed'}
+              </span>
+            </div>
+          )}
 
-          {onOpenRebalancer && (
+          {onOpenRebalancer && !analysis.isEmpty && (
             <button
+              type="button"
               onClick={onOpenRebalancer}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition-all cursor-pointer shadow-xs"
               title="Calculate buy/sell orders to match target allocation"
@@ -201,17 +213,32 @@ export const RiskExposureRadar: React.FC<RiskExposureRadarProps> = ({
         </div>
       </div>
 
-      <div className="p-6">
+      {analysis.isEmpty ? (
+        <div className="p-6 sm:p-10 flex flex-col items-center text-center gap-3">
+          <div className="w-12 h-12 rounded-2xl bg-slate-100 border border-slate-200 text-slate-400 flex items-center justify-center">
+            <PieChart className="w-6 h-6" />
+          </div>
+          <h4 className="text-sm font-bold text-slate-900">No holdings to analyse yet</h4>
+          <p className="text-xs text-slate-500 max-w-sm leading-relaxed">
+            Add holdings with a current value to see your Ireland / India / US concentration, cash and pension mix, and an indicative diversification score.
+          </p>
+        </div>
+      ) : (
+      <div className="p-4 sm:p-6">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
           
           {/* Recharts Radar Chart (7 cols) */}
-          <div className="lg:col-span-7 h-[330px] w-full flex items-center justify-center relative">
+          <div
+            className="lg:col-span-7 h-[300px] sm:h-[330px] w-full min-w-0 flex items-center justify-center relative"
+            role="img"
+            aria-label={`Radar chart: Ireland ${analysis.iePct}%, India ${analysis.inPct}%, US ${analysis.usPct}%, equity ${analysis.equityPct}%, cash ${analysis.cashPct}%, pension ${analysis.pensionPct}% of portfolio, compared with an illustrative benchmark.`}
+          >
             <ResponsiveContainer width="100%" height="100%">
-              <RadarChart cx="50%" cy="50%" outerRadius="75%" data={analysis.radarData}>
+              <RadarChart cx="50%" cy="50%" outerRadius="65%" data={analysis.radarData}>
                 <PolarGrid stroke="#E2E8F0" strokeDasharray="3 3" />
                 <PolarAngleAxis 
                   dataKey="axis" 
-                  tick={{ fill: '#334155', fontSize: 11, fontWeight: 600 }}
+                  tick={{ fill: '#334155', fontSize: 10, fontWeight: 600 }}
                 />
                 <PolarRadiusAxis 
                   angle={30} 
@@ -223,7 +250,7 @@ export const RiskExposureRadar: React.FC<RiskExposureRadarProps> = ({
                 
                 {/* Benchmark Radar Series */}
                 <Radar
-                  name="Expat Target Benchmark"
+                  name="Illustrative Benchmark"
                   dataKey="benchmark"
                   stroke="#94A3B8"
                   fill="#94A3B8"
@@ -260,10 +287,10 @@ export const RiskExposureRadar: React.FC<RiskExposureRadarProps> = ({
             {/* Ireland Market Pillar */}
             <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 flex items-center justify-between">
               <div className="flex items-center gap-2.5">
-                <span className="text-xl">🇮🇪</span>
+                <span className="text-xl" role="img" aria-label="Ireland">🇮🇪</span>
                 <div>
                   <div className="text-xs font-bold text-slate-900">Ireland (Home Base)</div>
-                  <div className="text-[10px] text-slate-500">Pensions, Cash, Budget 2027 PSIA</div>
+                  <div className="text-[10px] text-slate-500">Pensions, Cash, Irish-domiciled assets</div>
                 </div>
               </div>
               <div className="text-right">
@@ -271,7 +298,7 @@ export const RiskExposureRadar: React.FC<RiskExposureRadarProps> = ({
                   {analysis.iePct}%
                 </div>
                 <div className="text-[10px] font-mono text-slate-500">
-                  €{Math.round(analysis.ieVal).toLocaleString()}
+                  {money(analysis.ieVal)}
                 </div>
               </div>
             </div>
@@ -279,7 +306,7 @@ export const RiskExposureRadar: React.FC<RiskExposureRadarProps> = ({
             {/* India Market Pillar */}
             <div className="bg-amber-50/60 p-3.5 rounded-xl border border-amber-200/80 flex items-center justify-between">
               <div className="flex items-center gap-2.5">
-                <span className="text-xl">🇮🇳</span>
+                <span className="text-xl" role="img" aria-label="India">🇮🇳</span>
                 <div>
                   <div className="text-xs font-bold text-slate-900">India Market</div>
                   <div className="text-[10px] text-amber-700">Mutual Funds (SIP), NSE Shares (DTAA)</div>
@@ -290,7 +317,7 @@ export const RiskExposureRadar: React.FC<RiskExposureRadarProps> = ({
                   {analysis.inPct}%
                 </div>
                 <div className="text-[10px] font-mono text-amber-700">
-                  ~€{Math.round(analysis.inVal).toLocaleString()}
+                  ~{money(analysis.inVal)}
                 </div>
               </div>
             </div>
@@ -298,7 +325,7 @@ export const RiskExposureRadar: React.FC<RiskExposureRadarProps> = ({
             {/* US Market Pillar */}
             <div className="bg-blue-50/60 p-3.5 rounded-xl border border-blue-200/80 flex items-center justify-between">
               <div className="flex items-center gap-2.5">
-                <span className="text-xl">🇺🇸</span>
+                <span className="text-xl" role="img" aria-label="United States">🇺🇸</span>
                 <div>
                   <div className="text-xs font-bold text-slate-900">US Market</div>
                   <div className="text-[10px] text-blue-700">Tech RSUs, US Listed Equities (W-8BEN)</div>
@@ -309,10 +336,30 @@ export const RiskExposureRadar: React.FC<RiskExposureRadarProps> = ({
                   {analysis.usPct}%
                 </div>
                 <div className="text-[10px] font-mono text-blue-700">
-                  ~€{Math.round(analysis.usVal).toLocaleString()}
+                  ~{money(analysis.usVal)}
                 </div>
               </div>
             </div>
+
+            {analysis.euVal > 0 && (
+              <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <span className="text-xl" role="img" aria-label="Europe">🇪🇺</span>
+                  <div>
+                    <div className="text-xs font-bold text-slate-900">Europe (ex-Ireland)</div>
+                    <div className="text-[10px] text-slate-500">UCITS ETFs, European equities</div>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-sm font-extrabold font-mono text-slate-900">
+                    {analysis.euPct}%
+                  </div>
+                  <div className="text-[10px] font-mono text-slate-500">
+                    {money(analysis.euVal)}
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Plain English Diagnosis Callout */}
             <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 text-[11px] text-emerald-950 leading-relaxed">
@@ -323,6 +370,7 @@ export const RiskExposureRadar: React.FC<RiskExposureRadarProps> = ({
                 </div>
                 {onOpenRebalancer && (
                   <button
+                    type="button"
                     onClick={onOpenRebalancer}
                     className="text-emerald-700 hover:text-emerald-900 font-bold hover:underline cursor-pointer flex items-center gap-0.5"
                   >
@@ -331,16 +379,20 @@ export const RiskExposureRadar: React.FC<RiskExposureRadarProps> = ({
                 )}
               </div>
               <p>
-                {analysis.iePct >= 50
-                  ? `Your portfolio has a strong Irish domestic core (${analysis.iePct}%), providing local stability. Maintaining exposure in high-growth Indian equity SIPs (${analysis.inPct}%) and US tech (${analysis.usPct}%) helps capture global returns while cushioning against single-currency shocks.`
-                  : `Your portfolio maintains active international diversification across Ireland (${analysis.iePct}%), India (${analysis.inPct}%), and the US (${analysis.usPct}%). Preparing to allocate into Ireland's Budget 2027 scheme will enhance local tax efficiency.`}
+                {analysis.maxCountryPct > 65
+                  ? `Your portfolio is concentrated in a single market (largest share ${analysis.maxCountryPct}%: Ireland ${analysis.iePct}%, India ${analysis.inPct}%, US ${analysis.usPct}%${analysis.euPct > 0 ? `, Europe ${analysis.euPct}%` : ''}). Consider whether this concentration and currency exposure match your goals.`
+                  : analysis.iePct >= 50
+                    ? `Your portfolio has a strong Irish domestic core (${analysis.iePct}%), with India at ${analysis.inPct}% and the US at ${analysis.usPct}%${analysis.euPct > 0 ? ` and Europe at ${analysis.euPct}%` : ''}. Holding several markets can reduce single-currency risk.`
+                    : `Your portfolio is spread across Ireland (${analysis.iePct}%), India (${analysis.inPct}%), and the US (${analysis.usPct}%)${analysis.euPct > 0 ? `, plus Europe (${analysis.euPct}%)` : ''}. Cash is ${analysis.cashPct}% of the total.`}
               </p>
+              <p className="mt-1 text-[10px] text-emerald-800/80">Indicative only, not financial advice.</p>
             </div>
 
           </div>
 
         </div>
       </div>
+      )}
 
     </div>
   );

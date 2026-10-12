@@ -50,7 +50,8 @@ npm run dev            # http://localhost:3000
 ### Production domain (investirelandai.ie)
 
 1. Deploy the Node server (`npm run build`, then `NODE_ENV=production npm start`) to any host that runs Node 20+, such as Cloud Run, Render, Railway or Fly.io. Set the same variables as `.env` in the host's secret settings and use `APP_URL="https://investirelandai.ie"`.
-2. Point the domain's DNS at the host. Follow the host's custom-domain instructions, which usually means an `A` record for `investirelandai.ie` and a `CNAME` for `www`. Serve the site over HTTPS only.
+   - **Azure Static Web Apps (current setup):** the workflow in `.github/workflows/azure-static-web-apps-*.yml` builds the front end and deploys `dist/`. `staticwebapp.config.json` provides SPA routing and the security headers. The Express API does **not** run there. Auth, Firestore and the calculators work. Welcome emails stop, and the AI assistant, market data and fiscal data fall back to bundled offline data. To bring the API back, host `server.ts` separately or port it to Static Web Apps managed functions.
+2. Point the domain's DNS at the host. If DNS is on Cloudflare, add `CNAME @` and `CNAME www` pointing to the host's default domain with the proxy turned off (DNS only), and use TXT validation for the apex in Azure. Serve the site over HTTPS only.
 3. In Firebase, go to **Authentication → Settings → Authorized domains** and add `investirelandai.ie` and `www.investirelandai.ie`.
 4. Restrict the browser API key to `https://investirelandai.ie/*`, `https://www.investirelandai.ie/*` and `http://localhost:3000/*`.
 

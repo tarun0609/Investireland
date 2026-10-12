@@ -1,7 +1,7 @@
 import { FiscalDataResponse, Currency } from '../types';
 
 /** Date the bundled reference figures were last manually reviewed against official sources. */
-export const FISCAL_DATA_LAST_REVIEWED = '2026-10-15';
+export const FISCAL_DATA_LAST_REVIEWED = '2026-10-01';
 
 export const FALLBACK_FISCAL_DATA: FiscalDataResponse = {
   jurisdiction: 'Ireland (Éire)',
@@ -12,7 +12,7 @@ export const FALLBACK_FISCAL_DATA: FiscalDataResponse = {
     fy26: {
       budgetYear: 'FY2026',
       status: 'Current Enacted Law',
-      exitTaxRate: 0.41,
+      exitTaxRate: 0.38,
       deemedDisposalCycleYears: 8,
       cgtRate: 0.33,
       cgtAnnualExemption: 1270,
@@ -32,7 +32,7 @@ export const FALLBACK_FISCAL_DATA: FiscalDataResponse = {
       eligibleInvestments: ['UCITS ETFs', 'Listed Equities', 'Government & Corporate Bonds', 'Regulated Investment Funds', 'Cash Deposits'],
       excludedInvestments: ['Crypto-assets', 'Unlisted speculative derivatives', 'Direct residential property'],
       residencyRequirement: 'Irish Tax Resident (PPSN required, aged 18+)',
-      exitTaxOutsideScheme: 0.41,
+      exitTaxOutsideScheme: 0.38,
       primaryLegislation: 'General Scheme of the Investment Accounts Bill 2026/27 (Dept of Finance)'
     }
   },
@@ -103,12 +103,14 @@ export async function fetchOfficialFiscalData(): Promise<FiscalDataResponse> {
       throw new Error(`Fiscal data HTTP ${res.status}`);
     }
     const json = await res.json();
-    if (json && json.data) {
-      return json.data;
+    const data = json?.data;
+    // Only accept a payload with the shape the UI relies on; otherwise use the bundled dataset
+    if (data && data.regime?.fy26 && data.regime?.fy27 && Array.isArray(data.officialSources) && data.macroIndicators?.fxRates) {
+      return data as FiscalDataResponse;
     }
     return FALLBACK_FISCAL_DATA;
   } catch (err) {
-    console.warn('Using client-side verified fiscal dataset fallback:', err);
+    console.warn('Using bundled reference fiscal dataset:', err);
     return FALLBACK_FISCAL_DATA;
   }
 }
@@ -141,16 +143,23 @@ export function formatCurrency(amount: number, currency: Currency = 'EUR', maxim
   };
 
   const symbol = symbolMap[currency] || '€';
-  
-  if (currency === 'INR' && amount >= 100000) {
+  if (!Number.isFinite(amount)) amount = 0;
+  // Put the sign before the symbol ("-€500", not "€-500")
+  const sign = amount < 0 ? '-' : '';
+  const abs = Math.abs(amount);
+
+  if (currency === 'INR' && abs >= 100000) {
     // Show in Lakhs or Crores for Indian format if large
-    const lakhs = amount / 100000;
+    const lakhs = abs / 100000;
     if (lakhs >= 100) {
       const crores = lakhs / 100;
-      return `${symbol}${crores.toFixed(2)} Cr`;
+      return `${sign}${symbol}${crores.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Cr`;
     }
-    return `${symbol}${lakhs.toFixed(2)} Lakh`;
+    return `${sign}${symbol}${lakhs.toFixed(2)} Lakh`;
   }
 
-  return `${symbol}${Math.round(amount).toLocaleString('en-IE', { maximumFractionDigits })}`;
+  const factor = Math.pow(10, Math.max(0, maximumFractionDigits));
+  const rounded = Math.round(abs * factor) / factor;
+  if (rounded === 0) return `${symbol}0`;
+  return `${sign}${symbol}${rounded.toLocaleString('en-IE', { maximumFractionDigits })}`;
 }

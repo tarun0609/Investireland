@@ -574,14 +574,51 @@ export const DEFAULT_HISTORICAL_DIVIDENDS: DividendRecord[] = [
   }
 ];
 
+const SAMPLE_DIVIDEND_IDS = new Set(DEFAULT_HISTORICAL_DIVIDENDS.map(d => d.id));
+
+/** True when every record is from the built-in illustrative dataset (not the user's own data). */
+export function isSampleDividendData(dividends: DividendRecord[]): boolean {
+  return dividends.length > 0 && dividends.every(d => SAMPLE_DIVIDEND_IDS.has(d.id));
+}
+
+/** Parses a 'YYYY-MM-DD' string as a local calendar date (avoids UTC off-by-one-day shifts). */
+export function parseLocalDate(value: string): Date {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+  if (match) return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  return new Date(value);
+}
+
+/** Today's date as 'YYYY-MM-DD' in the user's local timezone. */
+export function todayLocalISODate(): string {
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
+function isValidDividendRecord(item: unknown): item is DividendRecord {
+  if (!item || typeof item !== 'object') return false;
+  const d = item as Partial<DividendRecord>;
+  return typeof d.id === 'string' &&
+    typeof d.holdingName === 'string' &&
+    typeof d.paymentDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d.paymentDate) &&
+    typeof d.grossAmount === 'number' && Number.isFinite(d.grossAmount) &&
+    typeof d.withholdingTax === 'number' && Number.isFinite(d.withholdingTax) &&
+    typeof d.netAmount === 'number' && Number.isFinite(d.netAmount) &&
+    typeof d.currency === 'string' &&
+    typeof d.country === 'string';
+}
+
 export function getStoredDividends(): DividendRecord[] {
   if (typeof window === 'undefined') return DEFAULT_HISTORICAL_DIVIDENDS;
   try {
     const raw = localStorage.getItem(scopedStorageKey(STORAGE_KEY));
     if (!raw) return DEFAULT_HISTORICAL_DIVIDENDS;
     const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed) && parsed.length > 0) {
-      return parsed;
+    // An empty array is a deliberate user choice (e.g. cleared sample data) and must be respected.
+    if (Array.isArray(parsed)) {
+      return parsed
+        .filter(isValidDividendRecord)
+        .map(d => ({ ...d, holdingId: d.holdingId ?? '', broker: d.broker ?? '' }));
     }
   } catch (err) {
     console.error('Failed to parse stored dividends:', err);
@@ -605,7 +642,7 @@ export function calculateDividendAnalytics(
 ): DividendAnalytics {
   // Sort chronologically ascending
   const sorted = [...dividends].sort(
-    (a, b) => new Date(a.paymentDate).getTime() - new Date(b.paymentDate).getTime()
+    (a, b) => parseLocalDate(a.paymentDate).getTime() - parseLocalDate(b.paymentDate).getTime()
   );
 
   let totalGrossEUR = 0;
@@ -634,7 +671,7 @@ export function calculateDividendAnalytics(
     totalWithholdingTaxEUR += whtEUR;
 
     // Foreign tax credit is for India (TDS) and US (WHT)
-    if (div.country === 'India' || div.country === 'US') {
+    if (div.country !== 'Ireland') {
       foreignTaxCreditAvailableEUR += whtEUR;
     }
 
@@ -646,8 +683,8 @@ export function calculateDividendAnalytics(
     else if (div.country === 'India') runningIndiaEUR += grossEUR;
     else if (div.country === 'US') runningUsEUR += grossEUR;
 
-    const dateObj = new Date(div.paymentDate);
-    const periodLabel = `${dateObj.getFullYear()} ${dateObj.toLocaleString('en-US', { month: 'short' })}`;
+    const dateObj = parseLocalDate(div.paymentDate);
+    const periodLabel = `${dateObj.getFullYear()} ${dateObj.toLocaleString('en-IE', { month: 'short' })}`;
 
     timeline.push({
       date: div.paymentDate,
@@ -662,13 +699,16 @@ export function calculateDividendAnalytics(
     });
   }
 
-  // TTM (Trailing 12 months)
-  // Let's take the last 12 months up to current / latest date in dataset
-  const latestDate = sorted.length > 0 ? new Date(sorted[sorted.length - 1].paymentDate) : new Date();
-  const oneYearPrior = new Date(latestDate);
+  // TTM (Trailing 12 months up to today; future-dated records are excluded)
+  const today = new Date();
+  today.setHours(23, 59, 59, 999);
+  const oneYearPrior = new Date(today);
   oneYearPrior.setFullYear(oneYearPrior.getFullYear() - 1);
 
-  const ttmDividends = sorted.filter(d => new Date(d.paymentDate) >= oneYearPrior);
+  const ttmDividends = sorted.filter(d => {
+    const paid = parseLocalDate(d.paymentDate);
+    return paid > oneYearPrior && paid <= today;
+  });
   const ttmDividendsEUR = ttmDividends.reduce(
     (sum, d) => sum + convertToEUR(d.grossAmount, d.currency, fxRates),
     0
@@ -723,7 +763,10 @@ export function calculateDividendAnalytics(
     entry.whtEUR += whtEUR;
     entry.netEUR += netEUR;
     entry.count += 1;
-    entry.originalGross += div.grossAmount;
+    // A country can receive payouts in several currencies; express them all in the country's display currency.
+    entry.originalGross += div.currency === entry.currency
+      ? div.grossAmount
+      : convertFromEUR(grossEUR, entry.currency, fxRates);
     countryMap.set(div.country, entry);
   }
 
@@ -739,6 +782,9 @@ export function calculateDividendAnalytics(
     } else if (country === 'US') {
       label = 'United States (RSUs & Tech)';
       taxNotes = '15% US Withholding Tax applied via Form W-8BEN. Offsettable against Irish Revenue Form 11 liability.';
+    } else if (country === 'Europe') {
+      label = 'Europe (EU/UK Equities & Funds)';
+      taxNotes = 'Source-country withholding varies by treaty; Irish-domiciled UCITS funds generally pay gross distributions.';
     }
 
     return {
@@ -789,7 +835,7 @@ export function calculateDividendAnalytics(
     entry.totalWhtEUR += whtEUR;
     entry.totalNetEUR += netEUR;
     entry.count += 1;
-    if (new Date(div.paymentDate) > new Date(entry.lastPaymentDate)) {
+    if (div.paymentDate > entry.lastPaymentDate) {
       entry.lastPaymentDate = div.paymentDate;
     }
     holdingMap.set(div.holdingId, entry);
@@ -813,7 +859,7 @@ export function calculateDividendAnalytics(
   // Yearly Breakdown
   const yearMap = new Map<number, { grossEUR: number; netEUR: number; whtEUR: number; count: number }>();
   for (const div of sorted) {
-    const yr = new Date(div.paymentDate).getFullYear();
+    const yr = parseLocalDate(div.paymentDate).getFullYear();
     const entry = yearMap.get(yr) || { grossEUR: 0, netEUR: 0, whtEUR: 0, count: 0 };
     const grossEUR = convertToEUR(div.grossAmount, div.currency, fxRates);
     const whtEUR = convertToEUR(div.withholdingTax, div.currency, fxRates);

@@ -1,18 +1,24 @@
 import { BudgetCalculatorInputs, BudgetCalculatorResult, YearProjection } from '../types';
 
-export const FY26_EXIT_TAX_RATE = 0.41;
+export const FY26_EXIT_TAX_RATE = 0.38;
 export const FY26_CGT_RATE = 0.33;
 export const FY26_CGT_ANNUAL_EXEMPTION = 1270;
 export const DEEMED_DISPOSAL_CYCLE_YEARS = 8;
 export const FY27_ANNUAL_CONTRIBUTION_LIMIT = 12000;
 export const FY27_TAX_FREE_THRESHOLD = 50000;
 export const FY27_ANNUAL_CHARGE_RATE = 0.01;
+/** Illustrative inflation assumption (Irish HICP reference figure) used for "today's money" values. */
+export const ILLUSTRATIVE_INFLATION_RATE = 0.022;
+/** Upper bound on the projection horizon to keep the loop bounded for bad inputs. */
+export const MAX_TIME_HORIZON_YEARS = 60;
+
+const nonNegative = (value: number): number => (Number.isFinite(value) && value > 0 ? value : 0);
 
 type AssetClass = BudgetCalculatorInputs['assetClass'];
 
 /**
  * A pot of money taxed under the current (FY26) regime.
- * ETFs/funds: 41% exit tax with 8-year deemed disposal. Shares/deposits: 33% CGT with €1,270 exemption on exit.
+ * ETFs/funds: 38% exit tax with 8-year deemed disposal. Shares/deposits: 33% CGT with €1,270 exemption on exit.
  * Contributions are added to the cost basis so only gains are ever taxed.
  */
 class Fy26TaxablePot {
@@ -52,17 +58,16 @@ class Fy26TaxablePot {
 }
 
 export function calculateBudgetProjections(inputs: BudgetCalculatorInputs): BudgetCalculatorResult {
-  const {
-    startingAmount,
-    monthlyContribution,
-    timeHorizonYears,
-    annualReturnRate,
-    adjustForInflation,
-    assetClass
-  } = inputs;
+  const { adjustForInflation, assetClass } = inputs;
+  // Sanitise inputs: NaN (e.g. from an empty field), negatives and fractional years would
+  // otherwise produce NaN results, negative "contributions" or an empty projection list.
+  const startingAmount = nonNegative(inputs.startingAmount);
+  const monthlyContribution = nonNegative(inputs.monthlyContribution);
+  const timeHorizonYears = Math.min(MAX_TIME_HORIZON_YEARS, Math.max(1, Math.round(nonNegative(inputs.timeHorizonYears)) || 1));
+  const annualReturnRate = Number.isFinite(inputs.annualReturnRate) ? Math.max(-0.99, inputs.annualReturnRate) : 0;
 
   const annualContribution = monthlyContribution * 12;
-  const inflationRate = 0.022; // 2.2% official Irish CSO HICP rate
+  const inflationRate = ILLUSTRATIVE_INFLATION_RATE;
 
   const projections: YearProjection[] = [];
 
@@ -142,7 +147,7 @@ export function calculateBudgetProjections(inputs: BudgetCalculatorInputs): Budg
   }
 
   return {
-    inputs,
+    inputs: { ...inputs, startingAmount, monthlyContribution, timeHorizonYears, annualReturnRate },
     projections,
     totalContributions: finalTotalContributions,
     fy26FinalNetValue,

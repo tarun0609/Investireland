@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   FinancialGoalMilestone, 
   Holding, 
@@ -13,7 +13,9 @@ import {
   resetGoalMilestonesToDefault,
   calculateTotalHoldingsValueEUR,
   computeGoalMilestoneSummary,
-  autoAllocatePortfolioToGoals
+  autoAllocatePortfolioToGoals,
+  isSampleGoalData,
+  monthsUntilTargetYearEnd
 } from '../services/goalMilestoneService';
 import { formatCurrency, convertToEUR, convertFromEUR } from '../services/fiscalDataService';
 import { sendMilestoneAutoEmail, getActiveUser, isDemoUser } from '../services/authEmailService';
@@ -47,6 +49,20 @@ import {
   ChevronRight
 } from 'lucide-react';
 
+const MAX_GOAL_TITLE_LENGTH = 200;
+const MAX_GOAL_TEXT_LENGTH = 1000;
+const MAX_GOAL_AMOUNT = 1e12;
+
+const currencySymbol = (c: Currency) => (c === 'INR' ? '₹' : c === 'USD' ? '$' : c === 'GBP' ? '£' : '€');
+
+const describeEmailError = (error?: string) => {
+  if (!error) return 'Could not send the email. Please try again later.';
+  if (/\((404|405|501|502|503)\)|Failed to fetch|NetworkError|Load failed/i.test(error)) {
+    return 'Milestone emails are not available on this version of the site (the email service is offline). Your goals are still saved in this browser.';
+  }
+  return error;
+};
+
 interface FinancialGoalMilestonesProps {
   holdings: Holding[];
   currentCurrency: Currency;
@@ -76,11 +92,14 @@ export const FinancialGoalMilestones: React.FC<FinancialGoalMilestonesProps> = (
   }>({ loading: false, sent: false });
 
   // Add / Edit form state
+  const [formError, setFormError] = useState<string | null>(null);
+  const [initialSaved, setInitialSaved] = useState('');
   const [formData, setFormData] = useState<{
     title: string;
     description: string;
     category: LifeStageCategory;
-    targetAmount: number;
+    targetAmount: string;
+    currentSaved: string;
     targetCurrency: Currency;
     targetYear: number;
     monthlyContributionEUR: number;
@@ -90,9 +109,10 @@ export const FinancialGoalMilestones: React.FC<FinancialGoalMilestonesProps> = (
     title: 'Dublin / Irish Home Deposit',
     description: 'Central Bank 10% First Time Buyer deposit plus stamp duty',
     category: 'house_deposit',
-    targetAmount: 85000,
+    targetAmount: '85000',
+    currentSaved: '0',
     targetCurrency: 'EUR',
-    targetYear: 2028,
+    targetYear: new Date().getFullYear() + 2,
     monthlyContributionEUR: 1000,
     priority: 'High',
     notes: 'Pairing with Irish Help to Buy (HTB) scheme refund'
@@ -119,22 +139,48 @@ export const FinancialGoalMilestones: React.FC<FinancialGoalMilestonesProps> = (
     saveGoalMilestones(updated);
   };
 
+  const isSampleData = isSampleGoalData(goals);
+
   const handleResetDefaults = () => {
-    if (window.confirm('Reset all financial goal milestones back to official presets?')) {
+    if (window.confirm('Replace all your milestones with the example sample milestones? Your own goals will be removed.')) {
       const defs = resetGoalMilestonesToDefault();
       setGoals(defs);
     }
   };
 
+  const handleClearSamples = () => {
+    if (window.confirm('Remove the example milestones so you can start with your own goals?')) {
+      updateAndSaveGoals([]);
+    }
+  };
+
   const handleAutoAllocate = () => {
+    if (totalPortfolioEUR <= 0 || goals.length === 0) return;
+    if (!window.confirm('Auto-allocate will overwrite the saved amounts on every goal using your current holdings value (high priority first). Continue?')) return;
     const reallocated = autoAllocatePortfolioToGoals(goals, totalPortfolioEUR);
     updateAndSaveGoals(reallocated);
   };
 
-  const handleDeleteGoal = (id: string) => {
-    const updated = goals.filter(g => g.id !== id);
+  const handleDeleteGoal = (goal: FinancialGoalMilestone) => {
+    if (!window.confirm(`Delete the milestone "${goal.title}"? This cannot be undone.`)) return;
+    const updated = goals.filter(g => g.id !== goal.id);
     updateAndSaveGoals(updated);
   };
+
+  const handleToggleCompleted = (goal: FinancialGoalMilestone) => {
+    updateAndSaveGoals(goals.map(g => (g.id === goal.id ? { ...g, isCompleted: !g.isCompleted } : g)));
+  };
+
+  useEffect(() => {
+    if (!isAddModalOpen && !isEmailModalOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      setIsAddModalOpen(false);
+      setIsEmailModalOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isAddModalOpen, isEmailModalOpen]);
 
   const handleOpenAddModal = (presetCategory?: LifeStageCategory) => {
     const preset = LIFE_STAGE_PRESETS.find(p => p.category === presetCategory) || LIFE_STAGE_PRESETS[0];
@@ -143,23 +189,30 @@ export const FinancialGoalMilestones: React.FC<FinancialGoalMilestonesProps> = (
       title: preset.defaultTitle,
       description: preset.defaultDescription,
       category: preset.category,
-      targetAmount: preset.recommendedEUR,
+      targetAmount: String(preset.recommendedEUR),
+      currentSaved: '0',
       targetCurrency: 'EUR',
       targetYear: currentYear + preset.typicalHorizonYears,
       monthlyContributionEUR: Math.round(preset.recommendedEUR / (preset.typicalHorizonYears * 12)),
       priority: preset.priority,
       notes: preset.irishFiscalTip
     });
+    setInitialSaved('0');
+    setFormError(null);
     setEditingGoal(null);
     setIsAddModalOpen(true);
   };
 
   const handleOpenEditModal = (goal: FinancialGoalMilestone) => {
+    const saved = String(Math.round(convertFromEUR(goal.currentAllocatedEUR, goal.targetCurrency) * 100) / 100);
+    setInitialSaved(saved);
+    setFormError(null);
     setFormData({
       title: goal.title,
       description: goal.description,
       category: goal.category,
-      targetAmount: goal.targetAmount,
+      targetAmount: String(goal.targetAmount),
+      currentSaved: saved,
       targetCurrency: goal.targetCurrency,
       targetYear: goal.targetYear,
       monthlyContributionEUR: goal.monthlyContributionEUR,
@@ -172,8 +225,29 @@ export const FinancialGoalMilestones: React.FC<FinancialGoalMilestonesProps> = (
 
   const handleSaveGoal = (e: React.FormEvent) => {
     e.preventDefault();
-    const targetAmountEUR = convertToEUR(formData.targetAmount, formData.targetCurrency);
+    const title = formData.title.trim();
+    const description = formData.description.trim();
+    const notes = formData.notes.trim();
+    const targetAmount = Number(formData.targetAmount);
+    const saved = formData.currentSaved.trim() === '' ? 0 : Number(formData.currentSaved);
+    const thisYear = new Date().getFullYear();
+
+    if (!title) return setFormError('Please enter a goal title.');
+    if (title.length > MAX_GOAL_TITLE_LENGTH) return setFormError(`Goal title must be ${MAX_GOAL_TITLE_LENGTH} characters or fewer.`);
+    if (!Number.isFinite(targetAmount) || targetAmount <= 0) return setFormError('Target amount must be a number greater than 0.');
+    if (targetAmount > MAX_GOAL_AMOUNT) return setFormError('Target amount is too large.');
+    if (!Number.isFinite(saved) || saved < 0) return setFormError('Amount already saved cannot be negative.');
+    if (saved > MAX_GOAL_AMOUNT) return setFormError('Amount already saved is too large.');
+    if (!Number.isInteger(formData.targetYear) || formData.targetYear < thisYear || formData.targetYear > thisYear + 60) {
+      return setFormError(`Target year must be between ${thisYear} and ${thisYear + 60}.`);
+    }
+    setFormError(null);
+
+    const targetAmountEUR = convertToEUR(targetAmount, formData.targetCurrency);
     const categoryLabel = LIFE_STAGE_PRESETS.find(p => p.category === formData.category)?.categoryLabel || 'Life Goal';
+    const savedChanged = formData.currentSaved.trim() !== initialSaved || formData.targetCurrency !== editingGoal?.targetCurrency;
+    const currentAllocatedEUR = convertToEUR(saved, formData.targetCurrency);
+    const monthlyContributionEUR = Math.max(0, Math.round((targetAmountEUR - currentAllocatedEUR) / monthsUntilTargetYearEnd(formData.targetYear)));
 
     if (editingGoal) {
       // Edit existing
@@ -181,39 +255,40 @@ export const FinancialGoalMilestones: React.FC<FinancialGoalMilestonesProps> = (
         if (g.id === editingGoal.id) {
           return {
             ...g,
-            title: formData.title,
-            description: formData.description,
+            title,
+            description,
             category: formData.category,
             categoryLabel,
-            targetAmount: formData.targetAmount,
+            targetAmount,
             targetCurrency: formData.targetCurrency,
             targetAmountEUR,
             targetYear: formData.targetYear,
-            monthlyContributionEUR: formData.monthlyContributionEUR,
+            currentAllocatedEUR: savedChanged ? currentAllocatedEUR : g.currentAllocatedEUR,
+            monthlyContributionEUR,
             priority: formData.priority,
-            notes: formData.notes
+            notes
           };
         }
         return g;
       });
       updateAndSaveGoals(updated);
     } else {
-      // Add new
+      // New goals start from what the user says they have already saved, never an invented allocation.
       const newGoal: FinancialGoalMilestone = {
-        id: `goal_${Date.now()}`,
-        title: formData.title,
-        description: formData.description,
+        id: `goal_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        title,
+        description,
         category: formData.category,
         categoryLabel,
-        targetAmount: formData.targetAmount,
+        targetAmount,
         targetCurrency: formData.targetCurrency,
         targetAmountEUR,
         targetYear: formData.targetYear,
-        currentAllocatedEUR: Math.min(totalPortfolioEUR * 0.25, targetAmountEUR * 0.4),
-        monthlyContributionEUR: formData.monthlyContributionEUR,
+        currentAllocatedEUR,
+        monthlyContributionEUR,
         priority: formData.priority,
         isCompleted: false,
-        notes: formData.notes,
+        notes,
         iconName: formData.category
       };
       updateAndSaveGoals([...goals, newGoal]);
@@ -241,7 +316,12 @@ export const FinancialGoalMilestones: React.FC<FinancialGoalMilestonesProps> = (
     const goalTitle = targetGoal ? targetGoal.title : 'All Life Stage Milestones';
     const targetAmount = targetGoal ? targetGoal.targetAmountEUR : summary.totalTargetEUR;
 
-    const res = await sendMilestoneAutoEmail({ goalTitle, targetAmount, currency: 'EUR' });
+    let res: Awaited<ReturnType<typeof sendMilestoneAutoEmail>>;
+    try {
+      res = await sendMilestoneAutoEmail({ goalTitle, targetAmount, currency: 'EUR' });
+    } catch (err) {
+      res = { success: false, error: err instanceof Error ? err.message : undefined };
+    }
 
     if (res.success) {
       const simulated = res.emailDispatch?.status === 'SIMULATED';
@@ -257,7 +337,7 @@ export const FinancialGoalMilestones: React.FC<FinancialGoalMilestonesProps> = (
       setEmailStatus({
         loading: false,
         sent: false,
-        message: res.error || 'Failed to dispatch email'
+        message: describeEmailError(res.error)
       });
     }
   };
@@ -301,10 +381,10 @@ export const FinancialGoalMilestones: React.FC<FinancialGoalMilestonesProps> = (
                 Portfolio benchmarked against Irish &amp; Global Milestones
               </span>
             </div>
-            <h2 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+            <h2 className="text-2xl font-black text-slate-900 tracking-tight flex flex-wrap items-center gap-2">
               Financial Goal Milestones
               <span className="text-xs px-2.5 py-1 rounded-md bg-slate-100 text-slate-700 font-bold">
-                {goals.length} Goals Active
+                {goals.length} {goals.length === 1 ? 'Goal' : 'Goals'}{isSampleData ? ' (examples)' : ' Active'}
               </span>
             </h2>
             <p className="text-xs sm:text-sm text-slate-600 mt-1 max-w-2xl leading-relaxed">
@@ -315,6 +395,7 @@ export const FinancialGoalMilestones: React.FC<FinancialGoalMilestonesProps> = (
           {/* Action Buttons */}
           <div className="flex flex-wrap items-center gap-2.5">
             <button
+              type="button"
               onClick={() => handleOpenAddModal()}
               className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-emerald-700 hover:bg-emerald-800 text-white shadow-xs transition-colors cursor-pointer"
             >
@@ -323,31 +404,59 @@ export const FinancialGoalMilestones: React.FC<FinancialGoalMilestonesProps> = (
             </button>
 
             <button
+              type="button"
               onClick={handleAutoAllocate}
-              title="Automatically distributes current total portfolio holdings across high-priority milestones"
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-800 transition-colors cursor-pointer border border-slate-300"
+              disabled={totalPortfolioEUR <= 0 || goals.length === 0}
+              title={totalPortfolioEUR <= 0 ? 'Add holdings in your portfolio first to auto-allocate them to goals' : 'Automatically distributes current total portfolio holdings across high-priority milestones'}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-800 transition-colors cursor-pointer border border-slate-300 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-slate-100"
             >
               <Sliders className="w-3.5 h-3.5 text-slate-600" />
               <span>Auto-Allocate Holdings</span>
             </button>
 
             <button
+              type="button"
               onClick={() => handleSendMilestoneEmail()}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-blue-50 hover:bg-blue-100 text-blue-800 transition-colors cursor-pointer border border-blue-200"
+              disabled={goals.length === 0}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-blue-50 hover:bg-blue-100 text-blue-800 transition-colors cursor-pointer border border-blue-200 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Mail className="w-3.5 h-3.5 text-blue-600" />
               <span>Email Progress Report</span>
             </button>
 
             <button
+              type="button"
               onClick={handleResetDefaults}
               className="p-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
-              title="Reset to default preset milestones"
+              title="Load example milestones (replaces your current goals)"
+              aria-label="Load example milestones"
             >
               <RotateCcw className="w-4 h-4" />
             </button>
           </div>
         </div>
+
+        {isSampleData && (
+          <div role="note" className="mt-5 p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <span className="flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-700" />
+              <span>These are <strong>example milestones</strong> with illustrative amounts, not your own goals. Clear them or edit them to start planning.</span>
+            </span>
+            <button
+              type="button"
+              onClick={handleClearSamples}
+              className="self-start sm:self-auto shrink-0 px-3 py-1.5 rounded-lg bg-white border border-amber-300 font-bold text-amber-900 hover:bg-amber-100 cursor-pointer"
+            >
+              Clear examples
+            </button>
+          </div>
+        )}
+
+        {totalPortfolioEUR <= 0 && goals.length > 0 && (
+          <p className="mt-3 text-[11px] text-slate-500">
+            Your portfolio has no holdings yet, so Auto-Allocate is unavailable. Add holdings in the App tab, or enter the amount already saved when editing a goal.
+          </p>
+        )}
 
         {/* Milestone Summary Metric Cards */}
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mt-6 pt-6 border-t border-slate-100">
@@ -359,7 +468,7 @@ export const FinancialGoalMilestones: React.FC<FinancialGoalMilestonesProps> = (
               {formatCurrency(summary.totalTargetEUR, currentCurrency)}
             </div>
             <span className="text-[10px] text-slate-500 mt-0.5 block">
-              Across all {summary.totalGoalsCount} life milestones
+              Across {summary.totalGoalsCount} life {summary.totalGoalsCount === 1 ? 'milestone' : 'milestones'}
             </span>
           </div>
 
@@ -371,7 +480,7 @@ export const FinancialGoalMilestones: React.FC<FinancialGoalMilestonesProps> = (
               {formatCurrency(summary.totalFundedEUR, currentCurrency)}
             </div>
             <span className="text-[10px] text-emerald-700 font-semibold mt-0.5 block">
-              {summary.overallProgressPct}% portfolio coverage
+              {summary.overallProgressPct}% of total target funded
             </span>
           </div>
 
@@ -395,7 +504,7 @@ export const FinancialGoalMilestones: React.FC<FinancialGoalMilestonesProps> = (
               {formatCurrency(summary.monthlySavingsRequiredTotal, currentCurrency)}/mo
             </div>
             <span className="text-[10px] text-slate-500 mt-0.5 block">
-              Required to hit all dates
+              Required to hit all open goals
             </span>
           </div>
 
@@ -418,7 +527,7 @@ export const FinancialGoalMilestones: React.FC<FinancialGoalMilestonesProps> = (
 
         {/* Global Progress Bar */}
         <div className="mt-5 p-4 bg-emerald-50/50 rounded-xl border border-emerald-100">
-          <div className="flex items-center justify-between text-xs font-bold text-slate-800 mb-1.5">
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs font-bold text-slate-800 mb-1.5">
             <span className="flex items-center gap-1.5">
               <Sparkles className="w-3.5 h-3.5 text-emerald-700" />
               Cumulative Financial Milestone Progress
@@ -433,9 +542,9 @@ export const FinancialGoalMilestones: React.FC<FinancialGoalMilestonesProps> = (
               style={{ width: `${Math.min(100, summary.overallProgressPct)}%` }}
             />
           </div>
-          <div className="flex items-center justify-between text-[11px] text-slate-500 mt-2">
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[11px] text-slate-500 mt-2">
             <span>Funding Gap Remaining: {formatCurrency(Math.max(0, summary.totalTargetEUR - summary.totalFundedEUR), currentCurrency)}</span>
-            <span>Target Completion: 2026 – {summary.projectedFullFundingYear}</span>
+            <span>Target Completion: {summary.projectedFullFundingYear > currentYear ? `${currentYear} – ${summary.projectedFullFundingYear}` : summary.projectedFullFundingYear}</span>
           </div>
         </div>
 
@@ -444,6 +553,7 @@ export const FinancialGoalMilestones: React.FC<FinancialGoalMilestonesProps> = (
       {/* Life Stage Filter Tabs */}
       <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
         <button
+          type="button"
           onClick={() => setSelectedCategory('all')}
           className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
             selectedCategory === 'all'
@@ -457,6 +567,7 @@ export const FinancialGoalMilestones: React.FC<FinancialGoalMilestonesProps> = (
           const count = goals.filter(g => g.category === p.category).length;
           return (
             <button
+              type="button"
               key={p.category}
               onClick={() => setSelectedCategory(p.category)}
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
@@ -474,6 +585,38 @@ export const FinancialGoalMilestones: React.FC<FinancialGoalMilestonesProps> = (
       </div>
 
       {/* Goals Grid / Cards */}
+      {filteredGoals.length === 0 && (
+        <div className="bg-white rounded-2xl p-8 border border-dashed border-slate-300 text-center">
+          <Target className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+          <h3 className="text-sm font-extrabold text-slate-900">
+            {goals.length === 0 ? 'No milestones yet' : 'No milestones in this life stage'}
+          </h3>
+          <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
+            {goals.length === 0
+              ? 'Create your first goal (e.g. a house deposit or emergency fund) to track progress, or load the example milestones to explore.'
+              : 'Add a goal for this life stage or switch to "All Life Stages".'}
+          </p>
+          <div className="mt-4 flex flex-wrap justify-center gap-2">
+            <button
+              type="button"
+              onClick={() => handleOpenAddModal(selectedCategory === 'all' ? undefined : (selectedCategory as LifeStageCategory))}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-emerald-700 hover:bg-emerald-800 text-white cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Add Goal</span>
+            </button>
+            {goals.length === 0 && (
+              <button
+                type="button"
+                onClick={handleResetDefaults}
+                className="px-3.5 py-2 rounded-xl text-xs font-semibold border border-slate-300 text-slate-700 hover:bg-slate-50 cursor-pointer"
+              >
+                Load example milestones
+              </button>
+            )}
+          </div>
+        </div>
+      )}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {filteredGoals.map((goal) => {
           const progressPct = goal.targetAmountEUR > 0 
@@ -482,8 +625,8 @@ export const FinancialGoalMilestones: React.FC<FinancialGoalMilestonesProps> = (
           const isDone = progressPct >= 100 || goal.isCompleted;
           const shortfallEUR = Math.max(0, goal.targetAmountEUR - goal.currentAllocatedEUR);
           const yearsRemaining = Math.max(0, goal.targetYear - currentYear);
-          const monthsRemaining = Math.max(1, yearsRemaining * 12);
-          const suggestedMonthly = Math.round(shortfallEUR / monthsRemaining);
+          const isOverdue = !isDone && goal.targetYear < currentYear;
+          const suggestedMonthly = Math.round(shortfallEUR / monthsUntilTargetYearEnd(goal.targetYear));
 
           return (
             <div 
@@ -494,12 +637,12 @@ export const FinancialGoalMilestones: React.FC<FinancialGoalMilestonesProps> = (
             >
               {/* Card Header */}
               <div className="flex items-start justify-between gap-3">
-                <div className="flex items-start gap-3">
+                <div className="flex items-start gap-3 min-w-0">
                   <div className="w-9 h-9 rounded-xl bg-slate-100 flex items-center justify-center shrink-0 mt-0.5">
                     {renderIcon(goal.category)}
                   </div>
-                  <div>
-                    <div className="flex items-center gap-2">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
                       <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
                         {goal.categoryLabel}
                       </span>
@@ -511,24 +654,38 @@ export const FinancialGoalMilestones: React.FC<FinancialGoalMilestonesProps> = (
                         {goal.priority} Priority
                       </span>
                     </div>
-                    <h3 className="text-base font-extrabold text-slate-900 mt-0.5">
+                    <h3 className="text-base font-extrabold text-slate-900 mt-0.5 break-words">
                       {goal.title}
                     </h3>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-1 shrink-0">
                   <button
+                    type="button"
+                    onClick={() => handleToggleCompleted(goal)}
+                    className={`p-1.5 rounded-lg cursor-pointer ${goal.isCompleted ? 'text-emerald-600 hover:bg-emerald-50' : 'text-slate-400 hover:text-emerald-600 hover:bg-emerald-50'}`}
+                    title={goal.isCompleted ? 'Mark as not achieved' : 'Mark as achieved'}
+                    aria-label={goal.isCompleted ? `Mark ${goal.title} as not achieved` : `Mark ${goal.title} as achieved`}
+                    aria-pressed={!!goal.isCompleted}
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => handleOpenEditModal(goal)}
                     className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
                     title="Edit milestone"
+                    aria-label={`Edit ${goal.title}`}
                   >
                     <Edit3 className="w-3.5 h-3.5" />
                   </button>
                   <button
-                    onClick={() => handleDeleteGoal(goal.id)}
+                    type="button"
+                    onClick={() => handleDeleteGoal(goal)}
                     className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
                     title="Delete milestone"
+                    aria-label={`Delete ${goal.title}`}
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
@@ -542,8 +699,8 @@ export const FinancialGoalMilestones: React.FC<FinancialGoalMilestonesProps> = (
 
               {/* Progress Bar & Amount */}
               <div className="mt-4 pt-3 border-t border-slate-100">
-                <div className="flex items-baseline justify-between mb-1.5">
-                  <div className="flex items-baseline gap-1.5">
+                <div className="flex items-baseline justify-between gap-2 mb-1.5">
+                  <div className="flex flex-wrap items-baseline gap-x-1.5 min-w-0">
                     <span className="text-lg font-black text-slate-900">
                       {formatCurrency(goal.currentAllocatedEUR, currentCurrency)}
                     </span>
@@ -551,7 +708,7 @@ export const FinancialGoalMilestones: React.FC<FinancialGoalMilestonesProps> = (
                       of {formatCurrency(goal.targetAmountEUR, currentCurrency)}
                       {goal.targetCurrency !== 'EUR' && (
                         <span className="text-[10px] text-slate-400 ml-1">
-                          ({goal.targetCurrency === 'INR' ? '₹' : '$'}{goal.targetAmount.toLocaleString()})
+                          ({currencySymbol(goal.targetCurrency)}{goal.targetAmount.toLocaleString('en-IE')})
                         </span>
                       )}
                     </span>
@@ -573,12 +730,12 @@ export const FinancialGoalMilestones: React.FC<FinancialGoalMilestonesProps> = (
                 </div>
 
                 {/* Sub metrics */}
-                <div className="grid grid-cols-3 gap-2 mt-3 pt-2 text-[11px] text-slate-600 border-t border-slate-50">
+                <div className="grid grid-cols-1 min-[400px]:grid-cols-3 gap-2 mt-3 pt-2 text-[11px] text-slate-600 border-t border-slate-50">
                   <div>
                     <span className="text-[10px] text-slate-400 block">Target Year</span>
                     <span className="font-bold text-slate-800 flex items-center gap-1">
                       <Calendar className="w-3 h-3 text-slate-400" />
-                      {goal.targetYear} ({yearsRemaining === 0 ? 'This year' : `${yearsRemaining}y left`})
+                      {goal.targetYear} ({isOverdue ? 'Overdue' : yearsRemaining === 0 ? 'This year' : `${yearsRemaining}y left`})
                     </span>
                   </div>
                   <div>
@@ -605,8 +762,9 @@ export const FinancialGoalMilestones: React.FC<FinancialGoalMilestonesProps> = (
               )}
 
               {/* Card Footer Actions */}
-              <div className="mt-3.5 pt-3 border-t border-slate-100 flex items-center justify-between">
+              <div className="mt-3.5 pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
                 <button
+                  type="button"
                   onClick={() => handleSendMilestoneEmail(goal)}
                   className="text-[11px] font-bold text-blue-700 hover:text-blue-900 flex items-center gap-1 cursor-pointer"
                 >
@@ -616,12 +774,13 @@ export const FinancialGoalMilestones: React.FC<FinancialGoalMilestonesProps> = (
 
                 {goal.category === 'house_deposit' && (
                   <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">
-                    Help to Buy Eligible
+                    Help to Buy may apply
                   </span>
                 )}
 
                 {goal.category === 'retirement' && onOpenInvestmentAccount && (
                   <button
+                    type="button"
                     onClick={onOpenInvestmentAccount}
                     className="text-[11px] font-bold text-emerald-700 hover:text-emerald-900 flex items-center gap-1 cursor-pointer"
                   >
@@ -654,6 +813,7 @@ export const FinancialGoalMilestones: React.FC<FinancialGoalMilestonesProps> = (
           <div className="flex flex-wrap gap-2">
             {LIFE_STAGE_PRESETS.slice(0, 4).map((p) => (
               <button
+                type="button"
                 key={p.category}
                 onClick={() => handleOpenAddModal(p.category)}
                 className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition-all cursor-pointer border border-white/10 flex items-center gap-1.5"
@@ -669,9 +829,11 @@ export const FinancialGoalMilestones: React.FC<FinancialGoalMilestonesProps> = (
       {/* ADD / EDIT MILESTONE MODAL */}
       {isAddModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 relative my-8">
+          <div role="dialog" aria-modal="true" aria-labelledby="goal-modal-title" className="bg-white rounded-2xl max-w-lg w-full p-5 sm:p-6 shadow-2xl border border-slate-200 relative my-8">
             <button
+              type="button"
               onClick={() => setIsAddModalOpen(false)}
+              aria-label="Close"
               className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
             >
               <X className="w-5 h-5" />
@@ -686,17 +848,24 @@ export const FinancialGoalMilestones: React.FC<FinancialGoalMilestonesProps> = (
               </span>
             </div>
 
-            <h3 className="text-xl font-extrabold text-slate-900">
+            <h3 id="goal-modal-title" className="text-xl font-extrabold text-slate-900 pr-8">
               {editingGoal ? 'Update Target Amount & Timeline' : 'Configure Life Stage Goal'}
             </h3>
             <p className="text-xs text-slate-600 mt-1">
               Set target amounts and completion horizons to calibrate real-time progress bars.
             </p>
 
-            <form onSubmit={handleSaveGoal} className="mt-5 space-y-4 text-xs">
+            <form onSubmit={handleSaveGoal} noValidate className="mt-5 space-y-4 text-xs">
+              {formError && (
+                <div role="alert" className="p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 font-semibold flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{formError}</span>
+                </div>
+              )}
               <div>
-                <label className="block font-bold text-slate-700 mb-1">Life Stage Category</label>
+                <label htmlFor="goal-category" className="block font-bold text-slate-700 mb-1">Life Stage Category</label>
                 <select
+                  id="goal-category"
                   value={formData.category}
                   onChange={(e) => {
                     const cat = e.target.value as LifeStageCategory;
@@ -707,7 +876,8 @@ export const FinancialGoalMilestones: React.FC<FinancialGoalMilestonesProps> = (
                         category: cat,
                         title: preset.defaultTitle,
                         description: preset.defaultDescription,
-                        targetAmount: preset.recommendedEUR,
+                        targetAmount: String(preset.recommendedEUR),
+                        targetCurrency: 'EUR',
                         notes: preset.irishFiscalTip
                       }));
                     }
@@ -723,10 +893,12 @@ export const FinancialGoalMilestones: React.FC<FinancialGoalMilestonesProps> = (
               </div>
 
               <div>
-                <label className="block font-bold text-slate-700 mb-1">Goal Title *</label>
+                <label htmlFor="goal-title" className="block font-bold text-slate-700 mb-1">Goal Title *</label>
                 <input
+                  id="goal-title"
                   type="text"
                   required
+                  maxLength={MAX_GOAL_TITLE_LENGTH}
                   value={formData.title}
                   onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-medium"
@@ -735,19 +907,23 @@ export const FinancialGoalMilestones: React.FC<FinancialGoalMilestonesProps> = (
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">Target Amount *</label>
+                  <label htmlFor="goal-target" className="block font-bold text-slate-700 mb-1">Target Amount *</label>
                   <input
+                    id="goal-target"
                     type="number"
+                    inputMode="decimal"
                     required
-                    min={100}
+                    min={1}
+                    step="any"
                     value={formData.targetAmount}
-                    onChange={(e) => setFormData(prev => ({ ...prev, targetAmount: Number(e.target.value) }))}
+                    onChange={(e) => setFormData(prev => ({ ...prev, targetAmount: e.target.value }))}
                     className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-medium"
                   />
                 </div>
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">Currency</label>
+                  <label htmlFor="goal-currency" className="block font-bold text-slate-700 mb-1">Currency</label>
                   <select
+                    id="goal-currency"
                     value={formData.targetCurrency}
                     onChange={(e) => setFormData(prev => ({ ...prev, targetCurrency: e.target.value as Currency }))}
                     className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-medium"
@@ -755,25 +931,46 @@ export const FinancialGoalMilestones: React.FC<FinancialGoalMilestonesProps> = (
                     <option value="EUR">EUR (€) — Euro (Irish / EU)</option>
                     <option value="INR">INR (₹) — Indian Rupee</option>
                     <option value="USD">USD ($) — US Dollar</option>
+                    <option value="GBP">GBP (£) — British Pound</option>
                   </select>
                 </div>
               </div>
 
+              <div>
+                <label htmlFor="goal-saved" className="block font-bold text-slate-700 mb-1">
+                  Amount Already Saved ({currencySymbol(formData.targetCurrency)})
+                </label>
+                <input
+                  id="goal-saved"
+                  type="number"
+                  inputMode="decimal"
+                  min={0}
+                  step="any"
+                  value={formData.currentSaved}
+                  onChange={(e) => setFormData(prev => ({ ...prev, currentSaved: e.target.value }))}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-medium"
+                />
+                <p className="text-[10px] text-slate-500 mt-1">In the same currency as the target. Auto-Allocate can also set this from your holdings.</p>
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">Target Year</label>
+                  <label htmlFor="goal-year" className="block font-bold text-slate-700 mb-1">Target Year</label>
                   <input
+                    id="goal-year"
                     type="number"
                     min={currentYear}
-                    max={currentYear + 40}
+                    max={currentYear + 60}
+                    step={1}
                     value={formData.targetYear}
                     onChange={(e) => setFormData(prev => ({ ...prev, targetYear: Number(e.target.value) }))}
                     className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-medium"
                   />
                 </div>
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">Priority</label>
+                  <label htmlFor="goal-priority" className="block font-bold text-slate-700 mb-1">Priority</label>
                   <select
+                    id="goal-priority"
                     value={formData.priority}
                     onChange={(e) => setFormData(prev => ({ ...prev, priority: e.target.value as any }))}
                     className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-medium"
@@ -786,8 +983,10 @@ export const FinancialGoalMilestones: React.FC<FinancialGoalMilestonesProps> = (
               </div>
 
               <div>
-                <label className="block font-bold text-slate-700 mb-1">Description / Notes</label>
+                <label htmlFor="goal-description" className="block font-bold text-slate-700 mb-1">Description / Notes</label>
                 <textarea
+                  id="goal-description"
+                  maxLength={MAX_GOAL_TEXT_LENGTH}
                   rows={2}
                   value={formData.description}
                   onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
@@ -796,8 +995,10 @@ export const FinancialGoalMilestones: React.FC<FinancialGoalMilestonesProps> = (
               </div>
 
               <div>
-                <label className="block font-bold text-slate-700 mb-1">Irish Fiscal Tip / Grant Context</label>
+                <label htmlFor="goal-notes" className="block font-bold text-slate-700 mb-1">Irish Fiscal Tip / Grant Context</label>
                 <input
+                  id="goal-notes"
+                  maxLength={MAX_GOAL_TEXT_LENGTH}
                   type="text"
                   value={formData.notes}
                   onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
@@ -828,9 +1029,11 @@ export const FinancialGoalMilestones: React.FC<FinancialGoalMilestonesProps> = (
       {/* EMAIL AUTO-RESPONSE CONFIRMATION MODAL */}
       {isEmailModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 relative my-8 text-center">
+          <div role="dialog" aria-modal="true" aria-label="Milestone email" className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 relative my-8 text-center">
             <button
+              type="button"
               onClick={() => setIsEmailModalOpen(false)}
+              aria-label="Close"
               className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
             >
               <X className="w-5 h-5" />
@@ -839,12 +1042,9 @@ export const FinancialGoalMilestones: React.FC<FinancialGoalMilestonesProps> = (
             {emailStatus.loading ? (
               <div className="py-8">
                 <div className="w-12 h-12 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-                <h4 className="font-extrabold text-slate-900 text-base">
-                  Dispatching Milestone Blueprint...
+                <h4 className="font-extrabold text-slate-900 text-base" role="status">
+                  Sending milestone summary…
                 </h4>
-                <p className="text-xs text-slate-600 mt-1">
-                  Connecting to mail transport and generating personalized auto-response...
-                </p>
               </div>
             ) : emailStatus.sent ? (
               <div className="py-4">
@@ -877,6 +1077,7 @@ export const FinancialGoalMilestones: React.FC<FinancialGoalMilestonesProps> = (
 
                 <div className="mt-5 flex gap-2 justify-center">
                   <button
+                    type="button"
                     onClick={() => setIsEmailModalOpen(false)}
                     className="px-5 py-2 rounded-xl bg-slate-900 text-white font-bold text-xs cursor-pointer hover:bg-slate-800"
                   >
@@ -884,6 +1085,7 @@ export const FinancialGoalMilestones: React.FC<FinancialGoalMilestonesProps> = (
                   </button>
                   {onOpenAuthModal && (
                     <button
+                      type="button"
                       onClick={() => {
                         setIsEmailModalOpen(false);
                         onOpenAuthModal();
@@ -901,12 +1103,13 @@ export const FinancialGoalMilestones: React.FC<FinancialGoalMilestonesProps> = (
                   <AlertCircle className="w-6 h-6" />
                 </div>
                 <h4 className="font-bold text-slate-900 text-base">
-                  Email Dispatch Notice
+                  Email not sent
                 </h4>
-                <p className="text-xs text-slate-600 mt-1">
-                  {emailStatus.message || 'Could not dispatch email. Please check your credentials.'}
+                <p role="alert" className="text-xs text-slate-600 mt-1">
+                  {emailStatus.message || 'Could not send the email. Please try again later.'}
                 </p>
                 <button
+                  type="button"
                   onClick={() => setIsEmailModalOpen(false)}
                   className="mt-4 px-4 py-2 rounded-xl bg-slate-900 text-white font-bold text-xs cursor-pointer"
                 >

@@ -1,19 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useId } from 'react';
 import { MarketIndex, Holding } from '../types';
 import { fetchMarketSnapshot, FALLBACK_MARKET_INDICES, MARKET_INDICES_AS_OF } from '../services/marketDataService';
-import { 
-  TrendingUp, 
-  TrendingDown, 
-  RefreshCw, 
-  Globe2, 
-  ShieldCheck, 
-  Activity, 
-  Sparkles, 
-  ArrowUpRight, 
-  ArrowDownRight,
-  Info,
-  Clock
-} from 'lucide-react';
+import { RefreshCw, ShieldCheck, Activity, Sparkles, ArrowUpRight, ArrowDownRight, Clock } from 'lucide-react';
 
 interface MarketPerformanceWidgetProps {
   holdings?: Holding[];
@@ -25,25 +13,34 @@ export const MarketPerformanceWidget: React.FC<MarketPerformanceWidgetProps> = (
   const [selectedTimeframe, setSelectedTimeframe] = useState<'1D' | '1W' | '1M' | 'YTD' | '1Y'>('1D');
   const [lastUpdated, setLastUpdated] = useState<string>(MARKET_INDICES_AS_OF);
   const [isSample, setIsSample] = useState<boolean>(true);
-  const [activeTab, setActiveTab] = useState<'all' | 'iseq' | 'nifty' | 'sp500'>('all');
+  // Unique per instance: the widget can be rendered more than once on a page, and SVG gradient ids are global
+  const gradientPrefix = useId().replace(/:/g, '');
+  const isMountedRef = useRef(true);
+  const isLoadingRef = useRef(false);
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
+    if (isLoadingRef.current) return;
+    isLoadingRef.current = true;
     setLoading(true);
     try {
       const snapshot = await fetchMarketSnapshot();
+      if (!isMountedRef.current) return;
       setIndices(snapshot.data);
       setIsSample(snapshot.isSample);
       setLastUpdated(snapshot.asOf);
     } catch (err) {
       console.error(err);
     } finally {
-      setLoading(false);
+      isLoadingRef.current = false;
+      if (isMountedRef.current) setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    loadData();
-  }, []);
+    isMountedRef.current = true;
+    void loadData();
+    return () => { isMountedRef.current = false; };
+  }, [loadData]);
 
   // Compute how user's holdings align with these indices
   const ieCount = holdings.filter(h => h.country === 'Ireland').length;
@@ -60,12 +57,12 @@ export const MarketPerformanceWidget: React.FC<MarketPerformanceWidgetProps> = (
             <Activity className="w-4 h-4" />
           </div>
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <h3 className="text-sm font-bold text-white tracking-tight">
                 Market Performance &amp; Index Trends
               </h3>
               <span className="text-[10px] font-mono bg-emerald-950 text-emerald-300 border border-emerald-800 px-2 py-0.5 rounded">
-                {isSample ? 'SAMPLE DATA' : 'DELAYED FEED'}
+                {isSample ? 'SAMPLE DATA' : 'DELAYED DATA'}
               </span>
             </div>
             <p className="text-[11px] text-slate-400 mt-0.5">
@@ -77,12 +74,14 @@ export const MarketPerformanceWidget: React.FC<MarketPerformanceWidgetProps> = (
         {/* Timeframe & Refresh Controls */}
         <div className="flex items-center gap-3 self-start sm:self-auto">
           {/* Timeframe Buttons */}
-          <div className="flex items-center bg-slate-800 p-0.5 rounded-lg border border-slate-700 text-xs font-mono">
+          <div className="flex items-center bg-slate-800 p-0.5 rounded-lg border border-slate-700 text-xs font-mono" role="group" aria-label="Performance timeframe">
             {(['1D', '1W', '1M', 'YTD', '1Y'] as const).map((tf) => (
               <button
                 key={tf}
+                type="button"
                 onClick={() => setSelectedTimeframe(tf)}
-                className={`px-2 py-1 rounded-md transition-all cursor-pointer ${
+                aria-pressed={selectedTimeframe === tf}
+                className={`px-2 py-1 rounded-md transition-all cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 ${
                   selectedTimeframe === tf
                     ? 'bg-emerald-600 text-white font-bold shadow-xs'
                     : 'text-slate-400 hover:text-slate-200'
@@ -95,10 +94,12 @@ export const MarketPerformanceWidget: React.FC<MarketPerformanceWidgetProps> = (
 
           {/* Sync Button */}
           <button
-            onClick={loadData}
+            type="button"
+            onClick={() => void loadData()}
             disabled={loading}
-            className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors cursor-pointer border border-slate-700"
-            title="Refresh market feeds"
+            className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors cursor-pointer border border-slate-700 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
+            title="Reload index data"
+            aria-label="Reload index data"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-emerald-400' : ''}`} />
           </button>
@@ -109,16 +110,19 @@ export const MarketPerformanceWidget: React.FC<MarketPerformanceWidgetProps> = (
       <div className="p-6">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {indices.map((idx) => {
-            const perf = idx.timeframePerformance[selectedTimeframe];
+            const rawPerf = idx.timeframePerformance?.[selectedTimeframe];
+            const perf = typeof rawPerf === 'number' && Number.isFinite(rawPerf) ? rawPerf : 0;
             const isPositive = perf >= 0;
+            const gradId = `${gradientPrefix}-grad-${idx.id}`;
 
-            // Normalize sparkline coordinates for mini SVG
-            const min = Math.min(...idx.sparkline);
-            const max = Math.max(...idx.sparkline);
+            // Normalize sparkline coordinates for mini SVG (pad single-point series to avoid divide-by-zero)
+            const series = idx.sparkline?.length ? (idx.sparkline.length === 1 ? [idx.sparkline[0], idx.sparkline[0]] : idx.sparkline) : [idx.price, idx.price];
+            const min = Math.min(...series);
+            const max = Math.max(...series);
             const range = max - min || 1;
-            const points = idx.sparkline
+            const points = series
               .map((val, i) => {
-                const x = (i / (idx.sparkline.length - 1)) * 100;
+                const x = (i / (series.length - 1)) * 100;
                 const y = 35 - ((val - min) / range) * 28;
                 return `${x},${y}`;
               })
@@ -169,16 +173,16 @@ export const MarketPerformanceWidget: React.FC<MarketPerformanceWidgetProps> = (
 
                   {/* Sparkline Graph */}
                   <div className="mt-3 h-10 w-full overflow-hidden">
-                    <svg viewBox="0 0 100 38" className="w-full h-full overflow-visible">
+                    <svg viewBox="0 0 100 38" preserveAspectRatio="none" className="w-full h-full overflow-visible" role="img" aria-label={`${idx.name} sample trend`}>
                       <defs>
-                        <linearGradient id={`grad-${idx.id}`} x1="0" y1="0" x2="0" y2="1">
+                        <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
                           <stop offset="0%" stopColor={isPositive ? '#10B981' : '#F43F5E'} stopOpacity="0.25" />
                           <stop offset="100%" stopColor={isPositive ? '#10B981' : '#F43F5E'} stopOpacity="0.0" />
                         </linearGradient>
                       </defs>
                       <polygon
                         points={`0,38 ${points} 100,38`}
-                        fill={`url(#grad-${idx.id})`}
+                        fill={`url(#${gradId})`}
                       />
                       <polyline
                         fill="none"
@@ -193,8 +197,8 @@ export const MarketPerformanceWidget: React.FC<MarketPerformanceWidgetProps> = (
 
                   {/* Intraday Range Bar */}
                   <div className="mt-2 pt-2 border-t border-slate-200/60 text-[10px] text-slate-500 flex justify-between font-mono">
-                    <span>Low: {idx.dayLow.toLocaleString()}</span>
-                    <span>High: {idx.dayHigh.toLocaleString()}</span>
+                    <span>Day low: {idx.dayLow.toLocaleString('en-IE', { maximumFractionDigits: 2 })}</span>
+                    <span>Day high: {idx.dayHigh.toLocaleString('en-IE', { maximumFractionDigits: 2 })}</span>
                   </div>
                 </div>
 
@@ -224,7 +228,7 @@ export const MarketPerformanceWidget: React.FC<MarketPerformanceWidgetProps> = (
             </span>
           </div>
 
-          <div className="flex items-center gap-1.5 font-mono text-[11px] text-slate-400">
+          <div className="flex items-center gap-1.5 font-mono text-[11px] text-slate-400 shrink-0">
             <Clock className="w-3.5 h-3.5" />
             <span>Data as of: {lastUpdated}</span>
           </div>

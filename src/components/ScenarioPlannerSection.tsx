@@ -19,10 +19,20 @@ export const ScenarioPlannerSection: React.FC<ScenarioPlannerSectionProps> = ({
   currentCurrency,
   onOpenWaitlist
 }) => {
-  const [initialAmount, setInitialAmount] = useState(10000);
-  const [monthlyAmount, setMonthlyAmount] = useState(1000);
+  // Raw input text is kept as strings so fields can be cleared and retyped; amounts are in EUR.
+  const [initialAmountInput, setInitialAmountInput] = useState('10000');
+  const [monthlyAmountInput, setMonthlyAmountInput] = useState('1000');
   const [years, setYears] = useState(15);
   const [selectedReturn, setSelectedReturn] = useState<0.05 | 0.07 | 0.09>(0.07);
+
+  const MAX_AMOUNT_EUR = 10_000_000;
+  const parseAmount = (raw: string) => {
+    const value = parseFloat(raw);
+    return Number.isFinite(value) ? Math.min(MAX_AMOUNT_EUR, Math.max(0, value)) : 0;
+  };
+  const initialAmount = parseAmount(initialAmountInput);
+  const monthlyAmount = parseAmount(monthlyAmountInput);
+  const exceedsAllowance = monthlyAmount * 12 > 12000 || initialAmount > 12000;
 
   // Compute future values for 5%, 7%, 9%
   const calculateCompound = (rate: number) => {
@@ -59,38 +69,51 @@ export const ScenarioPlannerSection: React.FC<ScenarioPlannerSectionProps> = ({
           {/* Inputs Row */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 pb-6 border-b border-slate-200">
             <div>
-              <label className="text-xs font-bold text-slate-700 block mb-1">
-                Starting Investment
+              <label htmlFor="scenario-initial" className="text-xs font-bold text-slate-700 block mb-1">
+                Starting Investment (€)
               </label>
               <div className="flex items-center gap-2">
                 <input
+                  id="scenario-initial"
                   type="number"
-                  value={initialAmount}
-                  onChange={(e) => setInitialAmount(Math.max(0, Number(e.target.value)))}
-                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-mono font-bold"
+                  inputMode="decimal"
+                  min={0}
+                  max={MAX_AMOUNT_EUR}
+                  step={100}
+                  value={initialAmountInput}
+                  onChange={(e) => setInitialAmountInput(e.target.value)}
+                  onBlur={() => setInitialAmountInput(String(initialAmount))}
+                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-mono font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
                 />
               </div>
             </div>
 
             <div>
-              <label className="text-xs font-bold text-slate-700 block mb-1">
-                Monthly Contribution
+              <label htmlFor="scenario-monthly" className="text-xs font-bold text-slate-700 block mb-1">
+                Monthly Contribution (€)
               </label>
               <div className="flex items-center gap-2">
                 <input
+                  id="scenario-monthly"
                   type="number"
-                  value={monthlyAmount}
-                  onChange={(e) => setMonthlyAmount(Math.max(0, Number(e.target.value)))}
-                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-mono font-bold"
+                  inputMode="decimal"
+                  min={0}
+                  max={MAX_AMOUNT_EUR}
+                  step={50}
+                  value={monthlyAmountInput}
+                  onChange={(e) => setMonthlyAmountInput(e.target.value)}
+                  onBlur={() => setMonthlyAmountInput(String(monthlyAmount))}
+                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-mono font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600"
                 />
               </div>
             </div>
 
             <div>
-              <label className="text-xs font-bold text-slate-700 block mb-1">
+              <label htmlFor="scenario-years" className="text-xs font-bold text-slate-700 block mb-1">
                 Horizon: {years} Years
               </label>
               <input
+                id="scenario-years"
                 type="range"
                 min="5"
                 max="25"
@@ -101,12 +124,25 @@ export const ScenarioPlannerSection: React.FC<ScenarioPlannerSectionProps> = ({
             </div>
           </div>
 
+          {currentCurrency !== 'EUR' && (
+            <p className="mt-3 text-[11px] text-slate-500">
+              Amounts are entered in euro; results are shown in {currentCurrency} at the bundled reference FX rate.
+            </p>
+          )}
+          {exceedsAllowance && (
+            <p className="mt-3 text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2">
+              Note: the Investment Account allowance is €12,000 per year, so amounts above that would need to sit in a normal taxable account. These figures are gross growth only, before any tax or charges.
+            </p>
+          )}
+
           {/* Three Return Scenarios (5%, 7%, 9%) */}
           <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-5">
             
-            <div 
+            <button
+              type="button"
+              aria-pressed={selectedReturn === 0.05}
               onClick={() => setSelectedReturn(0.05)}
-              className={`p-5 rounded-xl border cursor-pointer transition-all ${
+              className={`text-left w-full p-5 rounded-xl border cursor-pointer transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 ${
                 selectedReturn === 0.05 
                   ? 'bg-white border-emerald-500 shadow-md ring-1 ring-emerald-500' 
                   : 'bg-white/60 border-slate-200 hover:bg-white'
@@ -122,11 +158,13 @@ export const ScenarioPlannerSection: React.FC<ScenarioPlannerSectionProps> = ({
               <div className="text-[11px] text-slate-500 mt-1">
                 Contributions: {formatCurrency(convertFromEUR(totalContributions, currentCurrency), currentCurrency)}
               </div>
-            </div>
+            </button>
 
-            <div 
+            <button
+              type="button"
+              aria-pressed={selectedReturn === 0.07}
               onClick={() => setSelectedReturn(0.07)}
-              className={`p-5 rounded-xl border cursor-pointer transition-all ${
+              className={`text-left w-full p-5 rounded-xl border cursor-pointer transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 ${
                 selectedReturn === 0.07 
                   ? 'bg-white border-emerald-500 shadow-md ring-1 ring-emerald-500' 
                   : 'bg-white/60 border-slate-200 hover:bg-white'
@@ -145,11 +183,13 @@ export const ScenarioPlannerSection: React.FC<ScenarioPlannerSectionProps> = ({
               <div className="text-[11px] text-slate-500 mt-1">
                 Contributions: {formatCurrency(convertFromEUR(totalContributions, currentCurrency), currentCurrency)}
               </div>
-            </div>
+            </button>
 
-            <div 
+            <button
+              type="button"
+              aria-pressed={selectedReturn === 0.09}
               onClick={() => setSelectedReturn(0.09)}
-              className={`p-5 rounded-xl border cursor-pointer transition-all ${
+              className={`text-left w-full p-5 rounded-xl border cursor-pointer transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 ${
                 selectedReturn === 0.09 
                   ? 'bg-white border-emerald-500 shadow-md ring-1 ring-emerald-500' 
                   : 'bg-white/60 border-slate-200 hover:bg-white'
@@ -165,7 +205,7 @@ export const ScenarioPlannerSection: React.FC<ScenarioPlannerSectionProps> = ({
               <div className="text-[11px] text-slate-500 mt-1">
                 Contributions: {formatCurrency(convertFromEUR(totalContributions, currentCurrency), currentCurrency)}
               </div>
-            </div>
+            </button>
 
           </div>
 
@@ -195,7 +235,7 @@ export const EducationHubSection: React.FC<{ onOpenWaitlist: () => void }> = ({ 
       reviewer: 'Irish Financial Practice Group'
     },
     {
-      title: "Understanding 41% Exit Tax & 8-Year Deemed Disposal",
+      title: "Understanding 38% Exit Tax & 8-Year Deemed Disposal",
       category: 'Taxation Basics',
       summary: 'How Irish collective investments are taxed under Section 739D of TCA 1997, why deemed disposal penalises long-term compounding, and what changes under the new scheme.',
       source: 'Revenue Commissioners Tax & Duty Manual 27-01a',
@@ -231,7 +271,7 @@ export const EducationHubSection: React.FC<{ onOpenWaitlist: () => void }> = ({ 
             Financial information without the jargon.
           </h2>
           <p className="mt-4 text-base sm:text-lg text-slate-600">
-            Every article is dated, cited against primary official government sources, and peer-reviewed.
+            Every article is dated and points to the relevant official government source. Educational summaries only, not reviewed by a regulated adviser.
           </p>
         </div>
 

@@ -81,7 +81,7 @@ export const FALLBACK_MARKET_INDICES: MarketIndex[] = [
   }
 ];
 
-export const MARKET_INDICES_AS_OF = '2026-10-14';
+export const MARKET_INDICES_AS_OF = '2026-10-09';
 
 export interface MarketSnapshot {
   data: MarketIndex[];
@@ -90,14 +90,27 @@ export interface MarketSnapshot {
   asOf: string;
 }
 
+const isFiniteNumber = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+
+function isValidIndex(v: unknown): v is MarketIndex {
+  if (!v || typeof v !== 'object') return false;
+  const m = v as Partial<MarketIndex>;
+  const perf = m.timeframePerformance as Record<string, unknown> | undefined;
+  return typeof m.id === 'string' && typeof m.name === 'string' && isFiniteNumber(m.price)
+    && isFiniteNumber(m.dayLow) && isFiniteNumber(m.dayHigh)
+    && !!perf && ['1D', '1W', '1M', 'YTD', '1Y'].every(k => isFiniteNumber(perf[k]))
+    && Array.isArray(m.sparkline) && m.sparkline.length >= 2 && m.sparkline.every(isFiniteNumber);
+}
+
 export async function fetchMarketSnapshot(): Promise<MarketSnapshot> {
   try {
     const res = await fetch('/api/market-indices');
     if (!res.ok) throw new Error(`Failed to fetch market indices HTTP ${res.status}`);
     const json = await res.json();
-    if (json && Array.isArray(json.data)) {
-      return { data: json.data, isSample: json.isSample !== false, asOf: json.asOf || MARKET_INDICES_AS_OF };
+    if (json && Array.isArray(json.data) && json.data.length > 0 && json.data.every(isValidIndex)) {
+      return { data: json.data, isSample: json.isSample !== false, asOf: typeof json.asOf === 'string' && json.asOf ? json.asOf : MARKET_INDICES_AS_OF };
     }
+    throw new Error('Market indices payload failed validation');
   } catch (err) {
     console.warn('Using bundled sample market indices:', err);
   }

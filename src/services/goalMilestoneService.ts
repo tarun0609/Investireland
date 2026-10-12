@@ -79,7 +79,7 @@ export const LIFE_STAGE_PRESETS: {
     typicalHorizonYears: 8,
     priority: 'Flexible',
     icon: 'Compass',
-    irishFiscalTip: 'Leverage the new Budget 2027 Personal Savings & Investment Account (€50,000 tax-free ceiling) to shelter growth from 41% deemed disposal.'
+    irishFiscalTip: 'Leverage the new Budget 2027 Personal Savings & Investment Account (€50,000 tax-free ceiling) to shelter growth from exit tax and 8-year deemed disposal.'
   },
   {
     category: 'entrepreneurship',
@@ -182,21 +182,50 @@ export const INITIAL_DEFAULT_GOALS: FinancialGoalMilestone[] = [
   }
 ];
 
+const SAMPLE_GOAL_IDS = new Set(INITIAL_DEFAULT_GOALS.map(g => g.id));
+
+/** True when every goal is one of the illustrative sample goals (i.e. not the user's own data). */
+export function isSampleGoalData(goals: FinancialGoalMilestone[]): boolean {
+  return goals.length > 0 && goals.every(g => SAMPLE_GOAL_IDS.has(g.id));
+}
+
+function isValidGoal(g: any): g is FinancialGoalMilestone {
+  return !!g && typeof g === 'object' &&
+    typeof g.id === 'string' && g.id.length > 0 &&
+    typeof g.title === 'string' &&
+    Number.isFinite(g.targetAmountEUR) && g.targetAmountEUR >= 0 &&
+    Number.isFinite(g.currentAllocatedEUR) &&
+    Number.isFinite(g.targetYear);
+}
+
 export function getStoredGoalMilestones(): FinancialGoalMilestone[] {
   try {
     const raw = localStorage.getItem(scopedStorageKey(STORAGE_KEY));
     if (!raw) {
-      saveGoalMilestones(INITIAL_DEFAULT_GOALS);
       return INITIAL_DEFAULT_GOALS;
     }
     const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed) && parsed.length > 0) {
-      return parsed;
+    if (Array.isArray(parsed)) {
+      // An empty array is a deliberate choice (the user removed every goal), so respect it.
+      return parsed.filter(isValidGoal).map(g => ({
+        ...g,
+        targetAmount: Number.isFinite(g.targetAmount) ? g.targetAmount : g.targetAmountEUR,
+        targetCurrency: g.targetCurrency || 'EUR',
+        monthlyContributionEUR: Number.isFinite(g.monthlyContributionEUR) ? g.monthlyContributionEUR : 0,
+        priority: g.priority === 'High' || g.priority === 'Medium' || g.priority === 'Flexible' ? g.priority : 'Medium',
+        isCompleted: !!g.isCompleted
+      }));
     }
   } catch (err) {
     console.warn('Error reading stored goal milestones, resetting to defaults:', err);
   }
   return INITIAL_DEFAULT_GOALS;
+}
+
+/** Months from now until the end of the goal's target year (minimum 1). */
+export function monthsUntilTargetYearEnd(targetYear: number, now: Date = new Date()): number {
+  const months = (targetYear - now.getFullYear()) * 12 + (12 - now.getMonth());
+  return Math.max(1, months);
 }
 
 export function saveGoalMilestones(goals: FinancialGoalMilestone[]): void {
@@ -227,7 +256,7 @@ export function calculateTotalHoldingsValueEUR(holdings: Holding[]): number {
  */
 export function computeGoalMilestoneSummary(
   goals: FinancialGoalMilestone[],
-  totalPortfolioEUR: number
+  _totalPortfolioEUR: number
 ): GoalMilestoneSummary {
   const totalGoalsCount = goals.length;
   const completedGoalsCount = goals.filter(g => g.currentAllocatedEUR >= g.targetAmountEUR || g.isCompleted).length;
@@ -235,17 +264,18 @@ export function computeGoalMilestoneSummary(
   const totalTargetEUR = goals.reduce((acc, g) => acc + g.targetAmountEUR, 0);
   const totalFundedEUR = goals.reduce((acc, g) => acc + Math.min(g.currentAllocatedEUR, g.targetAmountEUR), 0);
   
+  // Progress reflects the amounts actually allocated to goals, matching the funded/target figures shown.
   const overallProgressPct = totalTargetEUR > 0 
-    ? Math.min(100, Math.round((totalPortfolioEUR / totalTargetEUR) * 1000) / 10)
+    ? Math.min(100, Math.round((totalFundedEUR / totalTargetEUR) * 1000) / 10)
     : 0;
 
   const currentYear = new Date().getFullYear();
-  const maxTargetYear = goals.reduce((max, g) => Math.max(max, g.targetYear), currentYear + 10);
+  const openGoals = goals.filter(g => !g.isCompleted && g.currentAllocatedEUR < g.targetAmountEUR);
+  const maxTargetYear = openGoals.reduce((max, g) => Math.max(max, g.targetYear), currentYear);
 
-  const monthlySavingsRequiredTotal = goals.reduce((sum, g) => {
+  const monthlySavingsRequiredTotal = openGoals.reduce((sum, g) => {
     const remaining = Math.max(0, g.targetAmountEUR - g.currentAllocatedEUR);
-    const monthsRemaining = Math.max(1, (g.targetYear - currentYear) * 12);
-    return sum + (remaining / monthsRemaining);
+    return sum + (remaining / monthsUntilTargetYearEnd(g.targetYear));
   }, 0);
 
   return {
@@ -295,21 +325,14 @@ export function autoAllocatePortfolioToGoals(
   allocateGroup(mediumPriority);
   allocateGroup(flexiblePriority);
 
-  // If there's surplus beyond all goals, distribute evenly across high/medium
-  if (remainingPool > 0) {
-    const topGoal = goals[0];
-    if (topGoal) {
-      const currentVal = allocatedMap.get(topGoal.id) || 0;
-      allocatedMap.set(topGoal.id, currentVal + Math.round(remainingPool));
-    }
-  }
-
+  // Any surplus beyond all targets stays unallocated rather than inflating a goal past 100%.
   return goals.map(g => {
     const allocated = allocatedMap.get(g.id) ?? g.currentAllocatedEUR;
     return {
       ...g,
       currentAllocatedEUR: allocated,
-      isCompleted: allocated >= g.targetAmountEUR
+      // Keep goals the user explicitly marked as complete.
+      isCompleted: g.isCompleted || (g.targetAmountEUR > 0 && allocated >= g.targetAmountEUR)
     };
   });
 }
