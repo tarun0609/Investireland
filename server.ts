@@ -65,7 +65,17 @@ async function startServer() {
       '/assets',
       express.static(path.join(distPath, 'assets'), { immutable: true, maxAge: '1y', fallthrough: false })
     );
-    app.use(express.static(distPath, { index: false, maxAge: '1h' }));
+    app.use(
+      express.static(distPath, {
+        index: false,
+        maxAge: '1h',
+        extensions: ['html'],
+        setHeaders: (res, filePath) => {
+          // HTML references hashed bundles, so it must be revalidated after every deploy.
+          if (filePath.endsWith('.html')) res.setHeader('Cache-Control', 'no-cache');
+        },
+      })
+    );
     app.get('*', (_req: Request, res: Response) => {
       if (!fs.existsSync(indexPath)) return res.status(404).send('Application build not found.');
       res.setHeader('Cache-Control', 'no-cache');

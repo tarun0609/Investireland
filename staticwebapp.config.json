@@ -1,24 +1,50 @@
 {
   "navigationFallback": {
     "rewrite": "/index.html",
-    "exclude": ["/assets/*", "/api/*", "/*.{png,jpg,jpeg,gif,svg,ico,webp,txt,xml,json,webmanifest,map}"]
+    "exclude": ["/assets/*", "/fonts/*", "/api/*", "/*.{png,jpg,jpeg,gif,svg,ico,webp,txt,xml,json,webmanifest,map,woff2}"]
   },
   "routes": [
+    {
+      "route": "/privacy",
+      "rewrite": "/privacy.html",
+      "headers": { "Cache-Control": "no-cache" }
+    },
+    {
+      "route": "/index.html",
+      "headers": { "Cache-Control": "no-cache" }
+    },
     {
       "route": "/assets/*",
       "headers": { "Cache-Control": "public, max-age=31536000, immutable" }
     },
     {
-      "route": "/index.html",
+      "route": "/fonts/*",
+      "headers": { "Cache-Control": "public, max-age=31536000, immutable" }
+    },
+    {
+      "route": "/*.{png,svg,ico,webmanifest}",
+      "headers": { "Cache-Control": "public, max-age=604800" }
+    },
+    {
+      "route": "/*.{txt,xml}",
+      "headers": { "Cache-Control": "public, max-age=3600" }
+    },
+    {
+      "route": "/",
       "headers": { "Cache-Control": "no-cache" }
     }
   ],
+  "mimeTypes": {
+    ".webmanifest": "application/manifest+json",
+    ".woff2": "font/woff2"
+  },
   "globalHeaders": {
-    "Content-Security-Policy": "default-src 'self'; base-uri 'self'; object-src 'none'; form-action 'self'; script-src 'self' https://apis.google.com https://www.gstatic.com; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob: https:; media-src 'self'; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://*.firebaseapp.com; frame-src 'self' https://*.firebaseapp.com https://accounts.google.com https://apis.google.com; frame-ancestors 'self'; worker-src 'self' blob:; upgrade-insecure-requests",
+    "Content-Security-Policy": "default-src 'self'; base-uri 'self'; object-src 'none'; form-action 'self'; script-src 'self' https://apis.google.com https://www.gstatic.com; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob: https:; media-src 'self'; manifest-src 'self'; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://*.firebaseapp.com; frame-src 'self' https://*.firebaseapp.com https://accounts.google.com https://apis.google.com; frame-ancestors 'self'; worker-src 'self' blob:; upgrade-insecure-requests",
     "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
     "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN",
     "Referrer-Policy": "strict-origin-when-cross-origin",
     "Cross-Origin-Opener-Policy": "same-origin-allow-popups",
-    "Permissions-Policy": "camera=(), microphone=(), geolocation=()"
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=(), interest-cohort=()"
   }
 }

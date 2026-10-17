@@ -19,6 +19,7 @@ import { FAQSection } from './components/FAQSection';
 import { Footer } from './components/Footer';
 import { EarlyAccessModal } from './components/EarlyAccessModal';
 import { isDemoUser, subscribeToActiveUser, waitForAuthReady } from './services/authEmailService';
+import { applyPageSeo, seoForView } from './utils/seo';
 import { 
   loadUserHoldings, 
   saveUserHolding, 
@@ -63,6 +64,10 @@ export default function App() {
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
   }, []);
+
+  useEffect(() => {
+    applyPageSeo(seoForView(activeView), window.location.pathname);
+  }, [activeView]);
 
   const [activeUserId, setActiveUserId] = useState<string>('guest');
   const activeUserIdRef = useRef(activeUserId);
