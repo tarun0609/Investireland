@@ -1,0 +1,17 @@
+# InvestIreland AI
+
+> Independent, educational web app that explains Ireland's proposed Investment Account (announced in Budget 2027) and helps people in Ireland track Irish, EU, US and Indian investments in one place. It is not a broker or a regulated financial adviser.
+
+Key facts (as announced; subject to final legislation by the Oireachtas):
+- Proposed Investment Account target start date: 1 July 2027.
+- Annual contribution limit: €12,000 per tax year.
+- Growth on balances up to €50,000 would not be taxed; a 1% annual charge would apply to the value above €50,000.
+- Under current rules, many funds and ETFs are subject to 38% exit tax (from 1 January 2026) and the 8-year deemed disposal rule.
+
+## Pages
+- [Home: calculators, scenario planner, portfolio tracker and FAQ](https://www.investirelandai.ie/)
+- [Privacy & Cookies (GDPR)](https://www.investirelandai.ie/privacy)
+
+## Contact
+- General enquiries: hello@investirelandai.ie
+- Website and portal support: support@investirelandai.ie

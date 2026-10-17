@@ -1,0 +1,7 @@
+# InvestIreland AI – https://www.investirelandai.ie
+# Search engines and AI answer engines are welcome to index public pages.
+User-agent: *
+Allow: /
+Disallow: /api/
+
+Sitemap: https://www.investirelandai.ie/sitemap.xml

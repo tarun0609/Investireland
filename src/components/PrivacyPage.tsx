@@ -32,10 +32,6 @@ const storageRows: { name: string; where: string; purpose: string; when: string 
 export const PrivacyPage: React.FC<PrivacyPageProps> = ({ onBack }) => {
   useEffect(() => {
     window.scrollTo({ top: 0 });
-    document.title = 'Privacy & Cookies · InvestIreland AI';
-    return () => {
-      document.title = 'InvestIreland AI - Ireland\'s New Investment Scheme & Financial Intelligence';
-    };
   }, []);
 
   return (
