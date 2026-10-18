@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Currency } from '../types';
+import { isModifiedClick } from '../utils/links';
 import { 
   ShieldCheck, 
   Sparkles, 
@@ -113,10 +114,14 @@ export const Navbar: React.FC<NavbarProps> = ({
         <div className="flex items-center justify-between gap-2 h-16">
           
           {/* Left: Clean Brand Logo */}
-          <button
-            type="button"
+          <a
+            href="/"
             className="flex items-center gap-2 sm:gap-2.5 cursor-pointer select-none group shrink-0 rounded-xl"
-            onClick={() => handleViewChange('landing')}
+            onClick={(e) => {
+              if (isModifiedClick(e)) return;
+              e.preventDefault();
+              handleViewChange('landing');
+            }}
             aria-label="InvestIreland AI home"
           >
             <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-br from-emerald-600 to-teal-700 flex items-center justify-center text-white shadow-xs group-hover:shadow-emerald-700/20 transition-all">
@@ -130,20 +135,24 @@ export const Navbar: React.FC<NavbarProps> = ({
                 AI
               </span>
             </div>
-          </button>
+          </a>
 
           {/* Center: Streamlined Navigation (Landing Mode) */}
           {activeView === 'landing' ? (
             <nav aria-label="Main" className="hidden lg:flex items-center gap-6 text-xs font-semibold text-slate-600">
               {DESKTOP_LINKS.map((link) => (
-                <button
+                <a
                   key={link.id}
-                  type="button"
-                  onClick={() => handleNavClick(link.id)}
+                  href={`/#${link.id}`}
+                  onClick={(e) => {
+                    if (isModifiedClick(e)) return;
+                    e.preventDefault();
+                    handleNavClick(link.id);
+                  }}
                   className="hover:text-emerald-700 transition-colors cursor-pointer py-1"
                 >
                   {link.label}
-                </button>
+                </a>
               ))}
 
               {/* Clean 'More' Dropdown */}

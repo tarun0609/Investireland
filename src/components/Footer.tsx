@@ -1,6 +1,7 @@
 import React from 'react';
 import { LifeBuoy, Mail, ShieldCheck } from 'lucide-react';
 import { CONTACT_EMAILS } from '../config/contact';
+import { isModifiedClick } from '../utils/links';
 
 interface FooterProps {
   onNavigateSection: (sectionId: string) => void;
@@ -11,6 +12,11 @@ interface FooterProps {
 const linkClass = 'text-left hover:text-white transition-colors cursor-pointer';
 
 export const Footer: React.FC<FooterProps> = ({ onNavigateSection, onOpenWaitlist, onOpenPrivacy }) => {
+  const sectionClick = (id: string) => (e: React.MouseEvent) => {
+    if (isModifiedClick(e)) return;
+    e.preventDefault();
+    onNavigateSection(id);
+  };
   const productLinks: { id: string; label: string }[] = [
     { id: 'investment-account', label: 'Investment Account' },
     { id: 'calculator', label: 'FY26 vs FY27 Calculator' },
@@ -61,9 +67,9 @@ export const Footer: React.FC<FooterProps> = ({ onNavigateSection, onOpenWaitlis
             <ul className="space-y-2">
               {productLinks.map((link) => (
                 <li key={link.label}>
-                  <button type="button" onClick={() => onNavigateSection(link.id)} className={linkClass}>
+                  <a href={`/#${link.id}`} onClick={sectionClick(link.id)} className={linkClass}>
                     {link.label}
-                  </button>
+                  </a>
                 </li>
               ))}
             </ul>
@@ -75,9 +81,9 @@ export const Footer: React.FC<FooterProps> = ({ onNavigateSection, onOpenWaitlis
             <ul className="space-y-2">
               {learnLinks.map((link) => (
                 <li key={link.label}>
-                  <button type="button" onClick={() => onNavigateSection(link.id)} className={linkClass}>
+                  <a href={`/#${link.id}`} onClick={sectionClick(link.id)} className={linkClass}>
                     {link.label}
-                  </button>
+                  </a>
                 </li>
               ))}
             </ul>
@@ -94,9 +100,9 @@ export const Footer: React.FC<FooterProps> = ({ onNavigateSection, onOpenWaitlis
               </li>
               {aboutLinks.map((link) => (
                 <li key={link.label}>
-                  <button type="button" onClick={() => onNavigateSection(link.id)} className={linkClass}>
+                  <a href={`/#${link.id}`} onClick={sectionClick(link.id)} className={linkClass}>
                     {link.label}
-                  </button>
+                  </a>
                 </li>
               ))}
               <li>
