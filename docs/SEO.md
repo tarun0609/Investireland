@@ -43,7 +43,7 @@ The table shows what Azure Static Web Apps (`trailingSlash: "never"`) and the Ex
 | Request | Result |
 | --- | --- |
 | `/privacy/` | 301 → `/privacy` |
-| `/privacy.html`, `/index.html` | 301 → `/privacy`, `/` |
+| `/privacy.html`, `/index.html`, `/index` | 301 → `/privacy`, `/` (SWA: `/index.html` → `/index` → `/`) |
 | `/anything-else` | 404 with `404.html` |
 | `/api/*` on the static host | 404 |
 

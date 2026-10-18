@@ -70,6 +70,7 @@ async function startServer() {
       let canonicalPath = req.path;
       if (canonicalPath.length > 1 && canonicalPath.endsWith('/')) canonicalPath = canonicalPath.replace(/\/+$/, '') || '/';
       if (canonicalPath.endsWith('.html')) canonicalPath = canonicalPath.replace(/(?:index)?\.html$/, '') || '/';
+      if (/\/index$/.test(canonicalPath)) canonicalPath = canonicalPath.replace(/index$/, '').replace(/(.)\/$/, '$1');
       if (canonicalPath !== req.path) return res.redirect(301, canonicalPath + query);
       return next();
     });

@@ -67,6 +67,8 @@ describe('hosting configuration', () => {
     expect(config.trailingSlash).toBe('never');
     expect(config.navigationFallback).toBeUndefined();
     expect(config.responseOverrides['404'].rewrite).toBe('/404.html');
+    const indexRoute = config.routes.find((r: { route: string }) => r.route === '/index');
+    expect(indexRoute).toMatchObject({ redirect: '/', statusCode: 301 });
   });
 
   it('keeps security headers in place', () => {
