@@ -186,14 +186,13 @@ export function renderPrivacyDocument(indexHtml: string): string {
   return replaceBetween(withHead, NOSCRIPT_START, NOSCRIPT_END, renderPrivacyNoscript());
 }
 
-export function renderSitemap(lastmod: string): string {
-  const urls = [
-    { loc: absoluteUrl(HOME_SEO.path), priority: '1.0', changefreq: 'weekly' },
-    { loc: absoluteUrl(PRIVACY_SEO.path), priority: '0.3', changefreq: 'yearly' },
-  ];
-  const body = urls
-    .map((u) => `  <url>\n    <loc>${u.loc}</loc>\n    <lastmod>${lastmod}</lastmod>\n    <changefreq>${u.changefreq}</changefreq>\n    <priority>${u.priority}</priority>\n  </url>`)
-    .join('\n');
+/** Indexable public URLs. Keep in sync with the routes the app serves with HTTP 200. */
+export const SITEMAP_PAGES: PageSeo[] = [HOME_SEO, PRIVACY_SEO];
+
+// lastmod/changefreq/priority are intentionally omitted: no accurate per-page modification date exists,
+// and Google ignores changefreq/priority.
+export function renderSitemap(): string {
+  const body = SITEMAP_PAGES.map((page) => `  <url>\n    <loc>${absoluteUrl(page.path)}</loc>\n  </url>`).join('\n');
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${body}\n</urlset>\n`;
 }
 
@@ -215,7 +214,7 @@ export function seoPlugin(): Plugin {
       const outDir = path.resolve(config.root, config.build.outDir);
       const indexHtml = fs.readFileSync(path.join(outDir, 'index.html'), 'utf8');
       fs.writeFileSync(path.join(outDir, 'privacy.html'), renderPrivacyDocument(indexHtml));
-      fs.writeFileSync(path.join(outDir, 'sitemap.xml'), renderSitemap(new Date().toISOString().slice(0, 10)));
+      fs.writeFileSync(path.join(outDir, 'sitemap.xml'), renderSitemap());
     },
   };
 }

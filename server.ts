@@ -1,5 +1,5 @@
 import express from 'express';
-import type { Request, Response } from 'express';
+import type { NextFunction, Request, Response } from 'express';
 import path from 'path';
 import fs from 'fs';
 import dotenv from 'dotenv';
@@ -61,6 +61,18 @@ async function startServer() {
   } else {
     const distPath = path.resolve(process.cwd(), 'dist');
     const indexPath = path.resolve(distPath, 'index.html');
+    const notFoundPath = path.resolve(distPath, '404.html');
+    // Mirror staticwebapp.config.json ("trailingSlash": "never"): one canonical URL per page.
+    app.use((req: Request, res: Response, next: NextFunction) => {
+      if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+      if (req.path === '/404' || req.path === '/404.html') return res.status(404).sendFile(notFoundPath);
+      const query = req.originalUrl.slice(req.path.length);
+      let canonicalPath = req.path;
+      if (canonicalPath.length > 1 && canonicalPath.endsWith('/')) canonicalPath = canonicalPath.replace(/\/+$/, '') || '/';
+      if (canonicalPath.endsWith('.html')) canonicalPath = canonicalPath.replace(/(?:index)?\.html$/, '') || '/';
+      if (canonicalPath !== req.path) return res.redirect(301, canonicalPath + query);
+      return next();
+    });
     app.use(
       '/assets',
       express.static(path.join(distPath, 'assets'), { immutable: true, maxAge: '1y', fallthrough: false })
@@ -76,10 +88,12 @@ async function startServer() {
         },
       })
     );
-    app.get('*', (_req: Request, res: Response) => {
+    app.get('*', (req: Request, res: Response) => {
       if (!fs.existsSync(indexPath)) return res.status(404).send('Application build not found.');
       res.setHeader('Cache-Control', 'no-cache');
-      return res.sendFile(indexPath);
+      if (req.path === '/') return res.sendFile(indexPath);
+      // Unknown URLs get a real 404 (not the SPA shell) so they never become soft-404 duplicates.
+      return fs.existsSync(notFoundPath) ? res.status(404).sendFile(notFoundPath) : res.sendStatus(404);
     });
   }
 

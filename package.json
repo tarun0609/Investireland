@@ -12,7 +12,8 @@
     "lint": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "check": "npm run lint && npm run test && npm run build"
+    "seo:check": "tsx scripts/validateSeo.ts dist",
+    "check": "npm run lint && npm run test && npm run build && npm run seo:check"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

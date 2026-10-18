@@ -60,10 +60,12 @@ describe('seoPlugin', () => {
     expect(renderNoscript()).toContain('<dl>');
   });
 
-  it('renders a valid sitemap with both public URLs', () => {
-    const xml = renderSitemap('2026-01-01');
+  it('renders a valid sitemap with only the canonical public URLs and no fake dates', () => {
+    const xml = renderSitemap();
+    expect(xml.startsWith('<?xml version="1.0" encoding="UTF-8"?>')).toBe(true);
+    expect(xml.match(/<loc>/g)).toHaveLength(2);
     expect(xml).toContain('<loc>https://www.investirelandai.ie/</loc>');
     expect(xml).toContain('<loc>https://www.investirelandai.ie/privacy</loc>');
-    expect(xml.match(/<lastmod>2026-01-01<\/lastmod>/g)).toHaveLength(2);
+    expect(xml).not.toMatch(/lastmod|changefreq|priority/);
   });
 });

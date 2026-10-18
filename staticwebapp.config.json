@@ -1,12 +1,17 @@
 {
-  "navigationFallback": {
-    "rewrite": "/index.html",
-    "exclude": ["/assets/*", "/fonts/*", "/api/*", "/*.{png,jpg,jpeg,gif,svg,ico,webp,txt,xml,json,webmanifest,map,woff2}"]
+  "trailingSlash": "never",
+  "responseOverrides": {
+    "404": {
+      "rewrite": "/404.html"
+    }
   },
   "routes": [
     {
+      "route": "/api/*",
+      "statusCode": 404
+    },
+    {
       "route": "/privacy",
-      "rewrite": "/privacy.html",
       "headers": { "Cache-Control": "no-cache" }
     },
     {
