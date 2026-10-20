@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { AlertCircle, CheckCircle2, Download, FileUp, Loader2 } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Download, FileUp, KeyRound, Loader2 } from 'lucide-react';
 import type { Holding } from '../types';
 import { formatCurrency } from '../services/fiscalDataService';
 import {
@@ -11,6 +11,8 @@ import {
   type ImportPlanItem,
   type ImportResult,
 } from '../services/csvImportService';
+import { parseCasText } from '../services/casParserService';
+import { extractPdfLines, MAX_PDF_BYTES, PdfPasswordError, PdfReadError } from '../services/pdfTextService';
 
 interface CsvImportPanelProps {
   holdings: Holding[];
@@ -40,21 +42,68 @@ export const CsvImportPanel: React.FC<CsvImportPanelProps> = ({ holdings, onImpo
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<{ added: number; updated: number; failed: number } | null>(null);
+  // An encrypted PDF waiting for its password. Kept in memory only and cleared as soon as it has been read.
+  const [lockedPdf, setLockedPdf] = useState<ArrayBuffer | null>(null);
+  const [password, setPassword] = useState('');
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+
 
   const plan = useMemo(() => (result ? planImport(holdings, result.holdings) : []), [holdings, result]);
+
+  const totals = useMemo(() => {
+    const byCurrency = new Map<string, number>();
+    for (const { holding } of plan) byCurrency.set(holding.currency, (byCurrency.get(holding.currency) ?? 0) + holding.currentValue);
+    return [...byCurrency.entries()];
+  }, [plan]);
 
   const reset = () => {
     setFileName(null);
     setResult(null);
     setError(null);
     setDone(null);
+    setLockedPdf(null);
+    setPassword('');
+    setPasswordError(null);
+  };
+
+  const readPdf = async (data: ArrayBuffer, pdfPassword?: string) => {
+    setBusy(true);
+    try {
+      const lines = await extractPdfLines(data.slice(0), pdfPassword);
+      setLockedPdf(null);
+      setPassword('');
+      setPasswordError(null);
+      setResult(parseCasText(lines));
+    } catch (err) {
+      if (err instanceof PdfPasswordError) {
+        setLockedPdf(data);
+        setPasswordError(err.reason === 'incorrect' ? 'That password didn\u2019t work. Check it and try again.' : null);
+        return;
+      }
+      setLockedPdf(null);
+      setError(
+        err instanceof CsvImportError || err instanceof PdfReadError
+          ? err.message
+          : 'This PDF couldn\u2019t be read. Use the CAS PDF exactly as emailed by NSDL, CDSL, CAMS or KFintech.',
+      );
+    } finally {
+      setBusy(false);
+    }
   };
 
   const handleFile = async (file: File) => {
     reset();
     setFileName(file.name);
+    if (/\.pdf$/i.test(file.name)) {
+      if (file.size > MAX_PDF_BYTES) {
+        setError('This PDF is too large. The limit is 10 MB.');
+        return;
+      }
+      await readPdf(await file.arrayBuffer());
+      return;
+    }
     if (!/\.(csv|txt)$/i.test(file.name)) {
-      setError('Please choose a .csv file. Excel and PDF statements aren\u2019t supported yet; export them as CSV first.');
+      setError('Please choose a CSV file or a CAS PDF. Excel files aren\u2019t supported; save them as CSV first.');
       return;
     }
     if (file.size > MAX_IMPORT_FILE_BYTES) {
@@ -90,10 +139,10 @@ export const CsvImportPanel: React.FC<CsvImportPanelProps> = ({ holdings, onImpo
         <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-800 flex items-center justify-center mx-auto mb-3">
           <FileUp className="w-6 h-6" />
         </div>
-        <h2 className="text-2xl font-bold text-slate-900">Import Holdings from CSV</h2>
+        <h2 className="text-2xl font-bold text-slate-900">Import Holdings</h2>
         <p className="text-xs sm:text-sm text-slate-500 mt-1 max-w-lg mx-auto">
-          Import a DEGIRO portfolio export, a Trading 212 history export, or our simple template. The file is read in your
-          browser and is never uploaded. You review everything before it is saved.
+          Import every Indian demat account and mutual fund at once from your CAS PDF, or a DEGIRO, Trading 212 or template CSV.
+          Files are read in your browser and never uploaded. You review everything before it is saved.
         </p>
       </div>
 
@@ -115,12 +164,57 @@ export const CsvImportPanel: React.FC<CsvImportPanelProps> = ({ holdings, onImpo
             </button>
           </div>
         </div>
+      ) : lockedPdf ? (
+        <form
+          className="mt-8 p-5 rounded-xl border border-slate-200 bg-slate-50 space-y-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (password.trim()) void readPdf(lockedPdf, password.trim());
+          }}
+        >
+          <div className="flex items-center gap-2 text-sm font-bold text-slate-900">
+            <KeyRound className="w-4 h-4 text-emerald-700" />
+            <span className="break-all">{fileName}</span> is password protected
+          </div>
+          <label htmlFor="cas-password" className="block text-xs text-slate-600">
+            NSDL and CDSL statements use your PAN in capitals (e.g. ABCDE1234F). For CAMS or KFintech, use the password you chose when requesting it.
+            The password is only used to open the file on this device and is never saved or sent anywhere.
+          </label>
+          <input
+            id="cas-password"
+            type="password"
+            autoComplete="off"
+            autoFocus
+            maxLength={64}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            aria-invalid={!!passwordError}
+            aria-describedby={passwordError ? 'cas-password-error' : undefined}
+          />
+          {passwordError && (
+            <p id="cas-password-error" role="alert" className="text-xs text-rose-700">{passwordError}</p>
+          )}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <button type="button" onClick={reset} disabled={busy} className="text-xs text-slate-500 hover:text-slate-800 cursor-pointer disabled:opacity-50">
+              Choose another file
+            </button>
+            <button
+              type="submit"
+              disabled={busy || !password.trim()}
+              className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl cursor-pointer disabled:opacity-50"
+            >
+              {busy && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+              Open statement
+            </button>
+          </div>
+        </form>
       ) : !result ? (
         <>
           <div className="mt-8 border-2 border-dashed border-slate-300 hover:border-emerald-500 rounded-2xl p-6 sm:p-8 text-center transition-all bg-slate-50/50">
             <input
               type="file"
-              accept=".csv,text/csv"
+              accept=".csv,text/csv,.pdf,application/pdf"
               onChange={(e) => {
                 const file = e.target.files?.[0];
                 e.target.value = '';
@@ -129,10 +223,10 @@ export const CsvImportPanel: React.FC<CsvImportPanelProps> = ({ holdings, onImpo
               className="sr-only"
               id="csv-file-input"
             />
-            <label htmlFor="csv-file-input" className="cursor-pointer block">
-              <FileUp className="w-8 h-8 text-slate-400 mx-auto mb-2" />
-              <span className="text-sm font-bold text-slate-800 block">Choose a CSV file</span>
-              <span className="text-xs text-slate-400 mt-1 block">Up to 2 MB &middot; stays on this device</span>
+            <label htmlFor="csv-file-input" className={`block ${busy ? 'cursor-wait opacity-60' : 'cursor-pointer'}`} aria-busy={busy}>
+              {busy ? <Loader2 className="w-8 h-8 text-emerald-600 mx-auto mb-2 animate-spin" /> : <FileUp className="w-8 h-8 text-slate-400 mx-auto mb-2" />}
+              <span className="text-sm font-bold text-slate-800 block">{busy ? 'Reading your statement\u2026' : 'Choose a CAS PDF or CSV file'}</span>
+              <span className="text-xs text-slate-400 mt-1 block">PDF up to 10 MB, CSV up to 2 MB &middot; stays on this device</span>
             </label>
           </div>
 
@@ -143,7 +237,21 @@ export const CsvImportPanel: React.FC<CsvImportPanelProps> = ({ holdings, onImpo
             </div>
           )}
 
-          <div className="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs text-slate-600">
+          <div className="mt-6 p-4 rounded-xl border border-emerald-200 bg-emerald-50/60 text-xs text-slate-700">
+            <div className="font-bold text-emerald-900 mb-1">India: all demat accounts and mutual funds in one file (CAS)</div>
+            <ul className="list-disc pl-4 space-y-1">
+              <li>
+                <span className="font-semibold">NSDL or CDSL CAS</span> covers every demat account (Zerodha, Groww, Upstox, INDmoney&hellip;) plus your mutual fund
+                folios. It is emailed to you every month; you can also download it from the NSDL or CDSL CAS website.
+              </li>
+              <li>
+                <span className="font-semibold">CAMS / KFintech CAS</span> (mutual funds only): request a &ldquo;Detailed&rdquo; statement on the CAMS or KFintech website.
+              </li>
+              <li>Import the newest statement each month and existing holdings are updated, not duplicated. Fund prices then refresh daily.</li>
+            </ul>
+          </div>
+
+          <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs text-slate-600">
             <div className="p-3 rounded-xl border border-slate-200 bg-slate-50">
               <div className="font-bold text-slate-800 mb-1">DEGIRO</div>
               Portfolio &rarr; download icon &rarr; <span className="font-semibold">CSV</span>. Imports units, closing prices and cash.
@@ -162,7 +270,7 @@ export const CsvImportPanel: React.FC<CsvImportPanelProps> = ({ holdings, onImpo
           </div>
 
           <p className="mt-4 text-[11px] text-slate-500 text-center">
-            Indian CAS PDFs (CAMS/KFintech, NSDL/CDSL) and Excel files aren&rsquo;t supported yet.{' '}
+            Excel files and scanned (image) PDFs aren&rsquo;t supported.{' '}
             <button type="button" onClick={onAddManually} className="font-bold text-emerald-800 hover:underline cursor-pointer">Add holdings manually</button>{' '}
             or use the template.
           </p>
@@ -216,6 +324,16 @@ export const CsvImportPanel: React.FC<CsvImportPanelProps> = ({ holdings, onImpo
               </tbody>
             </table>
           </div>
+
+          {totals.length > 0 && (
+            <div className="flex flex-wrap justify-end gap-x-4 gap-y-1 text-xs text-slate-600">
+              {totals.map(([cur, total]) => (
+                <span key={cur}>
+                  Total {cur}: <span className="font-mono font-bold text-slate-900">{new Intl.NumberFormat(cur === 'INR' ? 'en-IN' : 'en-IE', { style: 'currency', currency: cur, minimumFractionDigits: 2 }).format(total)}</span>
+                </span>
+              ))}
+            </div>
+          )}
 
           <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
             <button type="button" onClick={reset} disabled={busy} className="text-xs text-slate-500 hover:text-slate-800 cursor-pointer disabled:opacity-50">

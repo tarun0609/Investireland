@@ -52,8 +52,10 @@ import {
   Target,
   Mail,
   UserCheck,
-  Flame
+  Flame,
+  RefreshCw
 } from 'lucide-react';
+import { isRefreshableFund, type NavRefreshSummary } from '../services/navRefreshService';
 
 const COUNTRY_LABELS: Record<Holding['country'], string> = {
   Ireland: '🇮🇪 Ireland',
@@ -76,6 +78,7 @@ interface DashboardViewProps {
   onAddHolding: (holding: Holding) => void;
   onUpdateHolding: (holding: Holding) => void;
   onImportHoldings: (items: ImportPlanItem[]) => Promise<number>;
+  onRefreshFundPrices: () => Promise<NavRefreshSummary | null>;
   onDeleteHolding: (id: string) => void;
   investmentAccount: InvestmentAccountState;
   onAddContribution: (amount: number, provider: string) => void;
@@ -88,6 +91,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onAddHolding,
   onUpdateHolding,
   onImportHoldings,
+  onRefreshFundPrices,
   onDeleteHolding,
   investmentAccount,
   onAddContribution,
@@ -95,6 +99,24 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'overview' | 'milestones' | 'volatility' | 'dividend_tracker' | 'tax_estimator' | 'rebalance' | 'markets' | 'investment_account' | 'portfolio' | 'xray' | 'calculator' | 'import'>('overview');
   
+  const [navStatus, setNavStatus] = useState<{ busy: boolean; message: string | null }>({ busy: false, message: null });
+  const handleRefreshFunds = async () => {
+    setNavStatus({ busy: true, message: null });
+    try {
+      const summary = await onRefreshFundPrices();
+      if (!summary) {
+        setNavStatus({ busy: false, message: 'A price refresh is already running. Try again in a moment.' });
+        return;
+      }
+      const parts = [`Updated ${summary.updates.length} of ${summary.checked} fund${summary.checked === 1 ? '' : 's'} with the latest NAV from mfapi.in.`];
+      if (summary.notFound.length) parts.push(`No match found for: ${summary.notFound.join(', ')}.`);
+      if (summary.failed) parts.push(`${summary.failed} couldn\u2019t be checked right now.`);
+      setNavStatus({ busy: false, message: parts.join(' ') });
+    } catch {
+      setNavStatus({ busy: false, message: 'Fund prices couldn\u2019t be refreshed right now. Please try again later.' });
+    }
+  };
+
   // Real User Profile & Email Auth State
   const [activeUser, setActiveUserState] = useState<AuthUser>(() => getActiveUser());
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
@@ -883,15 +905,31 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   </p>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={openAddHoldingModal}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>Add New Asset</span>
-                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                  {holdings.some(isRefreshableFund) && (
+                    <button
+                      type="button"
+                      onClick={handleRefreshFunds}
+                      disabled={navStatus.busy}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-800 text-xs font-bold rounded-xl transition-colors cursor-pointer disabled:opacity-60"
+                    >
+                      <RefreshCw className={`w-4 h-4 ${navStatus.busy ? 'animate-spin' : ''}`} />
+                      <span>{navStatus.busy ? 'Refreshing\u2026' : 'Refresh fund prices'}</span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={openAddHoldingModal}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Add New Asset</span>
+                  </button>
+                </div>
               </div>
+              {navStatus.message && (
+                <p role="status" className="mt-3 text-xs text-slate-600">{navStatus.message}</p>
+              )}
 
               {/* Table */}
               <div className="overflow-x-auto mt-4">

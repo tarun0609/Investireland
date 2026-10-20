@@ -6,7 +6,7 @@ interface PrivacyPageProps {
   onBack: () => void;
 }
 
-const LAST_UPDATED = '20 October 2026';
+const LAST_UPDATED = '21 October 2026';
 
 const storageRows: { name: string; where: string; purpose: string; when: string }[] = [
   {
@@ -83,8 +83,9 @@ export const PrivacyPage: React.FC<PrivacyPageProps> = ({ onBack }) => {
           </li>
           <li>
             <strong>Portfolio figures you type in or import</strong> (holdings, contributions, goals). Guests’ data stays in their own browser.
-            Signed-in users’ data is stored in Google Firebase and can only be read by that account. CSV files you import are read in your browser
-            and are never uploaded; only the holdings you confirm are saved.
+            Signed-in users’ data is stored in Google Firebase and can only be read by that account. CSV files and CAS PDF statements you import are read in your
+            browser and are never uploaded; only the holdings you confirm are saved. The password of a protected statement (for NSDL/CDSL, your
+            PAN) is used only to open the file on your device and is never stored or sent anywhere.
           </li>
           <li>
             <strong>Technical logs</strong> (IP address, browser, time) kept briefly by our hosting and DNS providers to deliver and protect the
@@ -105,6 +106,11 @@ export const PrivacyPage: React.FC<PrivacyPageProps> = ({ onBack }) => {
           To show current exchange rates, your browser downloads the euro reference rates directly from the European Central Bank
           (data-api.ecb.europa.eu) at most every few hours. No portfolio data is sent; like any website, the ECB receives your IP address and
           browser details under its own privacy statement.
+        </p>
+        <p>
+          If you hold Indian mutual funds or ETFs, your browser looks up their latest published prices (NAV) from mfapi.in, a free public
+          service, at most once a day. Only the fund names are sent, never your units, values or account details; mfapi.in also receives your
+          IP address and browser details.
         </p>
       </section>
 

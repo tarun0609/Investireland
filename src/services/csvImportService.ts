@@ -21,7 +21,7 @@ import {
 export const MAX_IMPORT_FILE_BYTES = 2 * 1024 * 1024;
 export const MAX_IMPORT_ROWS = 2000;
 
-export type ImportFormat = 'template' | 'degiro' | 'trading212';
+export type ImportFormat = 'template' | 'degiro' | 'trading212' | 'cas';
 
 export interface ImportResult {
   format: ImportFormat;
@@ -123,7 +123,7 @@ function inferCountry(isin: string | undefined, currency: Currency): CountryExpo
 let idCounter = 0;
 const importId = () => `imp-${Date.now().toString(36)}-${(idCounter++).toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 
-function makeHolding(p: {
+export function makeHolding(p: {
   name: string;
   assetType: Holding['assetType'];
   ticker?: string;
@@ -153,7 +153,7 @@ function makeHolding(p: {
   };
 }
 
-const validAmount = (n: number) => Number.isFinite(n) && n > 0 && n <= MAX_HOLDING_VALUE;
+export const validAmount = (n: number) => Number.isFinite(n) && n > 0 && n <= MAX_HOLDING_VALUE;
 
 // ---------- Template ----------
 

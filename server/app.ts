@@ -91,6 +91,7 @@ export function buildContentSecurityPolicy(isProduction: boolean) {
       connectSrc: [
         "'self'",
         'https://data-api.ecb.europa.eu',
+        'https://api.mfapi.in',
         'https://*.googleapis.com',
         'https://*.firebaseio.com',
         'wss://*.firebaseio.com',

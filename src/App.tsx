@@ -22,6 +22,7 @@ import { isDemoUser, subscribeToActiveUser, waitForAuthReady } from './services/
 import { applyPageSeo, seoForView } from './utils/seo';
 import { getFxRates, loadEcbRates, subscribeFxRates } from './services/fxRateService';
 import type { ImportPlanItem } from './services/csvImportService';
+import { isRefreshableFund, markAutoRefreshed, refreshFundPrices, shouldAutoRefresh, type NavRefreshSummary } from './services/navRefreshService';
 import { 
   loadUserHoldings, 
   saveUserHolding, 
@@ -186,6 +187,36 @@ export default function App() {
     if (failed > 0) setDataError(`${failed} imported holding${failed === 1 ? '' : 's'} could not be saved.`);
     return failed;
   }, [activeUserId]);
+
+  const holdingsRef = useRef(holdings);
+  holdingsRef.current = holdings;
+  const navRefreshInFlight = useRef(false);
+
+  // Updates Indian fund prices (NAV) from mfapi.in; only the price and value of matched funds change.
+  const handleRefreshFundPrices = useCallback(async (): Promise<NavRefreshSummary | null> => {
+    if (!isDataReadyRef.current || navRefreshInFlight.current) return null;
+    navRefreshInFlight.current = true;
+    const uid = activeUserIdRef.current;
+    try {
+      const summary = await refreshFundPrices(holdingsRef.current);
+      if (activeUserIdRef.current !== uid) return null;
+      if (summary.updates.length > 0) {
+        await handleImportHoldings(summary.updates.map(holding => ({ holding, action: 'update' as const })));
+      }
+      return summary;
+    } finally {
+      navRefreshInFlight.current = false;
+    }
+  }, [handleImportHoldings]);
+
+  useEffect(() => {
+    if (!isDataReady || activeUserId === 'guest') return;
+    if (!holdings.some(isRefreshableFund) || !shouldAutoRefresh(activeUserId, holdings)) return;
+    markAutoRefreshed(activeUserId);
+    handleRefreshFundPrices().catch(err => console.warn('Fund price refresh failed', err));
+    // Runs once per user per day after their data loads; later holding edits must not retrigger it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDataReady, activeUserId]);
 
   const handleDeleteHolding = useCallback(async (id: string) => {
     if (!ensureDataReady()) return;
@@ -360,6 +391,7 @@ export default function App() {
           onAddHolding={handleAddHolding}
           onUpdateHolding={handleUpdateHolding}
           onImportHoldings={handleImportHoldings}
+          onRefreshFundPrices={handleRefreshFundPrices}
           onDeleteHolding={handleDeleteHolding}
           investmentAccount={investmentAccount}
           onAddContribution={handleAddContribution}
