@@ -6,7 +6,7 @@ interface PrivacyPageProps {
   onBack: () => void;
 }
 
-const LAST_UPDATED = '12 October 2026';
+const LAST_UPDATED = '20 October 2026';
 
 const storageRows: { name: string; where: string; purpose: string; when: string }[] = [
   {
@@ -82,8 +82,9 @@ export const PrivacyPage: React.FC<PrivacyPageProps> = ({ onBack }) => {
             asked for (legal basis: consent, which you can withdraw at any time).
           </li>
           <li>
-            <strong>Portfolio figures you type in</strong> (holdings, contributions, goals). Guests’ data stays in their own browser. Signed-in
-            users’ data is stored in Google Firebase and can only be read by that account.
+            <strong>Portfolio figures you type in or import</strong> (holdings, contributions, goals). Guests’ data stays in their own browser.
+            Signed-in users’ data is stored in Google Firebase and can only be read by that account. CSV files you import are read in your browser
+            and are never uploaded; only the holdings you confirm are saved.
           </li>
           <li>
             <strong>Technical logs</strong> (IP address, browser, time) kept briefly by our hosting and DNS providers to deliver and protect the
@@ -99,6 +100,11 @@ export const PrivacyPage: React.FC<PrivacyPageProps> = ({ onBack }) => {
           Google Firebase (authentication and database), Microsoft Azure Static Web Apps (hosting), Cloudflare (DNS) and Gmail (sending account
           emails). Some may process data outside the EEA under the EU Standard Contractual Clauses or the EU–US Data Privacy Framework. Fonts are
           served from our own site, so no data is sent to Google Fonts.
+        </p>
+        <p>
+          To show current exchange rates, your browser downloads the euro reference rates directly from the European Central Bank
+          (data-api.ecb.europa.eu) at most every few hours. No portfolio data is sent; like any website, the ECB receives your IP address and
+          browser details under its own privacy statement.
         </p>
       </section>
 

@@ -1,6 +1,7 @@
 import { jsPDF } from 'jspdf';
 import { Currency, Holding, InvestmentAccountState, FinancialXRayData } from '../types';
 import { formatCurrency, convertToEUR, convertFromEUR } from './fiscalDataService';
+import { describeFxRates } from './fxRateService';
 
 interface ExportPdfOptions {
   userName?: string;
@@ -409,7 +410,7 @@ export function generatePortfolioPdf({
 
   drawFooters(doc, [
     'ESTIMATES FOR EDUCATIONAL PURPOSES ONLY - NOT REGULATED INVESTMENT OR TAX ADVICE',
-    'Values use static reference FX rates and simplified Irish tax rules. Confirm with Revenue.ie or a qualified adviser. investireland.ai'
+    `Values use ${describeFxRates()} and simplified Irish tax rules. Confirm with Revenue.ie or a qualified adviser. investirelandai.ie`
   ]);
 
   return doc;

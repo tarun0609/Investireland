@@ -1,6 +1,7 @@
 import React from 'react';
 import { Currency } from '../types';
 import { formatCurrency, convertFromEUR, convertToEUR, FALLBACK_FISCAL_DATA } from '../services/fiscalDataService';
+import { describeFxRates } from '../services/fxRateService';
 import { 
   Globe2, 
   ArrowRight, 
@@ -26,7 +27,7 @@ export const CrossBorderSection: React.FC<CrossBorderSectionProps> = ({
 }) => {
   const fx = FALLBACK_FISCAL_DATA.macroIndicators.fxRates;
 
-  // Example portfolio (native amounts); EUR/converted figures are derived from the bundled FX rates
+  // Example portfolio (native amounts); EUR/converted figures use the current ECB reference rates
   const IE = { investmentAccount: 30000, pension: 60000, cash: 20000 };
   const IN = { mutualFundsINR: 2500000, sharesINR: 1000000, fcnrEUR: 10000 };
   const US = { rsuUSD: 18500, equitiesUSD: 6500, cashUSD: 2000 };
@@ -64,11 +65,11 @@ export const CrossBorderSection: React.FC<CrossBorderSectionProps> = ({
           </p>
         </div>
 
-        {/* Indicative FX rates (bundled reference data, not a live feed) */}
+        {/* ECB reference rates (live, with a bundled offline copy) */}
         <div className="mt-8 max-w-2xl mx-auto bg-slate-50 border border-slate-200 rounded-xl p-3 flex flex-wrap items-center justify-around gap-x-4 gap-y-2 text-xs font-medium text-slate-700">
           <span className="font-bold text-slate-900 flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-slate-400"></span>
-            Indicative FX rates (as of {fx.lastUpdated}):
+            <span className={`w-2 h-2 rounded-full ${fx.source === 'ECB' ? 'bg-emerald-500' : 'bg-slate-400'}`}></span>
+            {describeFxRates(fx)}:
           </span>
           <span className="font-mono">
             €1 EUR = <strong className="text-slate-900">₹{fx.EUR_TO_INR.toFixed(2)} INR</strong>
