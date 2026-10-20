@@ -24,7 +24,7 @@
     "allowImportingTsExtensions": true,
     "noEmit": true
   },
-  "include": ["src", "scripts", "server", "server.ts", "vite.config.ts", "vitest.config.ts"],
-  "exclude": ["node_modules", "dist", "functions"]
+  "include": ["src", "admin", "scripts", "server", "workers", "server.ts", "vite.config.ts", "vitest.config.ts"],
+  "exclude": ["node_modules", "dist", "admin/dist", "functions"]
 }
 

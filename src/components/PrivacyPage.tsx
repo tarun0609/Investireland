@@ -6,7 +6,7 @@ interface PrivacyPageProps {
   onBack: () => void;
 }
 
-const LAST_UPDATED = '21 October 2026';
+const LAST_UPDATED = '1 November 2026';
 
 const storageRows: { name: string; where: string; purpose: string; when: string }[] = [
   {
@@ -63,8 +63,9 @@ export const PrivacyPage: React.FC<PrivacyPageProps> = ({ onBack }) => {
           <ShieldCheck className="h-5 w-5 text-emerald-600" aria-hidden="true" /> Who we are
         </h2>
         <p>
-          InvestIreland AI is an independent, non-commercial personal project providing general financial education for people living in
-          Ireland. It is not regulated by the Central Bank of Ireland and does not give financial advice.
+          InvestIreland AI is an independent personal project providing general financial education for people living in Ireland. It has a
+          free plan and optional paid plans (Pro and Family). It is not regulated by the Central Bank of Ireland and does not give financial
+          advice.
         </p>
       </section>
 
@@ -88,6 +89,20 @@ export const PrivacyPage: React.FC<PrivacyPageProps> = ({ onBack }) => {
             PAN) is used only to open the file on your device and is never stored or sent anywhere.
           </li>
           <li>
+            <strong>Plan and billing details</strong> (your plan, renewal date, any promo code you redeemed, and your Stripe customer and
+            subscription IDs) if you choose a paid plan or redeem a code, to provide the features you paid for (legal basis: contract). Card
+            details are entered on Stripe&rsquo;s own checkout page and never reach us. We keep payment records as long as tax law requires.
+          </li>
+          <li>
+            <strong>Family household sharing</strong>: on the Family plan, the two adults in a household can each view (but not change) the
+            other&rsquo;s holdings. Sharing starts only when the invited person accepts and stops as soon as either of you leaves the household or
+            the plan ends.
+          </li>
+          <li>
+            <strong>Email preferences</strong>: we send account and billing emails when needed. Product news is sent only if you haven&rsquo;t
+            opted out; every such email has an unsubscribe link, and you can switch it off any time in Plan &amp; billing.
+          </li>
+          <li>
             <strong>Technical logs</strong> (IP address, browser, time) kept briefly by our hosting and DNS providers to deliver and protect the
             site (legal basis: legitimate interests).
           </li>
@@ -98,8 +113,9 @@ export const PrivacyPage: React.FC<PrivacyPageProps> = ({ onBack }) => {
       <section className="mt-10 space-y-3 text-sm leading-relaxed text-slate-700">
         <h2 className="text-lg font-bold text-slate-900">Service providers</h2>
         <p>
-          Google Firebase (authentication and database), Microsoft Azure Static Web Apps (hosting), Cloudflare (DNS) and Gmail (sending account
-          emails). Some may process data outside the EEA under the EU Standard Contractual Clauses or the EU–US Data Privacy Framework. Fonts are
+          Google Firebase (authentication and database), Microsoft Azure Static Web Apps (hosting), Cloudflare (DNS, and Cloudflare Workers
+          for our billing and account API at api.investirelandai.ie), Stripe (payments, only if you choose a paid plan), Brevo (sending account
+          and product emails) and Gmail (account emails). Some may process data outside the EEA under the EU Standard Contractual Clauses or the EU–US Data Privacy Framework. Fonts are
           served from our own site, so no data is sent to Google Fonts.
         </p>
         <p>

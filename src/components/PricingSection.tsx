@@ -1,12 +1,26 @@
 import React, { useState } from 'react';
 import { Check } from 'lucide-react';
+import { PLAN_RANK, PROMO_GLOBAL_CAP, PROMO_MONTHS, type CheckoutPlan, type PlanId } from '../config/plans';
 
 interface PricingSectionProps {
   onOpenWaitlist: (plan?: string) => void;
+  billingEnabled?: boolean;
+  currentPlan?: PlanId;
+  onUpgrade?: (plan: CheckoutPlan) => void;
+  onOpenDashboard?: () => void;
 }
 
-export const PricingSection: React.FC<PricingSectionProps> = ({ onOpenWaitlist }) => {
+export const PricingSection: React.FC<PricingSectionProps> = ({ onOpenWaitlist, billingEnabled = false, currentPlan = 'free', onUpgrade, onOpenDashboard }) => {
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'annual'>('annual');
+  const live = billingEnabled && !!onUpgrade;
+  const ctaFor = (plan: PlanId, checkout: CheckoutPlan, fallback: () => void, idle: string) => {
+    if (!live) return { label: idle, onClick: fallback, disabled: false };
+    if (currentPlan === plan) return { label: 'Your current plan', onClick: () => onOpenDashboard?.(), disabled: false };
+    if (PLAN_RANK[currentPlan] > PLAN_RANK[plan]) return { label: 'Included in your plan', onClick: () => onOpenDashboard?.(), disabled: true };
+    return { label: plan === 'family' ? 'Choose Family' : `Choose Pro ${billingCycle === 'annual' ? 'annual' : 'monthly'}`, onClick: () => onUpgrade!(checkout), disabled: false };
+  };
+  const proCta = ctaFor('pro', billingCycle === 'annual' ? 'pro_annual' : 'pro_monthly', () => onOpenWaitlist('Pro'), 'Join Early Beta (Pro)');
+  const familyCta = ctaFor('family', 'family_annual', () => onOpenWaitlist('Family'), 'Join Family Waitlist');
 
   return (
     <section id="pricing" className="py-20 bg-slate-50 border-b border-slate-200">
@@ -14,13 +28,15 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onOpenWaitlist }
         
         <div className="text-center max-w-3xl mx-auto">
           <span className="text-xs font-bold text-slate-500 uppercase tracking-widest bg-slate-200/60 px-3 py-1 rounded-full">
-            Planned Pricing
+            {live ? 'Pricing' : 'Planned Pricing'}
           </span>
           <h2 className="mt-4 text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
             Clear, honest pricing. No hidden fees.
           </h2>
           <p className="mt-4 text-base sm:text-lg text-slate-600 leading-relaxed">
-            We don't take a cut of your assets. These are the plans we intend to offer after the beta. During early access, everything is free and no payment details are collected.
+            {live
+              ? <>We don't take a cut of your assets. Start free, upgrade when you need more, and cancel any time. Early users can get Pro free for {PROMO_MONTHS} months with a promo code (first {PROMO_GLOBAL_CAP.toLocaleString('en-IE')} redemptions).</>
+              : <>We don't take a cut of your assets. These are the plans we intend to offer after the beta. During early access, everything is free and no payment details are collected.</>}
           </p>
 
           {/* Billing Cycle Switcher */}
@@ -90,10 +106,10 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onOpenWaitlist }
 
             <button
               type="button"
-              onClick={() => onOpenWaitlist('Free')}
+              onClick={() => (live && currentPlan !== 'free' ? onOpenDashboard?.() : onOpenWaitlist('Free'))}
               className="mt-8 w-full py-2.5 px-4 rounded-xl text-xs font-bold text-slate-800 bg-slate-100 hover:bg-slate-200 transition-colors cursor-pointer"
             >
-              Join Free Early Access
+              {live && currentPlan !== 'free' ? 'Open dashboard' : live ? 'Start free' : 'Join Free Early Access'}
             </button>
           </div>
 
@@ -143,10 +159,11 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onOpenWaitlist }
 
             <button
               type="button"
-              onClick={() => onOpenWaitlist('Pro')}
-              className="mt-8 w-full py-2.5 px-4 rounded-xl text-xs font-bold text-white bg-emerald-700 hover:bg-emerald-800 transition-colors shadow-sm cursor-pointer"
+              onClick={proCta.onClick}
+              disabled={proCta.disabled}
+              className="mt-8 w-full py-2.5 px-4 rounded-xl text-xs font-bold text-white bg-emerald-700 hover:bg-emerald-800 disabled:opacity-60 disabled:cursor-default transition-colors shadow-sm cursor-pointer"
             >
-              Join Early Beta (Pro)
+              {proCta.label}
             </button>
           </div>
 
@@ -185,10 +202,11 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onOpenWaitlist }
 
             <button
               type="button"
-              onClick={() => onOpenWaitlist('Family')}
-              className="mt-8 w-full py-2.5 px-4 rounded-xl text-xs font-bold text-slate-800 bg-slate-100 hover:bg-slate-200 transition-colors cursor-pointer"
+              onClick={familyCta.onClick}
+              disabled={familyCta.disabled}
+              className="mt-8 w-full py-2.5 px-4 rounded-xl text-xs font-bold text-slate-800 bg-slate-100 hover:bg-slate-200 disabled:opacity-60 disabled:cursor-default transition-colors cursor-pointer"
             >
-              Join Family Waitlist
+              {familyCta.label}
             </button>
           </div>
 
@@ -237,7 +255,9 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onOpenWaitlist }
         </div>
 
         <p className="mt-8 text-center text-xs text-slate-500 max-w-2xl mx-auto">
-          Prices shown are planned and may change before launch. Nothing is charged during the beta, and we'll ask before you're ever billed.
+          {live
+            ? 'Prices include no hidden fees. Payments are processed securely by Stripe; manage or cancel your subscription any time from Plan & billing in the dashboard.'
+            : "Prices shown are planned and may change before launch. Nothing is charged during the beta, and we'll ask before you're ever billed."}
         </p>
 
       </div>

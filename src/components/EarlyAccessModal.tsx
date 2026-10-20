@@ -10,11 +10,24 @@ import {
 } from 'lucide-react';
 import type { LifeStageCategory } from '../types';
 import { MIN_PASSWORD_LENGTH, getSignedInUser, registerWithCredentials, type ResidencyCountry } from '../services/authEmailService';
+import { CHECKOUT_PLANS, PROMO_MONTHS, isCheckoutPlan, type CheckoutPlan } from '../config/plans';
+import { setPendingPlan, setPendingPromo } from '../services/entitlementService';
+
+type PlanChoice = 'free' | CheckoutPlan;
+const PROMO_RE = /^[A-Z0-9-]{4,32}$/;
+
+const initialPlanChoice = (prefill: any): PlanChoice => {
+  if (isCheckoutPlan(prefill?.checkoutPlan)) return prefill.checkoutPlan;
+  if (prefill?.plan === 'Pro') return 'pro_annual';
+  if (prefill?.plan === 'Family') return 'family_annual';
+  return 'free';
+};
 
 interface EarlyAccessModalProps {
   isOpen: boolean;
   onClose: () => void;
   prefillData?: any;
+  billingEnabled?: boolean;
 }
 
 const GOAL_OPTIONS: { value: LifeStageCategory; label: string }[] = [
@@ -30,9 +43,18 @@ const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), selec
 
 export const EarlyAccessModal: React.FC<EarlyAccessModalProps> = ({
   isOpen,
-  onClose,
-  prefillData
+  onClose: closeModal,
+  prefillData,
+  billingEnabled = false
 }) => {
+  const [planChoice, setPlanChoice] = useState<PlanChoice>('free');
+  const [promoCode, setPromoCode] = useState('');
+  const submittedRef = useRef(false);
+  // A plan picked here but not signed up for must not trigger checkout on a later sign-in.
+  const onClose = () => {
+    if (!submittedRef.current) setPendingPlan(null);
+    closeModal();
+  };
   const [firstName, setFirstName] = useState('');
   const [email, setEmail] = useState('');
   const [country, setCountry] = useState<ResidencyCountry>('Ireland');
@@ -60,6 +82,9 @@ export const EarlyAccessModal: React.FC<EarlyAccessModalProps> = ({
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     setFormError(null);
+    submittedRef.current = false;
+    setPlanChoice(initialPlanChoice(prefillData));
+    setPromoCode('');
     if (getSignedInUser()) setIsSubmitted(false);
 
     const onKeyDown = (event: KeyboardEvent) => {
@@ -91,6 +116,7 @@ export const EarlyAccessModal: React.FC<EarlyAccessModalProps> = ({
       document.body.style.overflow = previousOverflow;
       previouslyFocused?.focus?.();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
 
   if (!isOpen) return null;
@@ -108,6 +134,17 @@ export const EarlyAccessModal: React.FC<EarlyAccessModalProps> = ({
       return;
     }
 
+    const promo = promoCode.trim().toUpperCase();
+    if (billingEnabled && promo && !PROMO_RE.test(promo)) {
+      setFormError('Promo codes use letters, numbers and dashes, e.g. EARLY-AB12CD34.');
+      return;
+    }
+
+    // Saved first: the app runs these as soon as the new account signs in, which can happen before register returns.
+    if (billingEnabled) {
+      setPendingPromo(promo || null);
+      setPendingPlan(!promo && planChoice !== 'free' ? planChoice : null);
+    }
     setIsSending(true);
     try {
       const res = await registerWithCredentials({
@@ -119,14 +156,19 @@ export const EarlyAccessModal: React.FC<EarlyAccessModalProps> = ({
         hasOverseasAssets: hasOverseasAssets === 'yes'
       });
       if (!res.success) {
+        setPendingPromo(null);
+        setPendingPlan(null);
         setFormError(res.error || 'Registration failed. Please try again.');
         return;
       }
+      submittedRef.current = true;
       setPassword('');
       setEmailReceipt(res.emailDispatch ?? null);
       setVerificationSent(Boolean(res.verificationEmailSent));
       setIsSubmitted(true);
     } catch {
+      setPendingPromo(null);
+      setPendingPlan(null);
       setFormError('We could not reach the sign-up service. Please check your connection and try again.');
     } finally {
       setIsSending(false);
@@ -199,7 +241,7 @@ export const EarlyAccessModal: React.FC<EarlyAccessModalProps> = ({
               Create a free account to save your portfolio and goals, and hear about new features for Ireland’s proposed Investment Account and cross-border tracking.
             </p>
 
-            {planLabel && (
+            {planLabel && !billingEnabled && (
               <div className="mt-3 p-2.5 bg-slate-50 rounded-lg border border-slate-200 text-xs text-slate-700 font-medium">
                 Plan you're interested in: <strong>{planLabel}</strong>. Everything is free during the beta and no payment details are needed.
               </div>
@@ -334,6 +376,56 @@ export const EarlyAccessModal: React.FC<EarlyAccessModalProps> = ({
                 </select>
               </div>
 
+              {billingEnabled && (
+                <fieldset>
+                  <legend className={labelClass}>Choose your plan</legend>
+                  <div className="grid grid-cols-1 gap-2">
+                    {(['free', 'pro_annual', 'pro_monthly', 'family_annual'] as PlanChoice[]).map((id) => (
+                      <label
+                        key={id}
+                        className={`flex items-center justify-between gap-2 rounded-lg border px-3 py-2 cursor-pointer ${planChoice === id ? 'border-emerald-500 bg-emerald-50' : 'border-slate-200 bg-white'}`}
+                      >
+                        <span className="flex items-center gap-2">
+                          <input
+                            type="radio"
+                            name={`${uid}-plan`}
+                            value={id}
+                            checked={planChoice === id}
+                            onChange={() => setPlanChoice(id)}
+                            className="accent-emerald-600"
+                          />
+                          <span className="font-semibold text-slate-800">{id === 'free' ? 'Free (Early User)' : CHECKOUT_PLANS[id].label}</span>
+                        </span>
+                        <span className="font-mono text-slate-600">{id === 'free' ? '€0' : CHECKOUT_PLANS[id].price}</span>
+                      </label>
+                    ))}
+                  </div>
+                  <p className="mt-1 text-[10px] text-slate-500">
+                    {promoCode.trim()
+                      ? `Your promo code unlocks Pro free for ${PROMO_MONTHS} months once your email is verified, so no payment is needed.`
+                      : planChoice === 'free'
+                        ? 'You can upgrade any time from Plan & billing in the dashboard.'
+                        : 'After creating your account you\u2019ll go to Stripe\u2019s secure checkout. You can cancel any time.'}
+                  </p>
+                </fieldset>
+              )}
+
+              {billingEnabled && (
+                <div>
+                  <label htmlFor={`${uid}-promo`} className={labelClass}>Promo code (optional)</label>
+                  <input
+                    id={`${uid}-promo`}
+                    type="text"
+                    maxLength={32}
+                    autoComplete="off"
+                    value={promoCode}
+                    onChange={(e) => setPromoCode(e.target.value.toUpperCase())}
+                    placeholder="EARLY-XXXXXXXX"
+                    className={`${inputClass} font-mono uppercase`}
+                  />
+                </div>
+              )}
+
               <div className="pt-2">
                 <label className="flex items-start gap-2 cursor-pointer text-[11px] text-slate-600 leading-relaxed">
                   <input
@@ -356,7 +448,7 @@ export const EarlyAccessModal: React.FC<EarlyAccessModalProps> = ({
                 className="w-full py-3 px-4 rounded-xl font-bold text-sm bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 disabled:cursor-not-allowed text-white shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
               >
                 {isSending && <Loader2 className="w-4 h-4 animate-spin" />}
-                <span>{isSending ? 'Creating account…' : 'Create free account'}</span>
+                <span>{isSending ? 'Creating account…' : billingEnabled && planChoice !== 'free' && !promoCode.trim() ? 'Create account & continue to payment' : 'Create free account'}</span>
                 {!isSending && <ArrowRight className="w-4 h-4" />}
               </button>
 

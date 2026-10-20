@@ -1,0 +1,26 @@
+# Cloudflare Worker for billing, promo codes, households and the admin API.
+# Free plan is enough. Deploy from this folder with: npx wrangler deploy
+name = "investireland-api"
+main = "src/index.ts"
+compatibility_date = "2026-10-01"
+workers_dev = false
+
+# The site's CSP only allows this origin, so the Worker must be served from it (DNS is on Cloudflare).
+routes = [{ pattern = "api.investirelandai.ie", custom_domain = true }]
+
+[vars]
+FIREBASE_PROJECT_ID = "investirelandai"
+APP_ORIGINS = "https://www.investirelandai.ie,https://investirelandai.ie"
+APP_URL = "https://www.investirelandai.ie"
+# Set this to your admin site's URL (e.g. https://investireland-admin.pages.dev).
+ADMIN_ORIGIN = "https://investireland-admin.pages.dev"
+EMAIL_FROM = "hello@investirelandai.ie"
+EMAIL_FROM_NAME = "InvestIreland AI"
+EMAIL_DAILY_LIMIT = "300"
+PROMO_GLOBAL_CAP = "1000"
+
+# Secrets - set each with: npx wrangler secret put NAME
+#   ADMIN_UIDS, GOOGLE_SERVICE_ACCOUNT, LINK_SIGNING_SECRET, BREVO_API_KEY,
+#   STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET,
+#   STRIPE_PRICE_PRO_MONTHLY, STRIPE_PRICE_PRO_ANNUAL, STRIPE_PRICE_FAMILY_ANNUAL
+#   EMAIL_REPLY_TO (optional)

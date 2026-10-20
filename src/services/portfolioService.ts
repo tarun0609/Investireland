@@ -79,6 +79,14 @@ export async function loadUserHoldings(userId: string): Promise<Holding[]> {
   return holdings.sort((a, b) => String(b.updatedAt ?? '').localeCompare(String(a.updatedAt ?? '')));
 }
 
+/** Read-only holdings of a Family-plan household partner (allowed by Firestore rules while the plan is active). */
+export async function loadPartnerHoldings(partnerUid: string): Promise<Holding[]> {
+  const snap = await getDocs(collection(db, 'users', partnerUid, 'holdings'));
+  const holdings: Holding[] = [];
+  snap.forEach((d) => holdings.push(holdingFromDoc(d.id, d.data())));
+  return holdings;
+}
+
 export async function saveUserHolding(userId: string, holding: Holding): Promise<PersistResult> {
   const uid = signedInUid(userId);
   if (!uid) {
