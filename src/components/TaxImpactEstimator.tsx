@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Holding, Currency } from '../types';
 import { FALLBACK_FISCAL_DATA, formatCurrency, convertFromEUR } from '../services/fiscalDataService';
+import { describeFxRates } from '../services/fxRateService';
 import { 
   calculateTaxImpact, 
   TaxSimulationInputs, 
@@ -116,7 +117,7 @@ Estimated Foreign Tax Credit: -${fmtEUR(taxResults.totalForeignTaxCreditsEUR)}
 Estimated Net Payable Tax: ${fmtEUR(taxResults.netPayableTaxEUR)} (Effective Rate: ${taxResults.overallEffectiveRatePct.toFixed(1)}%)
 Announced Investment Account (PSIA) potential saving: ${fmtEUR(taxResults.psialSavingsPotentialEUR)}
 
-Estimates only, based on sample/reference FX rates and simplified rules. Confirm with a qualified tax adviser.`;
+Estimates only, based on ${describeFxRates()} and simplified rules. Confirm with a qualified tax adviser.`;
 
     if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
     try {
@@ -586,7 +587,7 @@ Estimates only, based on sample/reference FX rates and simplified rules. Confirm
 
                   <div className="flex justify-between text-[10px] text-slate-400 mt-1">
                     <span>-15% (Stronger USD)</span>
-                    <span className="font-semibold text-slate-600">Ref: {FALLBACK_FISCAL_DATA.macroIndicators.fxRates.EUR_TO_USD}</span>
+                    <span className="font-semibold text-slate-600">ECB: {FALLBACK_FISCAL_DATA.macroIndicators.fxRates.EUR_TO_USD.toFixed(4)}</span>
                     <span>+15% (Weaker USD)</span>
                   </div>
 
@@ -639,7 +640,7 @@ Estimates only, based on sample/reference FX rates and simplified rules. Confirm
 
                   <div className="flex justify-between text-[10px] text-slate-400 mt-1">
                     <span>-15% (Stronger INR)</span>
-                    <span className="font-semibold text-slate-600">Ref: ₹{FALLBACK_FISCAL_DATA.macroIndicators.fxRates.EUR_TO_INR}</span>
+                    <span className="font-semibold text-slate-600">ECB: ₹{FALLBACK_FISCAL_DATA.macroIndicators.fxRates.EUR_TO_INR.toFixed(2)}</span>
                     <span>+15% (Weaker INR)</span>
                   </div>
 

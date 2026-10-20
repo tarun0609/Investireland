@@ -78,6 +78,7 @@ export interface FiscalDataResponse {
       EUR_TO_USD: number;
       EUR_TO_GBP: number;
       lastUpdated: string;
+      source?: 'ECB' | 'bundled';
     };
   };
   officialSources: OfficialSource[];

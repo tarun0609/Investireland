@@ -90,6 +90,7 @@ export function buildContentSecurityPolicy(isProduction: boolean) {
       mediaSrc: ["'self'"],
       connectSrc: [
         "'self'",
+        'https://data-api.ecb.europa.eu',
         'https://*.googleapis.com',
         'https://*.firebaseio.com',
         'wss://*.firebaseio.com',

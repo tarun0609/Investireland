@@ -2,8 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Currency, 
   Holding, 
-  InvestmentAccountState,
-  CountryExposure
+  InvestmentAccountState
 } from '../types';
 import { formatCurrency, convertFromEUR, convertToEUR, FALLBACK_FISCAL_DATA } from '../services/fiscalDataService';
 import { computeFinancialXRay } from '../services/financialXRayService';
@@ -18,6 +17,10 @@ import { DividendTracker } from './DividendTracker';
 import { FinancialGoalMilestones } from './FinancialGoalMilestones';
 import { CurrencyVolatilityHeatmap } from './CurrencyVolatilityHeatmap';
 import { UserAuthModal, type AuthModalTab } from './UserAuthModal';
+import { HoldingFormModal } from './HoldingFormModal';
+import { CsvImportPanel } from './CsvImportPanel';
+import { MAX_PROVIDER_LENGTH } from '../services/holdingForm';
+import type { ImportPlanItem } from '../services/csvImportService';
 import { getActiveUser, isDemoUser, subscribeToActiveUser, updateActiveUserProfile } from '../services/authEmailService';
 import { AuthUser } from '../types';
 import { 
@@ -52,19 +55,27 @@ import {
   Flame
 } from 'lucide-react';
 
-const MAX_ASSET_NAME_LENGTH = 150;
-const MAX_PROVIDER_LENGTH = 100;
-const MAX_HOLDING_VALUE = 1_000_000_000_000;
+const COUNTRY_LABELS: Record<Holding['country'], string> = {
+  Ireland: '🇮🇪 Ireland',
+  India: '🇮🇳 India',
+  US: '🇺🇸 US',
+  Europe: '🇪🇺 Europe',
+  Other: '🌐 Other',
+};
 
-const todayISODate = () => {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+const formatUnits = (n: number) => n.toLocaleString('en-IE', { maximumFractionDigits: 4 });
+
+const formatUpdated = (iso: string) => {
+  const d = new Date(`${String(iso).slice(0, 10)}T00:00:00`);
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString('en-IE', { day: 'numeric', month: 'short', year: 'numeric' });
 };
 
 interface DashboardViewProps {
   currentCurrency: Currency;
   holdings: Holding[];
   onAddHolding: (holding: Holding) => void;
+  onUpdateHolding: (holding: Holding) => void;
+  onImportHoldings: (items: ImportPlanItem[]) => Promise<number>;
   onDeleteHolding: (id: string) => void;
   investmentAccount: InvestmentAccountState;
   onAddContribution: (amount: number, provider: string) => void;
@@ -75,6 +86,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   currentCurrency,
   holdings,
   onAddHolding,
+  onUpdateHolding,
+  onImportHoldings,
   onDeleteHolding,
   investmentAccount,
   onAddContribution,
@@ -122,16 +135,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     setIsEditingName(false);
   };
 
-  // Add holding modal
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [newAssetName, setNewAssetName] = useState('');
-  const [newAssetType, setNewAssetType] = useState<Holding['assetType']>('ETF');
-  const [newUnits, setNewUnits] = useState('1');
-  const [newValue, setNewValue] = useState('');
-  const [newCurrency, setNewCurrency] = useState<Currency>('EUR');
-  const [newCountry, setNewCountry] = useState<CountryExposure>('Ireland');
-  const [newProvider, setNewProvider] = useState('');
-  const [holdingFormError, setHoldingFormError] = useState<string | null>(null);
+  // Add / edit holding modal: null = closed, undefined holding = add
+  const [holdingModal, setHoldingModal] = useState<{ holding?: Holding } | null>(null);
 
   // Add contribution modal for Investment Account
   const [isContributionModalOpen, setIsContributionModalOpen] = useState(false);
@@ -142,9 +147,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   // PDF Export Modal State
   const [isExportPdfOpen, setIsExportPdfOpen] = useState(false);
   const [isInvAccountPdfOpen, setIsInvAccountPdfOpen] = useState(false);
-
-  // Statement import (parsing is not available yet; only an example preview is shown)
-  const [importedFile, setImportedFile] = useState<string | null>(null);
 
   // Compute live metrics
   const xray = computeFinancialXRay(holdings, currentCurrency);
@@ -162,15 +164,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     ? Math.min(100, Math.max(0, (investmentAccount.annualContributions / investmentAccount.annualLimit) * 100))
     : 0;
 
-  const openAddHoldingModal = () => {
-    setHoldingFormError(null);
-    setIsAddModalOpen(true);
-  };
-
-  const closeAddHoldingModal = () => {
-    setIsAddModalOpen(false);
-    setHoldingFormError(null);
-  };
+  const openAddHoldingModal = () => setHoldingModal({});
+  const openEditHoldingModal = (holding: Holding) => setHoldingModal({ holding });
+  const closeHoldingModal = () => setHoldingModal(null);
 
   const openContributionModal = () => {
     setContribError(null);
@@ -178,40 +174,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     setIsContributionModalOpen(true);
   };
 
-  const handleSaveHolding = (e: React.FormEvent) => {
-    e.preventDefault();
-    const name = newAssetName.trim();
-    const value = Number(newValue);
-    const units = Number(newUnits);
-    if (!name) {
-      setHoldingFormError('Enter an asset name.');
-      return;
-    }
-    if (newValue.trim() === '' || !Number.isFinite(value) || value <= 0 || value > MAX_HOLDING_VALUE) {
-      setHoldingFormError('Enter a current value greater than zero.');
-      return;
-    }
-    if (newUnits.trim() === '' || !Number.isFinite(units) || units <= 0 || units > MAX_HOLDING_VALUE) {
-      setHoldingFormError('Enter a number of units greater than zero.');
-      return;
-    }
-    const item: Holding = {
-      id: `h-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      assetName: name.slice(0, MAX_ASSET_NAME_LENGTH),
-      assetType: newAssetType,
-      units,
-      unitPrice: value / units,
-      currentValue: value,
-      currency: newCurrency,
-      country: newCountry,
-      provider: newProvider.trim().slice(0, MAX_PROVIDER_LENGTH),
-      updatedAt: todayISODate()
-    };
-    onAddHolding(item);
-    closeAddHoldingModal();
-    setNewAssetName('');
-    setNewValue('');
-    setNewUnits('1');
+  const handleSaveHolding = (holding: Holding) => {
+    if (holdingModal?.holding) onUpdateHolding(holding);
+    else onAddHolding(holding);
+    closeHoldingModal();
   };
 
   const handleDeleteHolding = (holding: Holding) => {
@@ -935,16 +901,19 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       <th className="py-3 px-3">Asset Name</th>
                       <th className="py-3 px-3">Type</th>
                       <th className="py-3 px-3">Country</th>
-                      <th className="py-3 px-3">Original Value</th>
-                      <th className="py-3 px-3">Value ({currentCurrency})</th>
+                      <th className="py-3 px-3 text-right">Units</th>
+                      <th className="py-3 px-3 text-right">Price / unit</th>
+                      <th className="py-3 px-3 text-right">Value</th>
+                      <th className="py-3 px-3 text-right">Value ({currentCurrency})</th>
                       <th className="py-3 px-3">Provider</th>
+                      <th className="py-3 px-3">Updated</th>
                       <th className="py-3 px-3 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 text-slate-700">
                     {holdings.length === 0 && (
                       <tr>
-                        <td colSpan={7} className="py-12 px-3 text-center">
+                        <td colSpan={10} className="py-12 px-3 text-center">
                           <PieChart className="w-8 h-8 mx-auto text-slate-300" />
                           <p className="mt-2 font-semibold text-slate-800">No holdings yet</p>
                           <p className="mt-1 text-slate-500">Add your pensions, ETFs, funds, shares or cash to see your unified portfolio.</p>
@@ -965,6 +934,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         <tr key={h.id} className="hover:bg-slate-50/50">
                           <td className="py-3 px-3 font-bold text-slate-900">
                             <div className="break-words max-w-[220px]">{h.assetName}</div>
+                            {(h.ticker || h.isin) && (
+                              <div className="text-[10px] text-slate-500 font-mono font-normal">{[h.ticker, h.isin].filter(Boolean).join(' · ')}</div>
+                            )}
                             {h.notes && <div className="text-[10px] text-slate-400 font-normal">{h.notes}</div>}
                           </td>
                           <td className="py-3 px-3">
@@ -973,18 +945,36 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                             </span>
                           </td>
                           <td className="py-3 px-3 font-semibold whitespace-nowrap">
-                            {h.country === 'Ireland' ? '🇮🇪 Ireland' : h.country === 'India' ? '🇮🇳 India' : h.country === 'US' ? '🇺🇸 US' : '🇪🇺 Europe'}
+                            {COUNTRY_LABELS[h.country] ?? h.country}
                           </td>
-                          <td className="py-3 px-3 font-mono font-bold text-slate-900 whitespace-nowrap">
+                          <td className="py-3 px-3 font-mono text-right whitespace-nowrap">
+                            {formatUnits(h.units)}
+                          </td>
+                          <td className="py-3 px-3 font-mono text-right whitespace-nowrap">
+                            {formatCurrency(h.unitPrice, h.currency, 2)}
+                          </td>
+                          <td className="py-3 px-3 font-mono font-bold text-slate-900 text-right whitespace-nowrap">
                             {formatCurrency(h.currentValue, h.currency)}
                           </td>
-                          <td className="py-3 px-3 font-mono font-bold text-emerald-800 whitespace-nowrap">
+                          <td className="py-3 px-3 font-mono font-bold text-emerald-800 text-right whitespace-nowrap">
                             {formatCurrency(convertFromEUR(valEUR, currentCurrency), currentCurrency)}
                           </td>
                           <td className="py-3 px-3 text-slate-500">
                             {h.provider}
                           </td>
-                          <td className="py-3 px-3 text-right">
+                          <td className="py-3 px-3 text-slate-500 whitespace-nowrap">
+                            {formatUpdated(h.updatedAt)}
+                          </td>
+                          <td className="py-3 px-3 text-right whitespace-nowrap">
+                            <button
+                              type="button"
+                              onClick={() => openEditHoldingModal(h)}
+                              className="text-slate-400 hover:text-emerald-700 p-1 cursor-pointer transition-colors"
+                              title="Edit position"
+                              aria-label={`Edit ${h.assetName}`}
+                            >
+                              <Edit3 className="w-4 h-4" />
+                            </button>
                             <button
                               type="button"
                               onClick={() => handleDeleteHolding(h)}
@@ -1066,242 +1056,25 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
         )}
 
-        {/* TAB 6: STATEMENT / CSV IMPORTER (Spec Section 34 & 35) */}
+        {/* TAB 6: CSV IMPORTER */}
         {activeTab === 'import' && (
-          <div className="mt-6 bg-white p-8 rounded-2xl border border-slate-200 shadow-xs max-w-2xl mx-auto">
-            <div className="text-center">
-              <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-800 flex items-center justify-center mx-auto mb-3">
-                <FileUp className="w-6 h-6" />
-              </div>
-              <h2 className="text-2xl font-bold text-slate-900">
-                CSV Statement &amp; Document AI Importer
-              </h2>
-              <p className="text-xs sm:text-sm text-slate-500 mt-1 max-w-md mx-auto">
-                Automatic parsing of broker statements (Davy, Degiro, Zerodha, Morgan Stanley, Irish Life) is coming soon. For now, add your positions manually &mdash; nothing is imported without your confirmation.
-              </p>
-            </div>
-
-            {!importedFile ? (
-              <div className="mt-8 border-2 border-dashed border-slate-300 hover:border-emerald-500 rounded-2xl p-6 sm:p-8 text-center cursor-pointer transition-all bg-slate-50/50">
-                <input
-                  type="file"
-                  accept=".csv,.xlsx,.pdf"
-                  onChange={(e) => {
-                    if (e.target.files?.[0]) {
-                      setImportedFile(e.target.files[0].name);
-                    }
-                    e.target.value = '';
-                  }}
-                  className="hidden"
-                  id="csv-file-input"
-                />
-                <label htmlFor="csv-file-input" className="cursor-pointer block">
-                  <FileUp className="w-8 h-8 text-slate-400 mx-auto mb-2" />
-                  <span className="text-sm font-bold text-slate-800 block">
-                    Click to select CSV or Broker PDF statement
-                  </span>
-                  <span className="text-xs text-slate-400 mt-1 block">
-                    Preview only &middot; your file stays on this device and is not uploaded
-                  </span>
-                </label>
-              </div>
-            ) : (
-              <div className="mt-8 bg-slate-50 p-4 sm:p-5 rounded-xl border border-slate-200 space-y-4">
-                <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-bold text-slate-800">
-                  <span className="break-all">Selected file: {importedFile}</span>
-                  <span className="text-amber-800 bg-amber-100 px-2 py-0.5 rounded font-mono">
-                    EXAMPLE PREVIEW
-                  </span>
-                </div>
-
-                <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-900 flex items-start gap-2">
-                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                  <span>Statement parsing isn&rsquo;t available yet, so your file was not read. The positions below are an illustrative example of what the importer will extract &mdash; they are not your data.</span>
-                </div>
-
-                <div className="p-3 bg-white rounded-lg border border-slate-200 text-xs space-y-1.5 font-mono break-words">
-                  <div className="text-slate-500 font-sans font-semibold">Example extracted positions:</div>
-                  <div className="text-slate-800">&bull; Vanguard S&amp;P 500 UCITS ETF &mdash; 50 units &mdash; €4,850 (EUR)</div>
-                  <div className="text-slate-800">&bull; Mirae Asset Large Cap Fund &mdash; 1,200 units &mdash; ₹1,80,000 (INR)</div>
-                  <div className="text-slate-800">&bull; Microsoft Corp (MSFT) &mdash; 15 units &mdash; $6,450 (USD)</div>
-                </div>
-
-                <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => setImportedFile(null)}
-                    className="text-xs text-slate-500 hover:text-slate-800 cursor-pointer"
-                  >
-                    Choose another file
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setImportedFile(null); openAddHoldingModal(); }}
-                    className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer"
-                  >
-                    Add holdings manually
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
+          <CsvImportPanel
+            holdings={holdings}
+            onImport={onImportHoldings}
+            onAddManually={openAddHoldingModal}
+            onDone={() => setActiveTab('portfolio')}
+          />
         )}
 
       </div>
-      {/* MODAL 1: ADD HOLDING */}
-      {isAddModalOpen && (
-        <div
-          className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="add-holding-title"
-          onKeyDown={(e) => { if (e.key === 'Escape') closeAddHoldingModal(); }}
-        >
-          <div className="bg-white rounded-2xl max-w-md w-full max-h-[90vh] overflow-y-auto p-5 sm:p-6 shadow-2xl border border-slate-200">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-100">
-              <h3 id="add-holding-title" className="text-lg font-bold text-slate-900">Add Investment Holding</h3>
-              <button type="button" onClick={closeAddHoldingModal} aria-label="Close" className="text-slate-400 hover:text-slate-700 cursor-pointer">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveHolding} noValidate className="mt-4 space-y-3.5 text-xs">
-              <div>
-                <label htmlFor="holding-name" className="block font-bold text-slate-700 mb-1">Asset Name *</label>
-                <input
-                  id="holding-name"
-                  type="text"
-                  required
-                  autoFocus
-                  maxLength={MAX_ASSET_NAME_LENGTH}
-                  value={newAssetName}
-                  onChange={(e) => setNewAssetName(e.target.value)}
-                  placeholder="e.g. HDFC Top 100 or iShares Core MSCI World"
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-medium"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label htmlFor="holding-type" className="block font-bold text-slate-700 mb-1">Asset Type</label>
-                  <select
-                    id="holding-type"
-                    value={newAssetType}
-                    onChange={(e) => setNewAssetType(e.target.value as Holding['assetType'])}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-medium"
-                  >
-                    <option value="ETF">UCITS ETF</option>
-                    <option value="Mutual Fund">Mutual Fund</option>
-                    <option value="Share">Direct Share</option>
-                    <option value="RSU">US Tech RSU</option>
-                    <option value="Pension">Pension / PRSA</option>
-                    <option value="Cash / Deposit">Cash Deposit</option>
-                  </select>
-                </div>
-                <div>
-                  <label htmlFor="holding-currency" className="block font-bold text-slate-700 mb-1">Currency</label>
-                  <select
-                    id="holding-currency"
-                    value={newCurrency}
-                    onChange={(e) => setNewCurrency(e.target.value as Currency)}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-medium"
-                  >
-                    <option value="EUR">Euro (€ EUR)</option>
-                    <option value="INR">Indian Rupee (₹ INR)</option>
-                    <option value="USD">US Dollar ($ USD)</option>
-                    <option value="GBP">British Pound (£ GBP)</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label htmlFor="holding-value" className="block font-bold text-slate-700 mb-1">Current Value ({newCurrency}) *</label>
-                  <input
-                    id="holding-value"
-                    type="number"
-                    required
-                    min="0.01"
-                    step="any"
-                    max={MAX_HOLDING_VALUE}
-                    inputMode="decimal"
-                    value={newValue}
-                    onChange={(e) => setNewValue(e.target.value)}
-                    placeholder="e.g. 5000"
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-mono font-bold"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="holding-units" className="block font-bold text-slate-700 mb-1">Units *</label>
-                  <input
-                    id="holding-units"
-                    type="number"
-                    required
-                    min="0.0001"
-                    step="any"
-                    max={MAX_HOLDING_VALUE}
-                    inputMode="decimal"
-                    value={newUnits}
-                    onChange={(e) => setNewUnits(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-mono font-bold"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label htmlFor="holding-country" className="block font-bold text-slate-700 mb-1">Country Jurisdiction</label>
-                  <select
-                    id="holding-country"
-                    value={newCountry}
-                    onChange={(e) => setNewCountry(e.target.value as CountryExposure)}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-medium"
-                  >
-                    <option value="Ireland">Ireland</option>
-                    <option value="India">India</option>
-                    <option value="US">United States</option>
-                    <option value="Europe">Europe / Global</option>
-                  </select>
-                </div>
-                <div>
-                  <label htmlFor="holding-provider" className="block font-bold text-slate-700 mb-1">Provider / Platform</label>
-                  <input
-                    id="holding-provider"
-                    type="text"
-                    maxLength={MAX_PROVIDER_LENGTH}
-                    value={newProvider}
-                    onChange={(e) => setNewProvider(e.target.value)}
-                    placeholder="e.g. Davy, Zerodha, Bunq"
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-medium"
-                  />
-                </div>
-              </div>
-
-              {holdingFormError && (
-                <p role="alert" className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">
-                  {holdingFormError}
-                </p>
-              )}
-
-              <div className="pt-2 flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={closeAddHoldingModal}
-                  className="px-4 py-2 border border-slate-300 rounded-lg text-slate-700 font-bold cursor-pointer hover:bg-slate-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={!newAssetName.trim() || newValue.trim() === ''}
-                  className="px-5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-lg cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Save Position
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+      {/* MODAL 1: ADD / EDIT HOLDING */}
+      {holdingModal && (
+        <HoldingFormModal
+          key={holdingModal.holding?.id ?? 'new'}
+          initial={holdingModal.holding}
+          onSave={handleSaveHolding}
+          onClose={closeHoldingModal}
+        />
       )}
 
       {/* MODAL 2: RECORD CONTRIBUTION */}

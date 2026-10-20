@@ -53,7 +53,11 @@ service cloud.firestore {
              optionalNumber(data, 'unitPrice') &&
              optionalNumber(data, 'currentValue') &&
              optionalNumber(data, 'purchaseValue') &&
-             (!('notes' in data) || (data.notes is string && data.notes.size() <= 1000));
+             (!('notes' in data) || (data.notes is string && data.notes.size() <= 1000)) &&
+             (!('provider' in data) || (data.provider is string && data.provider.size() <= 100)) &&
+             (!('ticker' in data) || (data.ticker is string && data.ticker.size() <= 20)) &&
+             (!('isin' in data) || (data.isin is string && data.isin.size() <= 12)) &&
+             (!('country' in data) || data.country in ['Ireland', 'India', 'US', 'Europe', 'Other']);
     }
 
     function isValidMilestone(data, milestoneId) {

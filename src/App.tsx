@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
+import React, { Suspense, lazy, useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Currency, Holding, InvestmentAccountState } from './types';
 import { INITIAL_HOLDINGS, INITIAL_INVESTMENT_ACCOUNT_STATE } from './data/mockData';
 import { Navbar } from './components/Navbar';
@@ -20,6 +20,8 @@ import { Footer } from './components/Footer';
 import { EarlyAccessModal } from './components/EarlyAccessModal';
 import { isDemoUser, subscribeToActiveUser, waitForAuthReady } from './services/authEmailService';
 import { applyPageSeo, seoForView } from './utils/seo';
+import { getFxRates, loadEcbRates, subscribeFxRates } from './services/fxRateService';
+import type { ImportPlanItem } from './services/csvImportService';
 import { 
   loadUserHoldings, 
   saveUserHolding, 
@@ -68,6 +70,12 @@ export default function App() {
   useEffect(() => {
     applyPageSeo(seoForView(activeView), window.location.pathname);
   }, [activeView]);
+
+  // Live ECB reference rates; subscribing re-renders the tree so every EUR conversion updates.
+  useSyncExternalStore(subscribeFxRates, getFxRates);
+  useEffect(() => {
+    void loadEcbRates();
+  }, []);
 
   const [activeUserId, setActiveUserId] = useState<string>('guest');
   const activeUserIdRef = useRef(activeUserId);
@@ -148,6 +156,35 @@ export default function App() {
       setHoldings(prev => prev.filter(h => h.id !== newHolding.id));
       setDataError(result.error ?? 'Could not save the holding.');
     }
+  }, [activeUserId]);
+
+  const handleUpdateHolding = useCallback(async (updated: Holding) => {
+    if (!ensureDataReady()) return;
+    const previous = holdings.find(h => h.id === updated.id);
+    setHoldings(prev => prev.map(h => (h.id === updated.id ? updated : h)));
+    const result = await saveUserHolding(activeUserId, updated);
+    if (!result.success) {
+      if (previous) setHoldings(prev => prev.map(h => (h.id === updated.id ? previous : h)));
+      setDataError(result.error ?? 'Could not update the holding.');
+    }
+  }, [activeUserId, holdings]);
+
+  // Saves sequentially so local storage writes never race; returns how many failed.
+  const handleImportHoldings = useCallback(async (items: ImportPlanItem[]): Promise<number> => {
+    if (!ensureDataReady()) return items.length;
+    const uid = activeUserId;
+    let failed = 0;
+    for (const { holding, action } of items) {
+      const result = await saveUserHolding(uid, holding);
+      if (activeUserIdRef.current !== uid) return items.length;
+      if (!result.success) {
+        failed++;
+        continue;
+      }
+      setHoldings(prev => (action === 'update' ? prev.map(h => (h.id === holding.id ? holding : h)) : [holding, ...prev]));
+    }
+    if (failed > 0) setDataError(`${failed} imported holding${failed === 1 ? '' : 's'} could not be saved.`);
+    return failed;
   }, [activeUserId]);
 
   const handleDeleteHolding = useCallback(async (id: string) => {
@@ -321,6 +358,8 @@ export default function App() {
           currentCurrency={currentCurrency}
           holdings={holdings}
           onAddHolding={handleAddHolding}
+          onUpdateHolding={handleUpdateHolding}
+          onImportHoldings={handleImportHoldings}
           onDeleteHolding={handleDeleteHolding}
           investmentAccount={investmentAccount}
           onAddContribution={handleAddContribution}

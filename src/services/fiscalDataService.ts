@@ -1,4 +1,5 @@
 import { FiscalDataResponse, Currency } from '../types';
+import { getFxRates } from './fxRateService';
 
 /** Date the bundled reference figures were last manually reviewed against official sources. */
 export const FISCAL_DATA_LAST_REVIEWED = '2026-10-01';
@@ -40,11 +41,9 @@ export const FALLBACK_FISCAL_DATA: FiscalDataResponse = {
     irelandHICPInflation: 2.2,
     ecbRefinancingRate: 3.15,
     irishHouseholdSavingsRate: 14.8,
-    fxRates: {
-      EUR_TO_INR: 92.45,
-      EUR_TO_USD: 1.085,
-      EUR_TO_GBP: 0.855,
-      lastUpdated: FISCAL_DATA_LAST_REVIEWED
+    // Always the latest ECB reference rates (live when reachable, otherwise the bundled copy).
+    get fxRates() {
+      return getFxRates();
     }
   },
   officialSources: [
@@ -106,7 +105,8 @@ export async function fetchOfficialFiscalData(): Promise<FiscalDataResponse> {
     const data = json?.data;
     // Only accept a payload with the shape the UI relies on; otherwise use the bundled dataset
     if (data && data.regime?.fy26 && data.regime?.fy27 && Array.isArray(data.officialSources) && data.macroIndicators?.fxRates) {
-      return data as FiscalDataResponse;
+      // FX always comes from the ECB feed so every screen converts with the same rates.
+      return { ...data, macroIndicators: { ...data.macroIndicators, fxRates: getFxRates() } } as FiscalDataResponse;
     }
     return FALLBACK_FISCAL_DATA;
   } catch (err) {

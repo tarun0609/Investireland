@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Currency, Holding } from '../types';
 import { computeFinancialXRay, TOP5_CONCENTRATION_PCT } from '../services/financialXRayService';
 import { formatCurrency, convertFromEUR } from '../services/fiscalDataService';
+import { describeFxRates } from '../services/fxRateService';
 import { Layers, Sparkles, TrendingDown, Globe2, ArrowRight } from 'lucide-react';
 
 interface FinancialXRaySectionProps {
@@ -283,7 +284,7 @@ export const FinancialXRaySection: React.FC<FinancialXRaySectionProps> = ({
                 {xray.aiDiagnosis}
               </p>
               <p className="text-[11px] text-slate-500 mt-1.5">
-                Uses bundled indicative FX rates. General information only, not financial advice.
+                Converts using {describeFxRates()}. General information only, not financial advice.
               </p>
             </div>
           </div>

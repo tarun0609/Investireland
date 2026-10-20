@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Currency } from '../types';
 import { formatCurrency, convertFromEUR } from '../services/fiscalDataService';
+import { describeFxRates } from '../services/fxRateService';
 import { 
   TrendingUp, 
   HelpCircle, 
@@ -126,7 +127,7 @@ export const ScenarioPlannerSection: React.FC<ScenarioPlannerSectionProps> = ({
 
           {currentCurrency !== 'EUR' && (
             <p className="mt-3 text-[11px] text-slate-500">
-              Amounts are entered in euro; results are shown in {currentCurrency} at the bundled reference FX rate.
+              Amounts are entered in euro; results are shown in {currentCurrency} using {describeFxRates()}.
             </p>
           )}
           {exceedsAllowance && (
