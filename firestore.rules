@@ -77,6 +77,17 @@ service cloud.firestore {
              (!('history' in data) || (data.history is list && data.history.size() <= 500));
     }
 
+    // Household partners on an active Family plan can read each other's holdings.
+    // Entitlements are written only by the backend Worker, so clients cannot grant themselves access.
+    function isHouseholdPartnerOf(userId) {
+      let ent = get(/databases/$(database)/documents/entitlements/$(userId)).data;
+      return isSignedIn() && request.auth.uid != userId &&
+             ent.get('householdPartner', '') == request.auth.uid &&
+             ent.get('plan', 'free') == 'family' &&
+             ent.get('planExpiresAt', null) is timestamp &&
+             ent.planExpiresAt > request.time;
+    }
+
     match /users/{userId} {
       allow get: if isOwner(userId) && isValidId(userId);
       allow list: if false;
@@ -89,7 +100,7 @@ service cloud.firestore {
       allow delete: if isOwner(userId) && isValidId(userId);
 
       match /holdings/{holdingId} {
-        allow get, list: if isOwner(userId);
+        allow get, list: if isOwner(userId) || (isValidId(userId) && isHouseholdPartnerOf(userId));
         allow create, update: if isOwner(userId) && isValidId(holdingId) && isValidHolding(request.resource.data, holdingId);
         allow delete: if isOwner(userId) && isValidId(holdingId);
       }
@@ -112,5 +123,24 @@ service cloud.firestore {
         allow delete: if isOwner(userId) && isValidId(accountId);
       }
     }
+
+    // Plan, promo and billing state. Written only by the backend Worker (service account bypasses rules).
+    match /entitlements/{userId} {
+      allow get: if isOwner(userId) && isValidId(userId);
+      allow list, write: if false;
+    }
+
+    // Marketing email preference. Users can change their own; the Worker also writes it from unsubscribe links.
+    match /emailOptOuts/{userId} {
+      allow get: if isOwner(userId) && isValidId(userId);
+      allow create, update: if isOwner(userId) && isValidId(userId) &&
+                               request.resource.data.keys().hasOnly(['uid', 'optedOut', 'updatedAt']) &&
+                               request.resource.data.uid == userId &&
+                               request.resource.data.optedOut is bool &&
+                               request.resource.data.updatedAt == request.time;
+      allow delete: if false;
+    }
+
+    // promoCodes, promoRedemptions, counters, households and emailCampaigns stay server-only (default deny).
   }
 }

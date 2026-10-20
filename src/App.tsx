@@ -19,6 +19,25 @@ import { FAQSection } from './components/FAQSection';
 import { Footer } from './components/Footer';
 import { EarlyAccessModal } from './components/EarlyAccessModal';
 import { isDemoUser, subscribeToActiveUser, waitForAuthReady } from './services/authEmailService';
+import { FREE_HOLDINGS_LIMIT, type CheckoutPlan } from './config/plans';
+import {
+  BILLING_ENABLED,
+  BillingError,
+  FREE_ENTITLEMENT,
+  acceptHouseholdInvite,
+  getPendingInvite,
+  getPendingPlan,
+  getPendingPromo,
+  openBillingPortal,
+  planAccess,
+  redeemPromoCode,
+  setPendingInvite,
+  setPendingPlan,
+  setPendingPromo,
+  startCheckout,
+  subscribeEntitlement,
+  type ClientEntitlement,
+} from './services/entitlementService';
 import { applyPageSeo, seoForView } from './utils/seo';
 import { getFxRates, loadEcbRates, subscribeFxRates } from './services/fxRateService';
 import type { ImportPlanItem } from './services/csvImportService';
@@ -79,6 +98,12 @@ export default function App() {
   }, []);
 
   const [activeUserId, setActiveUserId] = useState<string>('guest');
+  const [entitlement, setEntitlement] = useState<ClientEntitlement>(FREE_ENTITLEMENT);
+  const [notice, setNotice] = useState<string | null>(null);
+  const isSignedIn = activeUserId !== 'guest';
+  const access = planAccess(entitlement, isSignedIn);
+  const accessRef = useRef(access);
+  accessRef.current = access;
   const activeUserIdRef = useRef(activeUserId);
   const [holdings, setHoldings] = useState<Holding[]>(INITIAL_HOLDINGS);
   const [investmentAccount, setInvestmentAccount] = useState<InvestmentAccountState>(INITIAL_INVESTMENT_ACCOUNT_STATE);
@@ -125,6 +150,93 @@ export default function App() {
     };
   }, []);
 
+  // Live plan details for the signed-in user.
+  useEffect(() => {
+    setEntitlement(FREE_ENTITLEMENT);
+    if (!BILLING_ENABLED || activeUserId === 'guest') return;
+    return subscribeEntitlement(activeUserId, setEntitlement);
+  }, [activeUserId]);
+
+  // Return links from Stripe (?billing=…) and household invites (?household=…) land on the site root.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const billing = params.get('billing');
+    const invite = params.get('household');
+    if (!billing && !invite) return;
+    if (billing === 'success') setNotice('Thanks! Your payment went through. Your plan updates here within a few seconds.');
+    else if (billing === 'cancelled') setNotice('Checkout was cancelled, so nothing was charged.');
+    if (invite && /^[A-Za-z0-9_-]{10,128}\.[A-Za-z0-9_-]{16,128}$/.test(invite)) {
+      setPendingInvite(invite);
+      setNotice('You\u2019ve been invited to a Family household. Sign in (or create an account) with the invited email address to join.');
+    }
+    params.delete('billing');
+    params.delete('household');
+    const query = params.toString();
+    window.history.replaceState(null, '', `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`);
+    setActiveViewState('app');
+  }, []);
+
+  const showBillingError = (err: unknown) => {
+    setDataError(err instanceof BillingError ? err.message : 'Something went wrong. Please try again.');
+  };
+
+  // Actions chosen before signing in (plan, promo code, household invite) run once the user is signed in.
+  useEffect(() => {
+    if (!BILLING_ENABLED || activeUserId === 'guest') return;
+    const invite = getPendingInvite();
+    const promo = getPendingPromo();
+    const plan = getPendingPlan();
+    if (invite) {
+      acceptHouseholdInvite(invite)
+        .then(() => {
+          setPendingInvite(null);
+          setNotice('You\u2019ve joined the Family household. You now have Family features.');
+        })
+        .catch((err) => {
+          if (!(err instanceof BillingError) || err.code !== 'email_unverified') setPendingInvite(null);
+          showBillingError(err);
+        });
+    } else if (promo) {
+      redeemPromoCode(promo)
+        .then((res) => {
+          setPendingPromo(null);
+          setNotice(`Promo code applied: Pro is unlocked until ${new Date(res.expiresAt).toLocaleDateString('en-IE', { day: 'numeric', month: 'long', year: 'numeric' })}.`);
+        })
+        .catch((err) => {
+          if (err instanceof BillingError && err.code === 'email_unverified') {
+            setNotice(`Verify your email address, then open Plan & billing in the dashboard to redeem ${promo}.`);
+            return;
+          }
+          setPendingPromo(null);
+          showBillingError(err);
+        });
+    } else if (plan) {
+      setPendingPlan(null);
+      startCheckout(plan).catch(showBillingError);
+    }
+  }, [activeUserId]);
+
+  const handleUpgrade = useCallback(async (plan: CheckoutPlan) => {
+    if (!BILLING_ENABLED) {
+      handleOpenWaitlist({ plan: plan.startsWith('family') ? 'Family' : 'Pro' });
+      return;
+    }
+    if (activeUserIdRef.current === 'guest') {
+      setPendingPlan(plan);
+      handleOpenWaitlist({ plan: plan.startsWith('family') ? 'Family' : 'Pro', checkoutPlan: plan });
+      return;
+    }
+    try {
+      await startCheckout(plan);
+    } catch (err) {
+      if (err instanceof BillingError && err.code === 'has_subscription') {
+        await openBillingPortal().catch(showBillingError);
+        return;
+      }
+      showBillingError(err);
+    }
+  }, []);
+
   const handleOpenWaitlist = (prefillData?: any) => {
     setWaitlistPrefill(prefillData || null);
     setIsWaitlistOpen(true);
@@ -143,14 +255,23 @@ export default function App() {
     }
   };
 
+  const holdingsRef = useRef(holdings);
+  holdingsRef.current = holdings;
+
   const ensureDataReady = () => {
     if (isDataReadyRef.current) return true;
     setDataError('Your portfolio is still loading. Please wait a moment and try again.');
     return false;
   };
 
+  const atFreeHoldingLimit = (current: number) => !accessRef.current.canUse('unlimited_holdings') && current >= FREE_HOLDINGS_LIMIT;
+
   const handleAddHolding = useCallback(async (newHolding: Holding) => {
     if (!ensureDataReady()) return;
+    if (atFreeHoldingLimit(holdingsRef.current.length)) {
+      setDataError(`The Free plan tracks up to ${FREE_HOLDINGS_LIMIT} holdings. Upgrade to Pro for unlimited holdings.`);
+      return;
+    }
     setHoldings(prev => [newHolding, ...prev]);
     const result = await saveUserHolding(activeUserId, newHolding);
     if (!result.success) {
@@ -175,26 +296,32 @@ export default function App() {
     if (!ensureDataReady()) return items.length;
     const uid = activeUserId;
     let failed = 0;
+    let count = holdingsRef.current.length;
+    let skipped = 0;
     for (const { holding, action } of items) {
+      if (action !== 'update' && atFreeHoldingLimit(count)) {
+        skipped++;
+        continue;
+      }
       const result = await saveUserHolding(uid, holding);
       if (activeUserIdRef.current !== uid) return items.length;
       if (!result.success) {
         failed++;
         continue;
       }
+      if (action !== 'update') count++;
       setHoldings(prev => (action === 'update' ? prev.map(h => (h.id === holding.id ? holding : h)) : [holding, ...prev]));
     }
-    if (failed > 0) setDataError(`${failed} imported holding${failed === 1 ? '' : 's'} could not be saved.`);
-    return failed;
+    if (skipped > 0) setDataError(`${skipped} holding${skipped === 1 ? ' was' : 's were'} not added because the Free plan tracks up to ${FREE_HOLDINGS_LIMIT}. Upgrade to Pro for unlimited holdings.`);
+    else if (failed > 0) setDataError(`${failed} imported holding${failed === 1 ? '' : 's'} could not be saved.`);
+    return failed + skipped;
   }, [activeUserId]);
 
-  const holdingsRef = useRef(holdings);
-  holdingsRef.current = holdings;
   const navRefreshInFlight = useRef(false);
 
   // Updates Indian fund prices (NAV) from mfapi.in; only the price and value of matched funds change.
   const handleRefreshFundPrices = useCallback(async (): Promise<NavRefreshSummary | null> => {
-    if (!isDataReadyRef.current || navRefreshInFlight.current) return null;
+    if (!isDataReadyRef.current || navRefreshInFlight.current || !accessRef.current.canUse('fund_price_refresh')) return null;
     navRefreshInFlight.current = true;
     const uid = activeUserIdRef.current;
     try {
@@ -210,13 +337,13 @@ export default function App() {
   }, [handleImportHoldings]);
 
   useEffect(() => {
-    if (!isDataReady || activeUserId === 'guest') return;
+    if (!isDataReady || activeUserId === 'guest' || !access.canUse('fund_price_refresh')) return;
     if (!holdings.some(isRefreshableFund) || !shouldAutoRefresh(activeUserId, holdings)) return;
     markAutoRefreshed(activeUserId);
     handleRefreshFundPrices().catch(err => console.warn('Fund price refresh failed', err));
     // Runs once per user per day after their data loads; later holding edits must not retrigger it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isDataReady, activeUserId]);
+  }, [isDataReady, activeUserId, access.plan]);
 
   const handleDeleteHolding = useCallback(async (id: string) => {
     if (!ensureDataReady()) return;
@@ -281,6 +408,15 @@ export default function App() {
         <div role="alert" className="sticky top-16 z-40 mx-auto mt-2 flex max-w-3xl items-start justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900 shadow-sm">
           <span>{dataError}</span>
           <button type="button" onClick={() => setDataError(null)} aria-label="Dismiss" className="shrink-0 cursor-pointer font-bold text-rose-700 hover:text-rose-900">
+            ×
+          </button>
+        </div>
+      )}
+
+      {notice && (
+        <div role="status" className="sticky top-16 z-40 mx-auto mt-2 flex max-w-3xl items-start justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 shadow-sm">
+          <span>{notice}</span>
+          <button type="button" onClick={() => setNotice(null)} aria-label="Dismiss" className="shrink-0 cursor-pointer font-bold text-emerald-700 hover:text-emerald-900">
             ×
           </button>
         </div>
@@ -369,6 +505,10 @@ export default function App() {
           {/* 13. Transparent Pricing (Free, Pro, Family, B2B Enterprise API) */}
           <PricingSection
             onOpenWaitlist={(plan) => handleOpenWaitlist({ plan })}
+            billingEnabled={BILLING_ENABLED}
+            currentPlan={access.plan}
+            onUpgrade={handleUpgrade}
+            onOpenDashboard={() => setActiveView('app')}
           />
 
           {/* 14. Frequently Asked Questions */}
@@ -396,6 +536,9 @@ export default function App() {
           investmentAccount={investmentAccount}
           onAddContribution={handleAddContribution}
           onOpenWaitlist={handleOpenWaitlist}
+          access={access}
+          onUpgrade={handleUpgrade}
+          onNotice={setNotice}
         />
         </Suspense>
       )}
@@ -405,6 +548,7 @@ export default function App() {
         isOpen={isWaitlistOpen}
         onClose={() => setIsWaitlistOpen(false)}
         prefillData={waitlistPrefill}
+        billingEnabled={BILLING_ENABLED}
       />
 
     </div>

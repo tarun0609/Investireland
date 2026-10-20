@@ -53,9 +53,25 @@ import {
   Mail,
   UserCheck,
   Flame,
-  RefreshCw
+  RefreshCw,
+  CreditCard
 } from 'lucide-react';
 import { isRefreshableFund, type NavRefreshSummary } from '../services/navRefreshService';
+import { FREE_HOLDINGS_LIMIT, PLAN_LABELS, type CheckoutPlan, type Feature } from '../config/plans';
+import type { PlanAccess } from '../services/entitlementService';
+import { LockedFeatureCard } from './PlanGate';
+import { PlanBillingPanel } from './PlanBillingPanel';
+
+type DashboardTab = 'overview' | 'milestones' | 'volatility' | 'dividend_tracker' | 'tax_estimator' | 'rebalance' | 'markets' | 'investment_account' | 'portfolio' | 'xray' | 'calculator' | 'import' | 'plan';
+
+const TAB_FEATURE: Partial<Record<DashboardTab, Feature>> = {
+  volatility: 'volatility',
+  dividend_tracker: 'dividends',
+  tax_estimator: 'tax_tools',
+  rebalance: 'rebalance',
+  xray: 'xray',
+  import: 'import',
+};
 
 const COUNTRY_LABELS: Record<Holding['country'], string> = {
   Ireland: '🇮🇪 Ireland',
@@ -83,6 +99,9 @@ interface DashboardViewProps {
   investmentAccount: InvestmentAccountState;
   onAddContribution: (amount: number, provider: string) => void;
   onOpenWaitlist: (data?: any) => void;
+  access: PlanAccess;
+  onUpgrade: (plan: CheckoutPlan) => void;
+  onNotice: (message: string) => void;
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
@@ -95,9 +114,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onDeleteHolding,
   investmentAccount,
   onAddContribution,
-  onOpenWaitlist
+  onOpenWaitlist,
+  access,
+  onUpgrade,
+  onNotice
 }) => {
-  const [activeTab, setActiveTab] = useState<'overview' | 'milestones' | 'volatility' | 'dividend_tracker' | 'tax_estimator' | 'rebalance' | 'markets' | 'investment_account' | 'portfolio' | 'xray' | 'calculator' | 'import'>('overview');
+  const [activeTab, setActiveTab] = useState<DashboardTab>('overview');
+  const lockedFeature = TAB_FEATURE[activeTab] && !access.canUse(TAB_FEATURE[activeTab]!) ? TAB_FEATURE[activeTab]! : null;
+  const visibleTab: DashboardTab | null = lockedFeature ? null : activeTab;
+  // Feature shown in the upgrade dialog (opened from buttons outside the tabs).
+  const [upsell, setUpsell] = useState<Feature | null>(null);
+  const withFeature = (feature: Feature, action: () => void) => () => (access.canUse(feature) ? action() : setUpsell(feature));
+  const atHoldingLimit = !access.canUse('unlimited_holdings') && holdings.length >= FREE_HOLDINGS_LIMIT;
   
   const [navStatus, setNavStatus] = useState<{ busy: boolean; message: string | null }>({ busy: false, message: null });
   const handleRefreshFunds = async () => {
@@ -186,7 +214,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     ? Math.min(100, Math.max(0, (investmentAccount.annualContributions / investmentAccount.annualLimit) * 100))
     : 0;
 
-  const openAddHoldingModal = () => setHoldingModal({});
+  const openAddHoldingModal = () => (atHoldingLimit ? setUpsell('unlimited_holdings') : setHoldingModal({}));
   const openEditHoldingModal = (holding: Holding) => setHoldingModal({ holding });
   const closeHoldingModal = () => setHoldingModal(null);
 
@@ -354,7 +382,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </button>
             <button
               type="button"
-              onClick={() => setIsExportPdfOpen(true)}
+              onClick={withFeature('exports', () => setIsExportPdfOpen(true))}
               className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-white border border-slate-300 hover:border-emerald-600 hover:text-emerald-700 text-slate-700 transition-all cursor-pointer shadow-xs"
               title="Export your current portfolio and budget analytics as a printable PDF summary"
             >
@@ -396,12 +424,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             { id: 'portfolio', label: `Holdings (${holdings.length})`, icon: <PieChart className="w-4 h-4" /> },
             { id: 'xray', label: 'Financial X-Ray', icon: <Layers className="w-4 h-4" /> },
             { id: 'calculator', label: 'Budget Calculator', icon: <TrendingUp className="w-4 h-4" /> },
-            { id: 'import', label: 'Import Statement', icon: <FileUp className="w-4 h-4" /> }
+            { id: 'import', label: 'Import Statement', icon: <FileUp className="w-4 h-4" /> },
+            { id: 'plan', label: access.signedIn && access.billingEnabled ? `Plan: ${PLAN_LABELS[access.plan]}` : 'Plan & billing', icon: <CreditCard className="w-4 h-4" /> }
           ].map((tab) => (
             <button
               type="button"
               key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
+              onClick={() => setActiveTab(tab.id as DashboardTab)}
               className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
                 activeTab === tab.id
                   ? 'bg-slate-900 text-white shadow-xs'
@@ -410,12 +439,37 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             >
               {tab.icon}
               <span>{tab.label}</span>
+              {TAB_FEATURE[tab.id as DashboardTab] && !access.canUse(TAB_FEATURE[tab.id as DashboardTab]!) && (
+                <Lock className="w-3 h-3 opacity-70" aria-label="Upgrade required" />
+              )}
             </button>
           ))}
         </div>
 
+        {lockedFeature && (
+          <LockedFeatureCard feature={lockedFeature} onUpgrade={onUpgrade} onShowPlans={() => setActiveTab('plan')} />
+        )}
+
+        {visibleTab === 'plan' && (
+          <PlanBillingPanel
+            access={access}
+            userId={activeUser.id}
+            holdings={holdings}
+            currentCurrency={currentCurrency}
+            onUpgrade={onUpgrade}
+            onNotice={onNotice}
+            onSignIn={() => openAuthModal()}
+          />
+        )}
+
+        {access.signedIn && access.billingEnabled && access.plan === 'free' && holdings.length > FREE_HOLDINGS_LIMIT && (
+          <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-900">
+            You have {holdings.length} holdings saved. The Free plan tracks up to {FREE_HOLDINGS_LIMIT}; your existing holdings are kept, but you'll need Pro to add more.
+          </p>
+        )}
+
         {/* TAB 1: OVERVIEW SNAPSHOT (Spec Section 20) */}
-        {activeTab === 'overview' && (
+        {visibleTab === 'overview' && (
           <div className="mt-6 space-y-6">
             
             {/* Top Stat Cards */}
@@ -601,7 +655,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
               <button
                 type="button"
-                onClick={() => setIsExportPdfOpen(true)}
+                onClick={withFeature('exports', () => setIsExportPdfOpen(true))}
                 className="px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold transition-all cursor-pointer whitespace-nowrap shadow-sm self-stretch sm:self-auto text-center"
               >
                 Export PDF Summary &rarr;
@@ -612,7 +666,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         )}
 
         {/* TAB: FINANCIAL GOAL MILESTONES (Life Stage Target Progress Engine) */}
-        {activeTab === 'milestones' && (
+        {visibleTab === 'milestones' && (
           <div className="mt-6 space-y-6">
             <FinancialGoalMilestones 
               holdings={holdings} 
@@ -624,7 +678,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         )}
 
         {/* TAB: CURRENCY VOLATILITY HEATMAP (30-day FX Trajectory & Foreign Holdings Overlay) */}
-        {activeTab === 'volatility' && (
+        {visibleTab === 'volatility' && (
           <div className="mt-6 space-y-6">
             <CurrencyVolatilityHeatmap 
               holdings={holdings} 
@@ -635,7 +689,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         )}
 
         {/* TAB: DIVIDEND INCOME TRACKING MODULE (Cumulative Cross-Border Cashflow) */}
-        {activeTab === 'dividend_tracker' && (
+        {visibleTab === 'dividend_tracker' && (
           <div className="mt-6 space-y-6">
             <DividendTracker 
               holdings={holdings} 
@@ -706,7 +760,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         )}
 
         {/* TAB: TAX IMPACT ESTIMATOR (Cross-Border CGT & Currency Fluctuation Engine) */}
-        {activeTab === 'tax_estimator' && (
+        {visibleTab === 'tax_estimator' && (
           <div className="mt-6 space-y-6">
             <TaxImpactEstimator 
               holdings={holdings} 
@@ -748,7 +802,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         )}
 
         {/* TAB: ASSET REBALANCER TOOL */}
-        {activeTab === 'rebalance' && (
+        {visibleTab === 'rebalance' && (
           <div className="mt-6 space-y-6">
             <AssetRebalancer 
               holdings={holdings} 
@@ -765,14 +819,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         )}
 
         {/* TAB: MARKET PERFORMANCE & INDICES (ISEQ, NIFTY 50, S&P 500) */}
-        {activeTab === 'markets' && (
+        {visibleTab === 'markets' && (
           <div className="mt-6 space-y-6">
             <MarketPerformanceWidget holdings={holdings} />
           </div>
         )}
 
         {/* TAB 2: INVESTMENT ACCOUNT (Spec Section 21) */}
-        {activeTab === 'investment_account' && (
+        {visibleTab === 'investment_account' && (
           <div className="mt-6 space-y-6">
             <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-6 border-b border-slate-100 gap-4">
@@ -791,7 +845,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 <div className="flex items-center gap-2 flex-wrap">
                   <button
                     type="button"
-                    onClick={() => setIsInvAccountPdfOpen(true)}
+                    onClick={withFeature('exports', () => setIsInvAccountPdfOpen(true))}
                     className="inline-flex items-center gap-1.5 px-3.5 py-2.5 bg-slate-900 hover:bg-black text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
                     title="Export Investment Account summary and transaction ledger to PDF"
                   >
@@ -892,7 +946,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         )}
 
         {/* TAB 3: PORTFOLIO HOLDINGS (Spec Section 22 & 23) */}
-        {activeTab === 'portfolio' && (
+        {visibleTab === 'portfolio' && (
           <div className="mt-6 space-y-6">
             <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-6 border-b border-slate-100 gap-4">
@@ -909,7 +963,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   {holdings.some(isRefreshableFund) && (
                     <button
                       type="button"
-                      onClick={handleRefreshFunds}
+                      onClick={withFeature('fund_price_refresh', () => void handleRefreshFunds())}
                       disabled={navStatus.busy}
                       className="inline-flex items-center gap-1.5 px-4 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-800 text-xs font-bold rounded-xl transition-colors cursor-pointer disabled:opacity-60"
                     >
@@ -1034,7 +1088,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         )}
 
         {/* TAB 4: FINANCIAL X-RAY (Spec Section 26 & 60) */}
-        {activeTab === 'xray' && (
+        {visibleTab === 'xray' && (
           <div className="mt-6 space-y-6">
             {/* Risk Exposure Radar Chart across Ireland, India & US */}
             <RiskExposureRadar holdings={holdings} currentCurrency={currentCurrency} />
@@ -1085,7 +1139,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         )}
 
         {/* TAB 5: CALCULATOR */}
-        {activeTab === 'calculator' && (
+        {visibleTab === 'calculator' && (
           <div className="mt-6">
             <BudgetCalculatorSection
               currentCurrency={currentCurrency}
@@ -1095,7 +1149,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         )}
 
         {/* TAB 6: CSV IMPORTER */}
-        {activeTab === 'import' && (
+        {visibleTab === 'import' && (
           <CsvImportPanel
             holdings={holdings}
             onImport={onImportHoldings}
@@ -1198,6 +1252,32 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       )}
       {/* MODAL 3: EXPORT FULL PORTFOLIO PDF SUMMARY */}
+      {upsell && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4"
+          onMouseDown={(e) => { if (e.target === e.currentTarget) setUpsell(null); }}
+          onKeyDown={(e) => { if (e.key === 'Escape') setUpsell(null); }}
+        >
+          <div role="dialog" aria-modal="true" aria-label="Upgrade required" className="relative w-full max-w-lg">
+            <button
+              type="button"
+              autoFocus
+              aria-label="Close"
+              onClick={() => setUpsell(null)}
+              className="absolute right-3 top-3 z-10 rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 cursor-pointer"
+            >
+              <X className="h-5 w-5" />
+            </button>
+            <LockedFeatureCard
+              compact
+              feature={upsell}
+              onUpgrade={(plan) => { setUpsell(null); onUpgrade(plan); }}
+              onShowPlans={() => { setUpsell(null); setActiveTab('plan'); }}
+            />
+          </div>
+        </div>
+      )}
+
       <ExportPdfModal
         isOpen={isExportPdfOpen}
         onClose={() => setIsExportPdfOpen(false)}

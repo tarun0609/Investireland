@@ -9,7 +9,7 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
-    include: ['src/**/*.test.ts', 'server/**/*.test.ts', 'scripts/**/*.test.ts'],
+    include: ['src/**/*.test.ts', 'server/**/*.test.ts', 'scripts/**/*.test.ts', 'workers/**/*.test.ts'],
     restoreMocks: true,
   },
 });

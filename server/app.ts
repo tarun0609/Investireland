@@ -92,6 +92,7 @@ export function buildContentSecurityPolicy(isProduction: boolean) {
         "'self'",
         'https://data-api.ecb.europa.eu',
         'https://api.mfapi.in',
+        'https://api.investirelandai.ie',
         'https://*.googleapis.com',
         'https://*.firebaseio.com',
         'wss://*.firebaseio.com',
