@@ -2,16 +2,23 @@ import React from 'react';
 import { LifeBuoy, Mail, ShieldCheck } from 'lucide-react';
 import { CONTACT_EMAILS } from '../config/contact';
 import { isModifiedClick } from '../utils/links';
+import { CALCULATORS_HUB, CALCULATOR_TOOLS, type AppView } from '../config/calculators';
 
 interface FooterProps {
   onNavigateSection: (sectionId: string) => void;
   onOpenWaitlist: () => void;
   onOpenPrivacy: () => void;
+  onNavigateView: (view: AppView) => void;
 }
 
 const linkClass = 'text-left hover:text-white transition-colors cursor-pointer';
 
-export const Footer: React.FC<FooterProps> = ({ onNavigateSection, onOpenWaitlist, onOpenPrivacy }) => {
+export const Footer: React.FC<FooterProps> = ({ onNavigateSection, onOpenWaitlist, onOpenPrivacy, onNavigateView }) => {
+  const viewClick = (view: AppView) => (e: React.MouseEvent) => {
+    if (isModifiedClick(e)) return;
+    e.preventDefault();
+    onNavigateView(view);
+  };
   const sectionClick = (id: string) => (e: React.MouseEvent) => {
     if (isModifiedClick(e)) return;
     e.preventDefault();
@@ -40,7 +47,7 @@ export const Footer: React.FC<FooterProps> = ({ onNavigateSection, onOpenWaitlis
     <footer className="bg-slate-900 text-slate-400 text-xs py-16 border-t border-slate-800">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         
-        <div className="grid grid-cols-1 sm:grid-cols-3 md:grid-cols-5 gap-10 pb-12 border-b border-slate-800">
+        <div className="grid grid-cols-1 sm:grid-cols-3 md:grid-cols-6 gap-10 pb-12 border-b border-slate-800">
           
           {/* Brand Info (2 cols) */}
           <div className="sm:col-span-3 md:col-span-2 space-y-4">
@@ -72,6 +79,25 @@ export const Footer: React.FC<FooterProps> = ({ onNavigateSection, onOpenWaitlis
                   </a>
                 </li>
               ))}
+            </ul>
+          </nav>
+
+          {/* Calculators */}
+          <nav aria-label="Calculators" className="space-y-3">
+            <div className="font-bold text-white uppercase tracking-wider text-[11px]">Calculators</div>
+            <ul className="space-y-2">
+              {CALCULATOR_TOOLS.map((page) => (
+                <li key={page.view}>
+                  <a href={page.path} onClick={viewClick(page.view)} className={linkClass}>
+                    {page.name}
+                  </a>
+                </li>
+              ))}
+              <li>
+                <a href={CALCULATORS_HUB.path} onClick={viewClick('calculators')} className={linkClass}>
+                  All calculators
+                </a>
+              </li>
             </ul>
           </nav>
 
@@ -109,6 +135,7 @@ export const Footer: React.FC<FooterProps> = ({ onNavigateSection, onOpenWaitlis
                 <a
                   href="/privacy"
                   onClick={(e) => {
+                    if (isModifiedClick(e)) return;
                     e.preventDefault();
                     onOpenPrivacy();
                   }}
@@ -124,7 +151,7 @@ export const Footer: React.FC<FooterProps> = ({ onNavigateSection, onOpenWaitlis
           </nav>
 
           {/* Contact */}
-          <div className="sm:col-span-3 md:col-span-5 -mt-4 flex flex-col sm:flex-row gap-3 sm:gap-8 text-[12px]">
+          <div className="sm:col-span-3 md:col-span-6 -mt-4 flex flex-col sm:flex-row gap-3 sm:gap-8 text-[12px]">
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
               <Mail className="w-4 h-4 text-emerald-400 shrink-0" aria-hidden="true" />
               <span>General enquiries:</span>

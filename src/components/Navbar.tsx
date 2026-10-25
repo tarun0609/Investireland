@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Currency } from '../types';
 import { isModifiedClick } from '../utils/links';
+import { CALCULATORS_HUB, CALCULATOR_TOOLS, isCalculatorView, type AppView } from '../config/calculators';
 import { 
   ShieldCheck, 
   Sparkles, 
@@ -11,14 +12,15 @@ import {
   X, 
   HelpCircle,
   BookOpen,
-  CreditCard
+  CreditCard,
+  Calculator
 } from 'lucide-react';
 
 interface NavbarProps {
   currentCurrency: Currency;
   onCurrencyChange: (c: Currency) => void;
-  activeView: 'landing' | 'app' | 'privacy';
-  onViewChange: (view: 'landing' | 'app' | 'privacy') => void;
+  activeView: AppView;
+  onViewChange: (view: AppView) => void;
   onOpenWaitlist: () => void;
   onNavigateSection: (sectionId: string) => void;
 }
@@ -94,7 +96,10 @@ export const Navbar: React.FC<NavbarProps> = ({
     setIsMoreOpen(false);
   }, [activeView]);
 
-  const handleViewChange = (view: 'landing' | 'app') => {
+  // Calculator pages are part of the public website, so they share the landing navigation.
+  const isWebsite = activeView === 'landing' || isCalculatorView(activeView);
+
+  const handleViewChange = (view: AppView) => {
     onViewChange(view);
     setIsMoreOpen(false);
     setIsMobileMenuOpen(false);
@@ -138,7 +143,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           </a>
 
           {/* Center: Streamlined Navigation (Landing Mode) */}
-          {activeView === 'landing' ? (
+          {isWebsite ? (
             <nav aria-label="Main" className="hidden lg:flex items-center gap-6 text-xs font-semibold text-slate-600">
               {DESKTOP_LINKS.map((link) => (
                 <a
@@ -154,6 +159,19 @@ export const Navbar: React.FC<NavbarProps> = ({
                   {link.label}
                 </a>
               ))}
+
+              <a
+                href={CALCULATORS_HUB.path}
+                aria-current={isCalculatorView(activeView) ? 'page' : undefined}
+                onClick={(e) => {
+                  if (isModifiedClick(e)) return;
+                  e.preventDefault();
+                  handleViewChange('calculators');
+                }}
+                className={`${isCalculatorView(activeView) ? 'text-emerald-700' : ''} hover:text-emerald-700 transition-colors cursor-pointer py-1`}
+              >
+                Calculators
+              </a>
 
               {/* Clean 'More' Dropdown */}
               <div className="relative" ref={moreRef}>
@@ -256,11 +274,11 @@ export const Navbar: React.FC<NavbarProps> = ({
             {/* View Switcher: Landing vs App (on small landing screens this lives in the mobile menu) */}
             <button
               type="button"
-              onClick={() => handleViewChange(activeView === 'landing' ? 'app' : 'landing')}
-              aria-label={activeView === 'landing' ? 'Open app dashboard' : 'Back to website'}
-              className={`${activeView === 'landing' ? 'hidden sm:inline-flex' : 'inline-flex'} items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-slate-300 hover:border-slate-400 text-slate-700 hover:bg-slate-50 transition-all cursor-pointer`}
+              onClick={() => handleViewChange(isWebsite ? 'app' : 'landing')}
+              aria-label={isWebsite ? 'Open app dashboard' : 'Back to website'}
+              className={`${isWebsite ? 'hidden sm:inline-flex' : 'inline-flex'} items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-slate-300 hover:border-slate-400 text-slate-700 hover:bg-slate-50 transition-all cursor-pointer`}
             >
-              {activeView === 'landing' ? (
+              {isWebsite ? (
                 <>
                   <LayoutDashboard className="w-3.5 h-3.5 text-slate-600" />
                   <span className="hidden sm:inline">App Dashboard</span>
@@ -288,7 +306,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             </button>
 
             {/* Mobile Hamburger Button */}
-            {activeView === 'landing' && (
+            {isWebsite && (
               <button
                 type="button"
                 onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
@@ -307,12 +325,31 @@ export const Navbar: React.FC<NavbarProps> = ({
       </div>
 
       {/* Mobile Drawer (Visible on small screens when open) */}
-      {isMobileMenuOpen && activeView === 'landing' && (
+      {isMobileMenuOpen && isWebsite && (
         <nav
           id="mobile-nav"
           aria-label="Mobile"
           className="lg:hidden max-h-[calc(100vh-4rem)] overflow-y-auto border-t border-slate-200 bg-white px-4 py-3 space-y-1 text-sm font-medium text-slate-700 shadow-md animate-in slide-in-from-top-2"
         >
+          <div className="pb-2 mb-1 border-b border-slate-100">
+            <div className="px-2 pb-1 text-[11px] font-bold uppercase tracking-wider text-slate-400">Calculators</div>
+            {[CALCULATORS_HUB, ...CALCULATOR_TOOLS].map((page) => (
+              <a
+                key={page.view}
+                href={page.path}
+                aria-current={activeView === page.view ? 'page' : undefined}
+                onClick={(e) => {
+                  if (isModifiedClick(e)) return;
+                  e.preventDefault();
+                  handleViewChange(page.view);
+                }}
+                className="w-full flex items-center gap-2 py-2 px-2 hover:bg-slate-50 rounded-lg cursor-pointer"
+              >
+                <Calculator className="w-4 h-4 text-emerald-600" aria-hidden="true" />
+                <span>{page.name}</span>
+              </a>
+            ))}
+          </div>
           {MOBILE_LINKS.map((link) => (
             <button
               key={link.id}

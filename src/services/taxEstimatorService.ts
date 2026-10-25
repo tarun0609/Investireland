@@ -215,11 +215,13 @@ export function calculateTaxImpact(
       taxTreatment = 'DIRT Deposit';
       applicableRate = 0;
       notes = 'DIRT (33%) is normally deducted at source by the bank on deposit interest, so no further tax is estimated here. Deposit principal is not subject to CGT.';
-    } else if (h.assetType === 'ETF') {
-      // UCITS ETF under Irish Exit Tax rules
+    } else if (h.assetType === 'ETF' || (h.assetType === 'Mutual Fund' && (h.country === 'Ireland' || h.country === 'Europe'))) {
+      // UCITS ETFs and Irish/EU-domiciled funds fall under the exit tax regime, not CGT
       taxTreatment = 'Exit Tax (38%)';
       applicableRate = IRISH_EXIT_TAX_RATE;
-      notes = 'Irish/EU UCITS ETFs: 38% exit tax (TCA 1997 s.739D, rate from 1 Jan 2026) on disposal and on each 8-year deemed disposal. No €1,270 exemption and no offset of losses against other gains. Estimated here on the whole unrealised gain.';
+      notes = h.assetType === 'ETF'
+        ? 'Irish/EU UCITS ETFs: 38% exit tax (TCA 1997 s.739D, rate from 1 Jan 2026) on disposal and on each 8-year deemed disposal. No €1,270 exemption and no offset of losses against other gains. Estimated here on the whole unrealised gain.'
+        : 'Irish/EU-domiciled funds: 38% exit tax on disposal and on each 8-year deemed disposal, like ETFs. No €1,270 exemption and no offset of losses against other gains.';
     } else if (h.country === 'India') {
       taxJurisdiction = 'India';
       dtaaCreditEligible = true;

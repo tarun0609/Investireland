@@ -1,161 +1,127 @@
 import { BudgetCalculatorInputs, BudgetCalculatorResult, YearProjection } from '../types';
+import {
+  IRISH_TAX_RATES_2026,
+  MAX_YEARS,
+  TaxablePortfolio,
+  TaxTreatment,
+  clampYears,
+  monthlyRateFromAnnual,
+  nonNegative,
+} from './investmentEngine';
 
-export const FY26_EXIT_TAX_RATE = 0.38;
-export const FY26_CGT_RATE = 0.33;
-export const FY26_CGT_ANNUAL_EXEMPTION = 1270;
-export const DEEMED_DISPOSAL_CYCLE_YEARS = 8;
+export const FY26_EXIT_TAX_RATE = IRISH_TAX_RATES_2026.exitTaxRate;
+export const FY26_CGT_RATE = IRISH_TAX_RATES_2026.cgtRate;
+export const FY26_CGT_ANNUAL_EXEMPTION = IRISH_TAX_RATES_2026.cgtAnnualExemption;
+export const FY26_DIRT_RATE = IRISH_TAX_RATES_2026.dirtRate;
+export const DEEMED_DISPOSAL_CYCLE_YEARS = IRISH_TAX_RATES_2026.deemedDisposalYears;
 export const FY27_ANNUAL_CONTRIBUTION_LIMIT = 12000;
 export const FY27_TAX_FREE_THRESHOLD = 50000;
 export const FY27_ANNUAL_CHARGE_RATE = 0.01;
 /** Illustrative inflation assumption (Irish HICP reference figure) used for "today's money" values. */
 export const ILLUSTRATIVE_INFLATION_RATE = 0.022;
 /** Upper bound on the projection horizon to keep the loop bounded for bad inputs. */
-export const MAX_TIME_HORIZON_YEARS = 60;
+export const MAX_TIME_HORIZON_YEARS = MAX_YEARS;
 
-const nonNegative = (value: number): number => (Number.isFinite(value) && value > 0 ? value : 0);
-
-type AssetClass = BudgetCalculatorInputs['assetClass'];
+const treatmentFor = (assetClass: BudgetCalculatorInputs['assetClass']): TaxTreatment =>
+  assetClass === 'etf_fund' || assetClass === 'individual_shares' || assetClass === 'deposit' ? assetClass : 'etf_fund';
 
 /**
- * A pot of money taxed under the current (FY26) regime.
- * ETFs/funds: 38% exit tax with 8-year deemed disposal. Shares/deposits: 33% CGT with €1,270 exemption on exit.
- * Contributions are added to the cost basis so only gains are ever taxed.
+ * Compares today's rules (FY26) with the proposed Personal Savings & Investment Account (FY27).
+ *
+ * Month-by-month: contributions go in at the start of each month and grow at the monthly
+ * equivalent of the annual return. Under FY26, ETF deemed disposal falls 8 years after each
+ * purchase. Under FY27, up to €12,000 per calendar year (opening lump sum included) goes into the
+ * PSIA; anything above that overflows into a normal taxable account. The 1% PSIA charge applies at
+ * each year end to the balance above €50,000.
  */
-class Fy26TaxablePot {
-  gross: number;
-  costBasis: number;
-  taxesPaid = 0;
-
-  constructor(private readonly assetClass: AssetClass, openingAmount: number) {
-    this.gross = openingAmount;
-    this.costBasis = openingAmount;
-  }
-
-  advanceYear(year: number, contribution: number, returnRate: number): number {
-    this.gross = (this.gross + contribution) * (1 + returnRate);
-    this.costBasis += contribution;
-
-    if (this.assetClass === 'etf_fund' && year % DEEMED_DISPOSAL_CYCLE_YEARS === 0) {
-      const tax = Math.max(0, this.gross - this.costBasis) * FY26_EXIT_TAX_RATE;
-      this.gross -= tax;
-      this.taxesPaid += tax;
-      // Deemed disposal re-bases the holding at its post-tax market value
-      this.costBasis = this.gross;
-      return tax;
-    }
-    return 0;
-  }
-
-  liquidationTax(): number {
-    const gain = Math.max(0, this.gross - this.costBasis);
-    if (this.assetClass === 'etf_fund') return gain * FY26_EXIT_TAX_RATE;
-    return Math.max(0, gain - FY26_CGT_ANNUAL_EXEMPTION) * FY26_CGT_RATE;
-  }
-
-  netValue(): number {
-    return this.gross - this.liquidationTax();
-  }
-}
-
 export function calculateBudgetProjections(inputs: BudgetCalculatorInputs): BudgetCalculatorResult {
-  const { adjustForInflation, assetClass } = inputs;
-  // Sanitise inputs: NaN (e.g. from an empty field), negatives and fractional years would
-  // otherwise produce NaN results, negative "contributions" or an empty projection list.
+  const { adjustForInflation } = inputs;
   const startingAmount = nonNegative(inputs.startingAmount);
   const monthlyContribution = nonNegative(inputs.monthlyContribution);
-  const timeHorizonYears = Math.min(MAX_TIME_HORIZON_YEARS, Math.max(1, Math.round(nonNegative(inputs.timeHorizonYears)) || 1));
+  const timeHorizonYears = clampYears(inputs.timeHorizonYears);
   const annualReturnRate = Number.isFinite(inputs.annualReturnRate) ? Math.max(-0.99, inputs.annualReturnRate) : 0;
+  const monthlyRate = monthlyRateFromAnnual(annualReturnRate);
+  const treatment = treatmentFor(inputs.assetClass);
 
-  const annualContribution = monthlyContribution * 12;
-  const inflationRate = ILLUSTRATIVE_INFLATION_RATE;
+  const noTax = new TaxablePortfolio('none');
+  const fy26 = new TaxablePortfolio(treatment);
+  const psia = new TaxablePortfolio('none');
+  const overflow = new TaxablePortfolio(treatment);
+  let psiaCharges = 0;
+  let allowanceLeft = 0;
+
+  const invest = (amount: number, month: number) => {
+    noTax.deposit(amount, month);
+    fy26.deposit(amount, month);
+    const intoPsia = Math.min(amount, allowanceLeft);
+    allowanceLeft -= intoPsia;
+    psia.deposit(intoPsia, month);
+    overflow.deposit(amount - intoPsia, month);
+  };
 
   const projections: YearProjection[] = [];
+  for (let month = 0; month < timeHorizonYears * 12; month++) {
+    if (month % 12 === 0) allowanceLeft = FY27_ANNUAL_CONTRIBUTION_LIMIT;
+    if (month === 0) invest(startingAmount, 0);
+    invest(monthlyContribution, month);
 
-  // No-tax counterfactual with identical contributions/returns; tax drag = noTaxGross - net value
-  let noTaxGross = startingAmount;
+    noTax.step(month, monthlyRate);
+    fy26.step(month, monthlyRate);
+    psia.step(month, monthlyRate);
+    overflow.step(month, monthlyRate);
 
-  // FY26 (Old Regime)
-  const fy26Pot = new Fy26TaxablePot(assetClass, startingAmount);
+    if ((month + 1) % 12 === 0) {
+      const year = (month + 1) / 12;
+      const psiaGrossBeforeCharge = psia.gross;
+      const yearCharge = psia.charge(Math.max(0, psia.gross - FY27_TAX_FREE_THRESHOLD) * FY27_ANNUAL_CHARGE_RATE);
+      psiaCharges += yearCharge;
 
-  // FY27 (Personal Savings & Investment Account). Subscriptions above the €12,000 annual cap
-  // (including an opening lump sum above the cap) cannot enter the PSIA, so they overflow into
-  // a standard taxable account under FY26 rules for the same asset class.
-  const fy27OpeningSubscription = Math.min(startingAmount, FY27_ANNUAL_CONTRIBUTION_LIMIT);
-  const fy27AnnualSubscription = Math.min(annualContribution, FY27_ANNUAL_CONTRIBUTION_LIMIT);
-  const fy27AnnualOverflow = annualContribution - fy27AnnualSubscription;
-  let psiaBalance = fy27OpeningSubscription;
-  const fy27OverflowPot = new Fy26TaxablePot(assetClass, startingAmount - fy27OpeningSubscription);
-  let totalContributions = startingAmount;
-  let fy27TotalAnnualCharges = 0;
-
-  for (let year = 1; year <= timeHorizonYears; year++) {
-    totalContributions += annualContribution;
-    noTaxGross = (noTaxGross + annualContribution) * (1 + annualReturnRate);
-
-    fy26Pot.advanceYear(year, annualContribution, annualReturnRate);
-
-    psiaBalance = (psiaBalance + fy27AnnualSubscription) * (1 + annualReturnRate);
-    const fy27GrossBeforeCharge = psiaBalance;
-    // 1% annual charge applies only to the portion of the PSIA value above €50,000
-    const yearFY27Charge = Math.max(0, psiaBalance - FY27_TAX_FREE_THRESHOLD) * FY27_ANNUAL_CHARGE_RATE;
-    psiaBalance -= yearFY27Charge;
-    fy27TotalAnnualCharges += yearFY27Charge;
-
-    fy27OverflowPot.advanceYear(year, fy27AnnualOverflow, annualReturnRate);
-
-    const fy26NetCurrent = fy26Pot.netValue();
-    // Inside the PSIA, no exit tax on withdrawal; overflow pot is valued net of FY26 taxes
-    const fy27NetCurrent = psiaBalance + fy27OverflowPot.netValue();
-    const wealthSaved = Math.max(0, fy27NetCurrent - fy26NetCurrent);
-    const thresholdProgress = Math.min(100, Math.round((psiaBalance / FY27_TAX_FREE_THRESHOLD) * 100));
-
-    projections.push({
-      year,
-      contributionsCumulative: Math.round(totalContributions),
-      fy26GrossValue: Math.round(fy26Pot.gross),
-      fy26TaxesPaid: Math.round(fy26Pot.taxesPaid),
-      fy26NetValue: Math.round(fy26NetCurrent),
-      fy27GrossValue: Math.round(fy27GrossBeforeCharge + fy27OverflowPot.gross),
-      fy27AnnualCharge: Math.round(yearFY27Charge),
-      fy27TaxesCumulative: Math.round(fy27TotalAnnualCharges + fy27OverflowPot.taxesPaid),
-      fy27NetValue: Math.round(fy27NetCurrent),
-      wealthSavedUnderFY27: Math.round(wealthSaved),
-      thresholdProgressPct: thresholdProgress
-    });
+      const fy26Net = fy26.netValue();
+      const fy27Net = psia.gross + overflow.netValue();
+      projections.push({
+        year,
+        contributionsCumulative: Math.round(noTax.contributed),
+        fy26GrossValue: Math.round(fy26.gross),
+        fy26TaxesPaid: Math.round(fy26.taxesPaid),
+        fy26NetValue: Math.round(fy26Net),
+        fy27GrossValue: Math.round(psiaGrossBeforeCharge + overflow.gross),
+        fy27AnnualCharge: Math.round(yearCharge),
+        fy27TaxesCumulative: Math.round(psiaCharges + overflow.taxesPaid),
+        fy27NetValue: Math.round(fy27Net),
+        wealthSavedUnderFY27: Math.round(Math.max(0, fy27Net - fy26Net)),
+        thresholdProgressPct: Math.min(100, Math.round((psia.gross / FY27_TAX_FREE_THRESHOLD) * 100)),
+      });
+    }
   }
 
-  const lastProj = projections[projections.length - 1];
-  const finalTotalContributions = lastProj ? lastProj.contributionsCumulative : Math.round(startingAmount);
-  const fy26FinalNetValue = lastProj ? lastProj.fy26NetValue : Math.round(startingAmount);
-  const fy27FinalNetValue = lastProj ? lastProj.fy27NetValue : Math.round(startingAmount);
-  const noTaxFinalGross = Math.round(noTaxGross);
+  const last = projections[projections.length - 1];
+  const totalContributions = last.contributionsCumulative;
+  const fy26FinalNetValue = last.fy26NetValue;
+  const fy27FinalNetValue = last.fy27NetValue;
+  const noTaxFinalGross = Math.round(noTax.gross);
 
-  // Effective tax drag vs. the no-tax counterfactual: includes tax actually charged
-  // (deemed disposals, PSIA charges), tax due on exit, and growth forgone on tax paid early.
-  const fy26TotalEffectiveTax = Math.max(0, noTaxFinalGross - fy26FinalNetValue);
-  const fy27TotalEffectiveTax = Math.max(0, noTaxFinalGross - fy27FinalNetValue);
-
-  const totalWealthSaved = fy27FinalNetValue - fy26FinalNetValue;
-  const percentageTaxReduction = fy26TotalEffectiveTax > 0
-    ? Math.min(100, Math.round(((fy26TotalEffectiveTax - fy27TotalEffectiveTax) / fy26TotalEffectiveTax) * 100))
+  // Effective tax drag vs. the no-tax counterfactual: tax charged along the way, tax due on exit
+  // and the growth lost on tax paid early.
+  const totalTaxesFY26 = Math.max(0, noTaxFinalGross - fy26FinalNetValue);
+  const totalTaxesFY27 = Math.max(0, noTaxFinalGross - fy27FinalNetValue);
+  const percentageTaxReduction = totalTaxesFY26 > 0
+    ? Math.min(100, Math.round(((totalTaxesFY26 - totalTaxesFY27) / totalTaxesFY26) * 100))
     : 0;
 
-  // Optional inflation discounting
-  let inflationAdjustedFY27Net = fy27FinalNetValue;
-  if (adjustForInflation) {
-    inflationAdjustedFY27Net = Math.round(fy27FinalNetValue / Math.pow(1 + inflationRate, timeHorizonYears));
-  }
+  const inflationAdjustedFY27Net = adjustForInflation
+    ? Math.round(fy27FinalNetValue / Math.pow(1 + ILLUSTRATIVE_INFLATION_RATE, timeHorizonYears))
+    : fy27FinalNetValue;
 
   return {
-    inputs: { ...inputs, startingAmount, monthlyContribution, timeHorizonYears, annualReturnRate },
+    inputs: { ...inputs, assetClass: treatment as BudgetCalculatorInputs['assetClass'], startingAmount, monthlyContribution, timeHorizonYears, annualReturnRate },
     projections,
-    totalContributions: finalTotalContributions,
+    totalContributions,
     fy26FinalNetValue,
     fy27FinalNetValue,
-    totalTaxesFY26: fy26TotalEffectiveTax,
-    totalTaxesFY27: fy27TotalEffectiveTax,
-    totalWealthSaved: Math.round(totalWealthSaved),
+    totalTaxesFY26,
+    totalTaxesFY27,
+    totalWealthSaved: fy27FinalNetValue - fy26FinalNetValue,
     percentageTaxReduction,
-    inflationAdjustedFY27Net
+    inflationAdjustedFY27Net,
   };
 }

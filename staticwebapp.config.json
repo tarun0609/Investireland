@@ -12,7 +12,105 @@
     },
     {
       "route": "/privacy",
-      "headers": { "Cache-Control": "no-cache" }
+      "headers": {
+        "Cache-Control": "no-cache"
+      }
+    },
+    {
+      "route": "/calculators",
+      "headers": {
+        "Cache-Control": "no-cache"
+      }
+    },
+    {
+      "route": "/investment-calculator",
+      "headers": {
+        "Cache-Control": "no-cache"
+      }
+    },
+    {
+      "route": "/etf-tax-calculator",
+      "headers": {
+        "Cache-Control": "no-cache"
+      }
+    },
+    {
+      "route": "/pension-calculator",
+      "headers": {
+        "Cache-Control": "no-cache"
+      }
+    },
+    {
+      "route": "/savings-goal-calculator",
+      "headers": {
+        "Cache-Control": "no-cache"
+      }
+    },
+    {
+      "route": "/mortgage-vs-investing-calculator",
+      "headers": {
+        "Cache-Control": "no-cache"
+      }
+    },
+    {
+      "route": "/calculator",
+      "redirect": "/calculators",
+      "statusCode": 301
+    },
+    {
+      "route": "/investmentcalculator",
+      "redirect": "/investment-calculator",
+      "statusCode": 301
+    },
+    {
+      "route": "/etfcalculator",
+      "redirect": "/etf-tax-calculator",
+      "statusCode": 301
+    },
+    {
+      "route": "/etf-calculator",
+      "redirect": "/etf-tax-calculator",
+      "statusCode": 301
+    },
+    {
+      "route": "/etftaxcalculator",
+      "redirect": "/etf-tax-calculator",
+      "statusCode": 301
+    },
+    {
+      "route": "/pensioncalculator",
+      "redirect": "/pension-calculator",
+      "statusCode": 301
+    },
+    {
+      "route": "/savingscalculator",
+      "redirect": "/savings-goal-calculator",
+      "statusCode": 301
+    },
+    {
+      "route": "/savings-calculator",
+      "redirect": "/savings-goal-calculator",
+      "statusCode": 301
+    },
+    {
+      "route": "/savingsgoalcalculator",
+      "redirect": "/savings-goal-calculator",
+      "statusCode": 301
+    },
+    {
+      "route": "/mortgagecalculator",
+      "redirect": "/mortgage-vs-investing-calculator",
+      "statusCode": 301
+    },
+    {
+      "route": "/mortgage-calculator",
+      "redirect": "/mortgage-vs-investing-calculator",
+      "statusCode": 301
+    },
+    {
+      "route": "/mortgage-vs-investing",
+      "redirect": "/mortgage-vs-investing-calculator",
+      "statusCode": 301
     },
     {
       "route": "/index",
@@ -21,27 +119,39 @@
     },
     {
       "route": "/index.html",
-      "headers": { "Cache-Control": "no-cache" }
+      "headers": {
+        "Cache-Control": "no-cache"
+      }
     },
     {
       "route": "/assets/*",
-      "headers": { "Cache-Control": "public, max-age=31536000, immutable" }
+      "headers": {
+        "Cache-Control": "public, max-age=31536000, immutable"
+      }
     },
     {
       "route": "/fonts/*",
-      "headers": { "Cache-Control": "public, max-age=31536000, immutable" }
+      "headers": {
+        "Cache-Control": "public, max-age=31536000, immutable"
+      }
     },
     {
       "route": "/*.{png,svg,ico,webmanifest}",
-      "headers": { "Cache-Control": "public, max-age=604800" }
+      "headers": {
+        "Cache-Control": "public, max-age=604800"
+      }
     },
     {
       "route": "/*.{txt,xml}",
-      "headers": { "Cache-Control": "public, max-age=3600" }
+      "headers": {
+        "Cache-Control": "public, max-age=3600"
+      }
     },
     {
       "route": "/",
-      "headers": { "Cache-Control": "no-cache" }
+      "headers": {
+        "Cache-Control": "no-cache"
+      }
     }
   ],
   "mimeTypes": {

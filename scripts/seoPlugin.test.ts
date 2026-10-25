@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { FAQS } from '../src/data/faqs';
 import { HOME_SEO, PRIVACY_SEO } from '../src/config/site';
-import { renderHead, renderNoscript, renderPrivacyDocument, renderSitemap, seoPlugin, structuredData } from './seoPlugin';
+import {
+  renderCalculatorDocument,
+  renderHead,
+  renderNoscript,
+  renderPrivacyDocument,
+  renderSitemap,
+  seoPlugin,
+  structuredData,
+} from './seoPlugin';
+import { CALCULATORS_HUB, CALCULATOR_PAGES, ETF_TAX_CALCULATOR } from '../src/config/calculators';
 
 const extractJsonLd = (html: string) => {
   const match = html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/);
@@ -63,9 +72,31 @@ describe('seoPlugin', () => {
   it('renders a valid sitemap with only the canonical public URLs and no fake dates', () => {
     const xml = renderSitemap();
     expect(xml.startsWith('<?xml version="1.0" encoding="UTF-8"?>')).toBe(true);
-    expect(xml.match(/<loc>/g)).toHaveLength(2);
+    expect(xml.match(/<loc>/g)).toHaveLength(2 + CALCULATOR_PAGES.length);
     expect(xml).toContain('<loc>https://www.investirelandai.ie/</loc>');
     expect(xml).toContain('<loc>https://www.investirelandai.ie/privacy</loc>');
+    for (const page of CALCULATOR_PAGES) expect(xml).toContain(`<loc>https://www.investirelandai.ie${page.path}</loc>`);
     expect(xml).not.toMatch(/lastmod|changefreq|priority/);
+  });
+
+  it('builds calculator pages with their own head, FAQ schema, breadcrumbs and crawlable content', () => {
+    const html = renderCalculatorDocument(transform(template), ETF_TAX_CALCULATOR);
+    expect(html).toContain('<link rel="canonical" href="https://www.investirelandai.ie/etf-tax-calculator" />');
+    expect(html).toContain(`<h1>${ETF_TAX_CALCULATOR.h1}</h1>`);
+    expect(html).toContain(`href="${CALCULATORS_HUB.path}"`);
+
+    const graph = extractJsonLd(html)['@graph'] as Record<string, any>[];
+    const types = graph.map((n) => n['@type']);
+    expect(types).toEqual(expect.arrayContaining(['WebPage', 'WebApplication', 'FAQPage']));
+    const faq = graph.find((n) => n['@type'] === 'FAQPage')!;
+    expect(faq.mainEntity).toHaveLength(ETF_TAX_CALCULATOR.faqs.length);
+    const crumbs = graph.find((n) => n['@type'] === 'WebPage')!.breadcrumb.itemListElement.map((c: any) => c.name);
+    expect(crumbs).toEqual(['Home', 'Calculators', ETF_TAX_CALCULATOR.name]);
+  });
+
+  it('lists every calculator on the hub page', () => {
+    const graph = structuredData(CALCULATORS_HUB)['@graph'] as Record<string, any>[];
+    const list = graph.find((n) => n['@type'] === 'ItemList')!;
+    expect(list.itemListElement).toHaveLength(CALCULATOR_PAGES.length - 1);
   });
 });

@@ -437,7 +437,7 @@ export const BudgetCalculatorSection: React.FC<BudgetCalculatorSectionProps> = (
                   {assetClass === 'etf_fund' && (
                     <div className="text-[11px] text-amber-700 bg-amber-50 p-2 rounded-lg mt-2 flex items-start gap-1.5">
                       <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-600" />
-                      <span>Forced deemed disposal events hit every 8 years on unrealized gains.</span>
+                      <span>Deemed disposal taxes each purchase 8 years after you buy it (and every 8 years after), even if you don't sell.</span>
                     </div>
                   )}
                 </div>
@@ -552,10 +552,12 @@ export const BudgetCalculatorSection: React.FC<BudgetCalculatorSectionProps> = (
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 text-slate-700 font-mono">
-                      {calculation.projections.map((p) => (
-                        <tr key={p.year} className={assetClass === 'etf_fund' && p.year % 8 === 0 ? 'bg-amber-50/60' : 'hover:bg-slate-50'}>
+                      {calculation.projections.map((p, idx) => {
+                        const deemedThisYear = assetClass === 'etf_fund' && p.fy26TaxesPaid > (idx > 0 ? calculation.projections[idx - 1].fy26TaxesPaid : 0);
+                        return (
+                        <tr key={p.year} className={deemedThisYear ? 'bg-amber-50/60' : 'hover:bg-slate-50'}>
                           <td className="py-2 px-3 font-bold text-slate-900 whitespace-nowrap">
-                            Yr {p.year} {assetClass === 'etf_fund' && p.year % 8 === 0 && <span className="text-[10px] text-amber-700 font-sans font-semibold">(8yr cycle)</span>}
+                            Yr {p.year} {deemedThisYear && <span className="text-[10px] text-amber-700 font-sans font-semibold">(deemed disposal)</span>}
                           </td>
                           <td className="py-2 px-3">
                             {fmt(p.contributionsCumulative)}
@@ -570,7 +572,8 @@ export const BudgetCalculatorSection: React.FC<BudgetCalculatorSectionProps> = (
                             +{fmt(p.wealthSavedUnderFY27)}
                           </td>
                         </tr>
-                      ))}
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>

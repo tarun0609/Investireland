@@ -1,7 +1,8 @@
 import fs from 'fs';
 import path from 'path';
 import { describe, expect, it } from 'vitest';
-import { renderPrivacyDocument, renderSitemap, seoPlugin } from './seoPlugin';
+import { renderCalculatorDocument, renderPrivacyDocument, renderSitemap, seoPlugin } from './seoPlugin';
+import { CALCULATOR_PAGES } from '../src/config/calculators';
 import { validateSeoOutput, type ReadBuiltFile } from './validateSeo';
 
 const root = path.resolve(import.meta.dirname, '..');
@@ -13,6 +14,7 @@ const buildFiles = (): Record<string, string> => {
   return {
     'index.html': indexHtml,
     'privacy.html': renderPrivacyDocument(indexHtml),
+    ...Object.fromEntries(CALCULATOR_PAGES.map((page) => [`${page.path.slice(1)}.html`, renderCalculatorDocument(indexHtml, page)])),
     'sitemap.xml': renderSitemap(),
     'robots.txt': readSource('public/robots.txt'),
     '404.html': readSource('public/404.html'),

@@ -14,6 +14,13 @@ import {
   absoluteUrl,
   type PageSeo,
 } from '../src/config/site';
+import {
+  CALCULATORS_HUB,
+  CALCULATOR_PAGES,
+  CALCULATOR_TAX_NOTE,
+  CALCULATOR_TOOLS,
+  type CalculatorPage,
+} from '../src/config/calculators';
 
 const HEAD_START = '<!-- seo:start -->';
 const HEAD_END = '<!-- seo:end -->';
@@ -50,11 +57,78 @@ const website = {
   publisher: { '@id': `${SITE_URL}/#organization` },
 };
 
+const faqPage = (id: string, url: string, faqs: { q: string; a: string }[]) => ({
+  '@type': 'FAQPage',
+  '@id': id,
+  url,
+  mainEntity: faqs.map((faq) => ({
+    '@type': 'Question',
+    name: faq.q,
+    acceptedAnswer: { '@type': 'Answer', text: faq.a },
+  })),
+});
+
+const calculatorPageFor = (page: PageSeo): CalculatorPage | undefined => CALCULATOR_PAGES.find((p) => p.path === page.path);
+
+function calculatorStructuredData(page: CalculatorPage, url: string): Record<string, unknown>[] {
+  const crumbs = [{ name: 'Home', item: `${SITE_URL}/` }];
+  if (page.path !== CALCULATORS_HUB.path) crumbs.push({ name: 'Calculators', item: absoluteUrl(CALCULATORS_HUB.path) });
+  crumbs.push({ name: page.name, item: url });
+
+  const nodes: Record<string, unknown>[] = [
+    {
+      '@type': 'WebPage',
+      '@id': `${url}#webpage`,
+      url,
+      name: page.title,
+      description: page.description,
+      inLanguage: 'en-IE',
+      isPartOf: { '@id': `${SITE_URL}/#website` },
+      breadcrumb: {
+        '@type': 'BreadcrumbList',
+        itemListElement: crumbs.map((c, i) => ({ '@type': 'ListItem', position: i + 1, name: c.name, item: c.item })),
+      },
+    },
+  ];
+
+  if (page.path === CALCULATORS_HUB.path) {
+    nodes.push({
+      '@type': 'ItemList',
+      '@id': `${url}#calculators`,
+      itemListElement: CALCULATOR_TOOLS.map((tool, i) => ({
+        '@type': 'ListItem',
+        position: i + 1,
+        name: tool.name,
+        url: absoluteUrl(tool.path),
+      })),
+    });
+  } else {
+    nodes.push({
+      '@type': 'WebApplication',
+      '@id': `${url}#app`,
+      name: `${page.name} Ireland`,
+      url,
+      description: page.description,
+      applicationCategory: 'FinanceApplication',
+      operatingSystem: 'Any (web browser)',
+      inLanguage: 'en-IE',
+      isAccessibleForFree: true,
+      offers: { '@type': 'Offer', price: '0', priceCurrency: 'EUR' },
+      publisher: { '@id': `${SITE_URL}/#organization` },
+    });
+  }
+  if (page.faqs.length > 0) nodes.push(faqPage(`${url}#faq`, url, page.faqs));
+  return nodes;
+}
+
 export function structuredData(page: PageSeo): { '@context': string; '@graph': Record<string, unknown>[] } {
   const url = absoluteUrl(page.path);
   const graph: Record<string, unknown>[] = [organization, website];
+  const calculator = calculatorPageFor(page);
 
-  if (page.path === '/') {
+  if (calculator) {
+    graph.push(...calculatorStructuredData(calculator, url));
+  } else if (page.path === '/') {
     graph.push(
       {
         '@type': 'WebApplication',
@@ -69,16 +143,7 @@ export function structuredData(page: PageSeo): { '@context': string; '@graph': R
         offers: { '@type': 'Offer', price: '0', priceCurrency: 'EUR' },
         publisher: { '@id': `${SITE_URL}/#organization` },
       },
-      {
-        '@type': 'FAQPage',
-        '@id': `${SITE_URL}/#faq`,
-        url: `${SITE_URL}/`,
-        mainEntity: FAQS.map((faq) => ({
-          '@type': 'Question',
-          name: faq.q,
-          acceptedAnswer: { '@type': 'Answer', text: faq.a },
-        })),
-      }
+      faqPage(`${SITE_URL}/#faq`, `${SITE_URL}/`, FAQS)
     );
   } else {
     graph.push({
@@ -165,6 +230,8 @@ export function renderNoscript(): string {
           <li>Track Irish, EU, US and Indian holdings in one place with indicative currency conversion.</li>
           <li>Read guides that link to official sources such as gov.ie, the Department of Finance and Revenue.</li>
         </ul>
+        <h2>Free Irish calculators</h2>
+        <ul>${CALCULATOR_TOOLS.map((t) => `<li><a href="${t.path}">${escapeHtml(t.name)} Ireland</a></li>`).join('')}<li><a href="${CALCULATORS_HUB.path}">All calculators</a></li></ul>
         <h2>Frequently asked questions</h2>
         <dl>${faqs}</dl>
         <p>${escapeHtml(SITE_NAME)} is an educational tool, not a regulated financial adviser. Contact: <a href="mailto:${SITE_FACTS.contactEmail}">${SITE_FACTS.contactEmail}</a>. <a href="/privacy">Privacy &amp; Cookies</a>.</p>
@@ -180,6 +247,39 @@ const replaceBetween = (html: string, startMarker: string, endMarker: string, re
   return html.slice(0, start) + replacement + html.slice(end + endMarker.length);
 };
 
+/** Crawlable fallback for a calculator page: heading, summary, FAQs and links to the other calculators. */
+export function renderCalculatorNoscript(page: CalculatorPage): string {
+  const highlights = page.highlights.length
+    ? `<ul>${page.highlights.map((h) => `<li>${escapeHtml(h)}</li>`).join('')}</ul>`
+    : '';
+  const tools = page.path === CALCULATORS_HUB.path
+    ? `<ul>${CALCULATOR_TOOLS.map((t) => `<li><a href="${t.path}">${escapeHtml(t.name)}</a>: ${escapeHtml(t.description)}</li>`).join('')}</ul>`
+    : '';
+  const faqs = page.faqs.length
+    ? `<h2>Frequently asked questions</h2><dl>${page.faqs.map((f) => `<dt><strong>${escapeHtml(f.q)}</strong></dt><dd>${escapeHtml(f.a)}</dd>`).join('')}</dl>`
+    : '';
+  const related = CALCULATOR_PAGES.filter((p) => p.path !== page.path)
+    .map((p) => `<li><a href="${p.path}">${escapeHtml(p.name)}</a></li>`)
+    .join('');
+  return `${NOSCRIPT_START}<noscript>
+      <main style="max-width:48rem;margin:2rem auto;padding:0 1rem;font-family:system-ui,sans-serif;line-height:1.6">
+        <h1>${escapeHtml(page.h1)}</h1>
+        <p>${escapeHtml(page.intro)}</p>
+        ${highlights}${tools}${faqs}
+        <p>${escapeHtml(CALCULATOR_TAX_NOTE)} Results are estimates, not financial advice.</p>
+        <h2>More calculators</h2>
+        <ul>${related}</ul>
+        <p><a href="/">Back to ${escapeHtml(SITE_NAME)}</a> · <a href="/privacy">Privacy &amp; Cookies</a></p>
+        <p>Please enable JavaScript to use the interactive calculator.</p>
+      </main>
+    </noscript>${NOSCRIPT_END}`;
+}
+
+export function renderCalculatorDocument(indexHtml: string, page: CalculatorPage): string {
+  const withHead = replaceBetween(indexHtml, HEAD_START, HEAD_END, renderHead(page));
+  return replaceBetween(withHead, NOSCRIPT_START, NOSCRIPT_END, renderCalculatorNoscript(page));
+}
+
 /** Builds the static /privacy document from the built home document. */
 export function renderPrivacyDocument(indexHtml: string): string {
   const withHead = replaceBetween(indexHtml, HEAD_START, HEAD_END, renderHead(PRIVACY_SEO));
@@ -187,7 +287,7 @@ export function renderPrivacyDocument(indexHtml: string): string {
 }
 
 /** Indexable public URLs. Keep in sync with the routes the app serves with HTTP 200. */
-export const SITEMAP_PAGES: PageSeo[] = [HOME_SEO, PRIVACY_SEO];
+export const SITEMAP_PAGES: PageSeo[] = [HOME_SEO, ...CALCULATOR_PAGES, PRIVACY_SEO];
 
 // lastmod/changefreq/priority are intentionally omitted: no accurate per-page modification date exists,
 // and Google ignores changefreq/priority.
@@ -196,7 +296,7 @@ export function renderSitemap(): string {
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${body}\n</urlset>\n`;
 }
 
-/** Injects SEO/AEO metadata, and at build time emits /privacy.html and sitemap.xml. */
+/** Injects SEO/AEO metadata, and at build time emits /privacy.html, the calculator pages and sitemap.xml. */
 export function seoPlugin(): Plugin {
   let config: ResolvedConfig;
   return {
@@ -214,6 +314,9 @@ export function seoPlugin(): Plugin {
       const outDir = path.resolve(config.root, config.build.outDir);
       const indexHtml = fs.readFileSync(path.join(outDir, 'index.html'), 'utf8');
       fs.writeFileSync(path.join(outDir, 'privacy.html'), renderPrivacyDocument(indexHtml));
+      for (const page of CALCULATOR_PAGES) {
+        fs.writeFileSync(path.join(outDir, `${page.path.slice(1)}.html`), renderCalculatorDocument(indexHtml, page));
+      }
       fs.writeFileSync(path.join(outDir, 'sitemap.xml'), renderSitemap());
     },
   };

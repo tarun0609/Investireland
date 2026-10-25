@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Currency } from '../types';
 import { formatCurrency, convertFromEUR } from '../services/fiscalDataService';
 import { describeFxRates } from '../services/fxRateService';
+import { simulateInvestment } from '../services/investmentEngine';
 import { 
   TrendingUp, 
   HelpCircle, 
@@ -33,16 +34,12 @@ export const ScenarioPlannerSection: React.FC<ScenarioPlannerSectionProps> = ({
   };
   const initialAmount = parseAmount(initialAmountInput);
   const monthlyAmount = parseAmount(monthlyAmountInput);
-  const exceedsAllowance = monthlyAmount * 12 > 12000 || initialAmount > 12000;
+  // Lump sum and year-1 contributions share the same €12,000 annual allowance.
+  const exceedsAllowance = initialAmount + monthlyAmount * 12 > 12000;
 
-  // Compute future values for 5%, 7%, 9%
-  const calculateCompound = (rate: number) => {
-    let balance = initialAmount;
-    for (let yr = 1; yr <= years; yr++) {
-      balance = (balance + (monthlyAmount * 12)) * (1 + rate);
-    }
-    return Math.round(balance);
-  };
+  // Compute future values for 5%, 7%, 9% (monthly contributions, monthly compounding, before tax)
+  const calculateCompound = (rate: number) =>
+    Math.round(simulateInvestment({ startingAmount: initialAmount, monthlyContribution: monthlyAmount, years, annualReturn: rate, treatment: 'none' }).gross);
 
   const totalContributions = initialAmount + (monthlyAmount * 12 * years);
   const valAt5 = calculateCompound(0.05);
