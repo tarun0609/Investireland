@@ -12,6 +12,14 @@ Key facts (as announced; subject to final legislation by the Oireachtas):
 - [Home: calculators, scenario planner, portfolio tracker and FAQ](https://www.investirelandai.ie/)
 - [Privacy & Cookies (GDPR)](https://www.investirelandai.ie/privacy)
 
+## Free calculators (2026 Irish tax rules)
+- [All calculators](https://www.investirelandai.ie/calculators)
+- [Investment Calculator Ireland: exit tax vs proposed Investment Account](https://www.investirelandai.ie/investment-calculator)
+- [ETF Tax Calculator Ireland: 38% exit tax and 8-year deemed disposal vs 33% CGT](https://www.investirelandai.ie/etf-tax-calculator)
+- [Pension Calculator Ireland: tax relief, pot, lump sum and retirement income](https://www.investirelandai.ie/pension-calculator)
+- [Savings Goal Calculator Ireland: monthly savings needed after DIRT, tax and inflation](https://www.investirelandai.ie/savings-goal-calculator)
+- [Mortgage Overpayment vs Investing Calculator Ireland](https://www.investirelandai.ie/mortgage-vs-investing-calculator)
+
 ## Contact
 - General enquiries: hello@investirelandai.ie
 - Website and portal support: support@investirelandai.ie

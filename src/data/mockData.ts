@@ -52,7 +52,7 @@ export const INITIAL_HOLDINGS: Holding[] = [
     assetType: 'Mutual Fund',
     units: 24500,
     unitPrice: 75.5,
-    currentValue: 1849750, // ₹18.50 Lakh (~€20,000)
+    currentValue: 1849750, // ₹18.50 Lakh (~€17,360)
     currency: 'INR',
     country: 'India',
     provider: 'Zerodha Coin / Groww',
@@ -67,7 +67,7 @@ export const INITIAL_HOLDINGS: Holding[] = [
     ticker: 'TCS.NS',
     units: 150,
     unitPrice: 3200,
-    currentValue: 480000, // ₹4.80 Lakh (~€5,190)
+    currentValue: 480000, // ₹4.80 Lakh (~€4,505)
     currency: 'INR',
     country: 'India',
     provider: 'ICICI Direct',
@@ -83,7 +83,7 @@ export const INITIAL_HOLDINGS: Holding[] = [
     ticker: 'GOOGL',
     units: 75,
     unitPrice: 165.2,
-    currentValue: 12390, // $12,390 USD (~€11,419)
+    currentValue: 12390, // $12,390 USD (~€11,038)
     currency: 'USD',
     country: 'US',
     provider: 'Morgan Stanley at Work',
@@ -121,7 +121,7 @@ export const EDUCATIONAL_ARTICLES = [
   },
   {
     slug: 'etf-exit-tax-vs-new-scheme',
-    title: '41% Exit Tax & Deemed Disposal vs The New Scheme',
+    title: '38% Exit Tax & Deemed Disposal vs The New Scheme',
     summary: 'Why Ireland has had the harshest ETF tax regime in Europe for two decades and how the 2027 account finally changes the math.',
     lastUpdated: 'October 2026',
     source: 'Revenue Commissioners (TCA 1997 s.739D)',
@@ -224,7 +224,7 @@ export function calculateQuizScore(answers: Record<number, number>): QuizResult 
       title: 'Moderate Readiness (Building Momentum)',
       verdict: 'You have solid financial fundamentals with meaningful savings or pensions. Your biggest leap forward will be organizing your cross-border assets and eliminating unnecessary tax drag.',
       recommendations: [
-        'Explore how the €50,000 tax-free threshold saves you from Ireland’s 41% exit tax.',
+        'Explore how the €50,000 tax-free threshold saves you from Ireland’s 38% exit tax.',
         'Consolidate your Indian/US holdings into a single dashboard view.',
         'Use our Scenario Planner to simulate a 10-year monthly investment roadmap.'
       ]

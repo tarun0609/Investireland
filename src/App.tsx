@@ -38,7 +38,15 @@ import {
   subscribeEntitlement,
   type ClientEntitlement,
 } from './services/entitlementService';
-import { applyPageSeo, seoForView } from './utils/seo';
+import { applyPageSeo, normalisePath, seoForView } from './utils/seo';
+import {
+  CALCULATOR_ALIASES,
+  calculatorPageForView,
+  calculatorViewForPath,
+  isCalculatorView,
+  type AppView,
+  type CalculatorView,
+} from './config/calculators';
 import { getFxRates, loadEcbRates, subscribeFxRates } from './services/fxRateService';
 import type { ImportPlanItem } from './services/csvImportService';
 import { isRefreshableFund, markAutoRefreshed, refreshFundPrices, shouldAutoRefresh, type NavRefreshSummary } from './services/navRefreshService';
@@ -52,11 +60,35 @@ import {
 
 const DashboardView = lazy(() => import('./components/DashboardView').then((m) => ({ default: m.DashboardView })));
 const PrivacyPage = lazy(() => import('./components/PrivacyPage').then((m) => ({ default: m.PrivacyPage })));
+const CalculatorsHubPage = lazy(() => import('./components/CalculatorsHubPage').then((m) => ({ default: m.CalculatorsHubPage })));
+const InvestmentCalculatorPage = lazy(() => import('./components/InvestmentCalculatorPage').then((m) => ({ default: m.InvestmentCalculatorPage })));
+const EtfTaxCalculatorPage = lazy(() => import('./components/EtfTaxCalculatorPage').then((m) => ({ default: m.EtfTaxCalculatorPage })));
+const PensionCalculatorPage = lazy(() => import('./components/PensionCalculatorPage').then((m) => ({ default: m.PensionCalculatorPage })));
+const SavingsGoalCalculatorPage = lazy(() => import('./components/SavingsGoalCalculatorPage').then((m) => ({ default: m.SavingsGoalCalculatorPage })));
+const MortgageVsInvestingCalculatorPage = lazy(() =>
+  import('./components/MortgageVsInvestingCalculatorPage').then((m) => ({ default: m.MortgageVsInvestingCalculatorPage }))
+);
 
-type AppView = 'landing' | 'app' | 'privacy';
 const PRIVACY_PATH = '/privacy';
-const viewFromLocation = (): AppView =>
-  typeof window !== 'undefined' && window.location.pathname.replace(/\/+$/, '') === PRIVACY_PATH ? 'privacy' : 'landing';
+
+const pathForView = (view: AppView): string => {
+  if (view === 'privacy') return PRIVACY_PATH;
+  if (isCalculatorView(view)) return calculatorPageForView(view).path;
+  return '/';
+};
+
+const viewFromLocation = (): AppView => {
+  if (typeof window === 'undefined') return 'landing';
+  const path = normalisePath(window.location.pathname);
+  if (path === PRIVACY_PATH) return 'privacy';
+  const alias = CALCULATOR_ALIASES[path.toLowerCase()];
+  if (alias) {
+    // The host normally 301s these; this covers the dev server and stale caches.
+    window.history.replaceState(null, '', alias + window.location.search + window.location.hash);
+    return calculatorViewForPath(alias) ?? 'landing';
+  }
+  return calculatorViewForPath(path) ?? 'landing';
+};
 
 const ViewFallback = () => (
   <div role="status" aria-live="polite" className="flex min-h-[50vh] items-center justify-center text-sm font-semibold text-slate-500">
@@ -72,11 +104,12 @@ export default function App() {
   const [currentCurrency, setCurrentCurrency] = useState<Currency>('EUR');
   const [activeView, setActiveViewState] = useState<AppView>(viewFromLocation);
 
-  // Keep /privacy as a real, shareable URL; other views live at the site root.
+  // Keep /privacy and the calculator pages as real, shareable URLs; other views live at the site root.
   const setActiveView = useCallback((view: AppView) => {
-    const targetPath = view === 'privacy' ? PRIVACY_PATH : '/';
+    const targetPath = pathForView(view);
     if (window.location.pathname !== targetPath) {
       window.history.pushState(null, '', targetPath);
+      if (view !== 'landing') window.scrollTo({ top: 0 });
     }
     setActiveViewState(view);
   }, []);
@@ -258,6 +291,23 @@ export default function App() {
   const holdingsRef = useRef(holdings);
   holdingsRef.current = holdings;
 
+  const renderCalculator = (view: CalculatorView) => {
+    switch (view) {
+      case 'investment-calculator':
+        return <InvestmentCalculatorPage currentCurrency={currentCurrency} onOpenWaitlist={handleOpenWaitlist} onNavigate={setActiveView} />;
+      case 'etf-tax-calculator':
+        return <EtfTaxCalculatorPage onNavigate={setActiveView} />;
+      case 'pension-calculator':
+        return <PensionCalculatorPage onNavigate={setActiveView} />;
+      case 'savings-goal-calculator':
+        return <SavingsGoalCalculatorPage onNavigate={setActiveView} />;
+      case 'mortgage-vs-investing-calculator':
+        return <MortgageVsInvestingCalculatorPage onNavigate={setActiveView} />;
+      default:
+        return <CalculatorsHubPage onNavigate={setActiveView} />;
+    }
+  };
+
   const ensureDataReady = () => {
     if (isDataReadyRef.current) return true;
     setDataError('Your portfolio is still loading. Please wait a moment and try again.');
@@ -433,6 +483,18 @@ export default function App() {
         <Suspense fallback={<ViewFallback />}>
           <PrivacyPage onBack={() => setActiveView('landing')} />
         </Suspense>
+      ) : isCalculatorView(activeView) ? (
+        <>
+          <Suspense fallback={<ViewFallback />}>
+            {renderCalculator(activeView)}
+          </Suspense>
+          <Footer
+            onNavigateSection={handleNavigateSection}
+            onOpenWaitlist={() => handleOpenWaitlist()}
+            onOpenPrivacy={() => setActiveView('privacy')}
+            onNavigateView={setActiveView}
+          />
+        </>
       ) : activeView === 'landing' ? (
         <main>
           {/* 1. Hero Section & Product Demo Mockup */}
@@ -519,6 +581,7 @@ export default function App() {
             onNavigateSection={handleNavigateSection}
             onOpenWaitlist={() => handleOpenWaitlist()}
             onOpenPrivacy={() => setActiveView('privacy')}
+            onNavigateView={setActiveView}
           />
         </main>
       ) : (

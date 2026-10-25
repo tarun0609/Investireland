@@ -201,11 +201,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   // Compute live metrics
   const xray = computeFinancialXRay(holdings, currentCurrency);
 
-  const cashHoldings = holdings.filter(h => h.assetType === 'Cash / Deposit');
-  const cashTotalEUR = cashHoldings.reduce((sum, h) => sum + convertToEUR(h.currentValue, h.currency), 0);
-
-  const pensionHoldings = holdings.filter(h => h.assetType === 'Pension');
-  const pensionTotalEUR = pensionHoldings.reduce((sum, h) => sum + convertToEUR(h.currentValue, h.currency), 0);
+  const cashTotalEUR = xray.liquidity.cashEUR;
+  const pensionTotalEUR = xray.liquidity.pensionAndLockedEUR;
 
   const investmentTotalEUR = xray.totalAssetsEUR - cashTotalEUR - pensionTotalEUR;
 

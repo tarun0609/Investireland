@@ -8,6 +8,7 @@ import { createFirebaseAdminVerifier, type IdTokenVerifier } from './server/auth
 import { createMailer } from './server/mailer';
 import { createGeminiGenerator } from './server/aiAssistant';
 import { createFxCache, fetchLiveFxRates } from './server/fiscalData';
+import { CALCULATOR_ALIASES } from './src/config/calculators';
 
 dotenv.config();
 
@@ -71,6 +72,8 @@ async function startServer() {
       if (canonicalPath.length > 1 && canonicalPath.endsWith('/')) canonicalPath = canonicalPath.replace(/\/+$/, '') || '/';
       if (canonicalPath.endsWith('.html')) canonicalPath = canonicalPath.replace(/(?:index)?\.html$/, '') || '/';
       if (/\/index$/.test(canonicalPath)) canonicalPath = canonicalPath.replace(/index$/, '').replace(/(.)\/$/, '$1');
+      // Short calculator URLs (e.g. /etfcalculator) permanently redirect to the canonical page.
+      canonicalPath = CALCULATOR_ALIASES[canonicalPath.toLowerCase()] ?? canonicalPath;
       if (canonicalPath !== req.path) return res.redirect(301, canonicalPath + query);
       return next();
     });

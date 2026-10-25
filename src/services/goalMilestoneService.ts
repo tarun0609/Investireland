@@ -154,7 +154,7 @@ export const INITIAL_DEFAULT_GOALS: FinancialGoalMilestone[] = [
     categoryLabel: 'Cross-Border & Repatriation',
     targetAmount: 11000000,
     targetCurrency: 'INR',
-    targetAmountEUR: 119000, // converted at ~92.45 INR/EUR
+    targetAmountEUR: 103229, // ₹1.1 Cr at the bundled ECB rate (~106.56 INR/EUR)
     targetYear: 2030,
     currentAllocatedEUR: 41200,
     monthlyContributionEUR: 800,

@@ -4,6 +4,12 @@ import { scopedStorageKey } from './storageScope';
 
 const STORAGE_KEY = 'investireland_dividend_records_v1';
 
+/** Maximum dividend withholding Ireland credits under each double taxation agreement. */
+export const DTAA_DIVIDEND_CREDIT_RATES: Partial<Record<string, number>> = {
+  India: 0.1,
+  US: 0.15,
+};
+
 // Rich historical cross-border dividend dataset across user's holdings
 export const DEFAULT_HISTORICAL_DIVIDENDS: DividendRecord[] = [
   // 2024 Q1
@@ -670,9 +676,11 @@ export function calculateDividendAnalytics(
     totalNetEUR += netEUR;
     totalWithholdingTaxEUR += whtEUR;
 
-    // Foreign tax credit is for India (TDS) and US (WHT)
+    // Foreign tax credit is limited to the treaty rate; anything withheld above it must be
+    // reclaimed from the source country instead (e.g. Indian TDS above the 10% DTAA rate).
     if (div.country !== 'Ireland') {
-      foreignTaxCreditAvailableEUR += whtEUR;
+      const treatyRate = DTAA_DIVIDEND_CREDIT_RATES[div.country];
+      foreignTaxCreditAvailableEUR += treatyRate === undefined ? whtEUR : Math.min(whtEUR, grossEUR * treatyRate);
     }
 
     runningCumulativeEUR += grossEUR;
@@ -778,7 +786,7 @@ export function calculateDividendAnalytics(
       taxNotes = 'Subject to 33% DIRT or marginal income tax (20%/40% + PRSI + USC). Sheltered in 2027 PSIA.';
     } else if (country === 'India') {
       label = 'India (Overseas Equities)';
-      taxNotes = '20% Indian TDS deducted at source under s.195. 100% claimable as Foreign Tax Credit under DTAA Art 23.';
+      taxNotes = 'Indian TDS is deducted at source. Ireland credits it only up to the 10% India–Ireland DTAA rate; claim any excess back from India.';
     } else if (country === 'US') {
       label = 'United States (RSUs & Tech)';
       taxNotes = '15% US Withholding Tax applied via Form W-8BEN. Offsettable against Irish Revenue Form 11 liability.';

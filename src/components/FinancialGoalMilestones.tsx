@@ -465,7 +465,7 @@ export const FinancialGoalMilestones: React.FC<FinancialGoalMilestonesProps> = (
               Total Target Needed
             </span>
             <div className="text-lg sm:text-xl font-black text-slate-900 mt-1">
-              {formatCurrency(summary.totalTargetEUR, currentCurrency)}
+              {formatCurrency(convertFromEUR(summary.totalTargetEUR, currentCurrency), currentCurrency)}
             </div>
             <span className="text-[10px] text-slate-500 mt-0.5 block">
               Across {summary.totalGoalsCount} life {summary.totalGoalsCount === 1 ? 'milestone' : 'milestones'}
@@ -477,7 +477,7 @@ export const FinancialGoalMilestones: React.FC<FinancialGoalMilestonesProps> = (
               Current Allocated
             </span>
             <div className="text-lg sm:text-xl font-black text-emerald-700 mt-1">
-              {formatCurrency(summary.totalFundedEUR, currentCurrency)}
+              {formatCurrency(convertFromEUR(summary.totalFundedEUR, currentCurrency), currentCurrency)}
             </div>
             <span className="text-[10px] text-emerald-700 font-semibold mt-0.5 block">
               {summary.overallProgressPct}% of total target funded
@@ -489,7 +489,7 @@ export const FinancialGoalMilestones: React.FC<FinancialGoalMilestonesProps> = (
               Holdings Value
             </span>
             <div className="text-lg sm:text-xl font-black text-slate-900 mt-1">
-              {formatCurrency(totalPortfolioEUR, currentCurrency)}
+              {formatCurrency(convertFromEUR(totalPortfolioEUR, currentCurrency), currentCurrency)}
             </div>
             <span className="text-[10px] text-slate-500 mt-0.5 block">
               Total cross-border portfolio
@@ -501,7 +501,7 @@ export const FinancialGoalMilestones: React.FC<FinancialGoalMilestonesProps> = (
               Monthly Savings Pace
             </span>
             <div className="text-lg sm:text-xl font-black text-blue-700 mt-1">
-              {formatCurrency(summary.monthlySavingsRequiredTotal, currentCurrency)}/mo
+              {formatCurrency(convertFromEUR(summary.monthlySavingsRequiredTotal, currentCurrency), currentCurrency)}/mo
             </div>
             <span className="text-[10px] text-slate-500 mt-0.5 block">
               Required to hit all open goals
@@ -533,7 +533,7 @@ export const FinancialGoalMilestones: React.FC<FinancialGoalMilestonesProps> = (
               Cumulative Financial Milestone Progress
             </span>
             <span className="text-emerald-800">
-              {formatCurrency(summary.totalFundedEUR, currentCurrency)} / {formatCurrency(summary.totalTargetEUR, currentCurrency)} ({summary.overallProgressPct}%)
+              {formatCurrency(convertFromEUR(summary.totalFundedEUR, currentCurrency), currentCurrency)} / {formatCurrency(convertFromEUR(summary.totalTargetEUR, currentCurrency), currentCurrency)} ({summary.overallProgressPct}%)
             </span>
           </div>
           <div className="w-full bg-slate-200 rounded-full h-3 overflow-hidden">
@@ -543,7 +543,7 @@ export const FinancialGoalMilestones: React.FC<FinancialGoalMilestonesProps> = (
             />
           </div>
           <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[11px] text-slate-500 mt-2">
-            <span>Funding Gap Remaining: {formatCurrency(Math.max(0, summary.totalTargetEUR - summary.totalFundedEUR), currentCurrency)}</span>
+            <span>Funding Gap Remaining: {formatCurrency(convertFromEUR(Math.max(0, summary.totalTargetEUR - summary.totalFundedEUR), currentCurrency), currentCurrency)}</span>
             <span>Target Completion: {summary.projectedFullFundingYear > currentYear ? `${currentYear} – ${summary.projectedFullFundingYear}` : summary.projectedFullFundingYear}</span>
           </div>
         </div>
@@ -622,7 +622,7 @@ export const FinancialGoalMilestones: React.FC<FinancialGoalMilestonesProps> = (
           const progressPct = goal.targetAmountEUR > 0 
             ? Math.min(100, Math.round((goal.currentAllocatedEUR / goal.targetAmountEUR) * 1000) / 10)
             : 0;
-          const isDone = progressPct >= 100 || goal.isCompleted;
+          const isDone = goal.isCompleted || (goal.targetAmountEUR > 0 && goal.currentAllocatedEUR >= goal.targetAmountEUR);
           const shortfallEUR = Math.max(0, goal.targetAmountEUR - goal.currentAllocatedEUR);
           const yearsRemaining = Math.max(0, goal.targetYear - currentYear);
           const isOverdue = !isDone && goal.targetYear < currentYear;
@@ -702,10 +702,10 @@ export const FinancialGoalMilestones: React.FC<FinancialGoalMilestonesProps> = (
                 <div className="flex items-baseline justify-between gap-2 mb-1.5">
                   <div className="flex flex-wrap items-baseline gap-x-1.5 min-w-0">
                     <span className="text-lg font-black text-slate-900">
-                      {formatCurrency(goal.currentAllocatedEUR, currentCurrency)}
+                      {formatCurrency(convertFromEUR(goal.currentAllocatedEUR, currentCurrency), currentCurrency)}
                     </span>
                     <span className="text-xs text-slate-500">
-                      of {formatCurrency(goal.targetAmountEUR, currentCurrency)}
+                      of {formatCurrency(convertFromEUR(goal.targetAmountEUR, currentCurrency), currentCurrency)}
                       {goal.targetCurrency !== 'EUR' && (
                         <span className="text-[10px] text-slate-400 ml-1">
                           ({currencySymbol(goal.targetCurrency)}{goal.targetAmount.toLocaleString('en-IE')})
@@ -741,13 +741,13 @@ export const FinancialGoalMilestones: React.FC<FinancialGoalMilestonesProps> = (
                   <div>
                     <span className="text-[10px] text-slate-400 block">Shortfall</span>
                     <span className={`font-bold ${isDone ? 'text-emerald-700' : 'text-rose-700'}`}>
-                      {isDone ? 'Fully Funded' : formatCurrency(shortfallEUR, currentCurrency)}
+                      {isDone ? 'Fully Funded' : formatCurrency(convertFromEUR(shortfallEUR, currentCurrency), currentCurrency)}
                     </span>
                   </div>
                   <div>
                     <span className="text-[10px] text-slate-400 block">Required Pace</span>
                     <span className="font-bold text-slate-800">
-                      {isDone ? '—' : `${formatCurrency(suggestedMonthly, currentCurrency)}/mo`}
+                      {isDone ? '—' : `${formatCurrency(convertFromEUR(suggestedMonthly, currentCurrency), currentCurrency)}/mo`}
                     </span>
                   </div>
                 </div>
