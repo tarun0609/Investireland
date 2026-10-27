@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { calculateBudgetProjections } from './budgetCalculatorService';
 import { BudgetCalculatorInputs } from '../types';
+import { CGT_ANNUAL_EXEMPTION, CGT_RATE, DIRT_RATE, EXIT_TAX_RATE, pct } from '../config/irishTax';
 
 const makeInputs = (overrides: Partial<BudgetCalculatorInputs> = {}): BudgetCalculatorInputs => ({
   startingAmount: 0,
@@ -48,10 +49,10 @@ describe('calculateBudgetProjections - FY26 regime', () => {
     expect(result.projections[0].fy26GrossValue).toBeGreaterThan(12000);
   });
 
-  it('applies the 38% deemed disposal to a lump sum on its 8th anniversary and re-bases afterwards', () => {
+  it(`applies the ${pct(EXIT_TAX_RATE)} deemed disposal to a lump sum on its 8th anniversary and re-bases afterwards`, () => {
     const result = calculateBudgetProjections(makeInputs({ startingAmount: 10000, annualReturnRate: 0.1, timeHorizonYears: 9 }));
     const grossY8 = 10000 * Math.pow(1.1, 8);
-    const deemedTax = (grossY8 - 10000) * 0.38;
+    const deemedTax = (grossY8 - 10000) * EXIT_TAX_RATE;
     const postTaxY8 = grossY8 - deemedTax;
 
     expect(result.projections[6].fy26TaxesPaid).toBe(0);
@@ -60,14 +61,14 @@ describe('calculateBudgetProjections - FY26 regime', () => {
     expect(result.projections[7].fy26NetValue).toBe(Math.round(postTaxY8));
 
     const grossY9 = postTaxY8 * 1.1;
-    expect(result.fy26FinalNetValue).toBe(Math.round(grossY9 - (grossY9 - postTaxY8) * 0.38));
+    expect(result.fy26FinalNetValue).toBe(Math.round(grossY9 - (grossY9 - postTaxY8) * EXIT_TAX_RATE));
   });
 
   it('applies deemed disposal to each monthly purchase on its own 8th anniversary', () => {
     // After exactly 8 years only the very first purchase is 8 years old.
     const result = calculateBudgetProjections(makeInputs({ monthlyContribution: 1000, annualReturnRate: 0.05, timeHorizonYears: 8 }));
     const firstLotGross = 1000 * Math.pow(1.05, 8);
-    const firstLotTax = (firstLotGross - 1000) * 0.38;
+    const firstLotTax = (firstLotGross - 1000) * EXIT_TAX_RATE;
     expect(result.projections[7].fy26TaxesPaid).toBe(Math.round(firstLotTax));
 
     // By year 9 the first 12 purchases have each hit their anniversary.
@@ -75,17 +76,17 @@ describe('calculateBudgetProjections - FY26 regime', () => {
     expect(nine.projections[8].fy26TaxesPaid).toBeGreaterThan(11 * firstLotTax);
   });
 
-  it('applies 33% CGT above the €1,270 exemption for individual shares with no deemed disposal', () => {
+  it(`applies ${pct(CGT_RATE)} CGT above the €1,270 exemption for individual shares with no deemed disposal`, () => {
     const inputs = makeInputs({ startingAmount: 10000, annualReturnRate: 0.07, timeHorizonYears: 10, assetClass: 'individual_shares' });
     const result = calculateBudgetProjections(inputs);
     const gross = noTaxGross(inputs);
     expect(result.projections.every(p => p.fy26TaxesPaid === 0)).toBe(true);
-    expect(result.fy26FinalNetValue).toBe(Math.round(gross - (gross - 10000 - 1270) * 0.33));
+    expect(result.fy26FinalNetValue).toBe(Math.round(gross - (gross - 10000 - CGT_ANNUAL_EXEMPTION) * CGT_RATE));
   });
 
-  it('deducts 33% DIRT from deposit interest as it is earned', () => {
+  it('deducts DIRT from deposit interest as it is earned', () => {
     const result = calculateBudgetProjections(makeInputs({ startingAmount: 10000, annualReturnRate: 0.03, timeHorizonYears: 1, assetClass: 'deposit' }));
-    const netMonthly = monthly(0.03) * (1 - 0.33);
+    const netMonthly = monthly(0.03) * (1 - DIRT_RATE);
     expect(result.fy26FinalNetValue).toBe(Math.round(10000 * Math.pow(1 + netMonthly, 12)));
     expect(result.projections[0].fy26TaxesPaid).toBeGreaterThan(0);
   });

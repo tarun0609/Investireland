@@ -68,6 +68,14 @@ const SavingsGoalCalculatorPage = lazy(() => import('./components/SavingsGoalCal
 const MortgageVsInvestingCalculatorPage = lazy(() =>
   import('./components/MortgageVsInvestingCalculatorPage').then((m) => ({ default: m.MortgageVsInvestingCalculatorPage }))
 );
+const InvestmentAccountCalculatorPage = lazy(() =>
+  import('./components/InvestmentAccountCalculatorPage').then((m) => ({ default: m.InvestmentAccountCalculatorPage }))
+);
+const ExitTaxCalculatorPage = lazy(() => import('./components/ExitTaxCalculatorPage').then((m) => ({ default: m.ExitTaxCalculatorPage })));
+const DeemedDisposalCalculatorPage = lazy(() =>
+  import('./components/DeemedDisposalCalculatorPage').then((m) => ({ default: m.DeemedDisposalCalculatorPage }))
+);
+const GuidePage = lazy(() => import('./components/GuidePage').then((m) => ({ default: m.GuidePage })));
 
 const PRIVACY_PATH = '/privacy';
 
@@ -303,6 +311,17 @@ export default function App() {
         return <SavingsGoalCalculatorPage onNavigate={setActiveView} />;
       case 'mortgage-vs-investing-calculator':
         return <MortgageVsInvestingCalculatorPage onNavigate={setActiveView} />;
+      case 'investment-account-calculator':
+        return <InvestmentAccountCalculatorPage onNavigate={setActiveView} />;
+      case 'exit-tax-calculator':
+        return <ExitTaxCalculatorPage onNavigate={setActiveView} />;
+      case 'deemed-disposal-calculator':
+        return <DeemedDisposalCalculatorPage onNavigate={setActiveView} />;
+      case 'best-investment-options-ireland':
+      case 'etf-tax-ireland-beginners':
+      case 'exit-tax-vs-investment-account':
+      case 'about':
+        return <GuidePage view={view} onNavigate={setActiveView} />;
       default:
         return <CalculatorsHubPage onNavigate={setActiveView} />;
     }

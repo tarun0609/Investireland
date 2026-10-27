@@ -3,7 +3,8 @@
  *
  * - Annual return r becomes an equivalent monthly rate (1 + r)^(1/12) - 1.
  * - Contributions are invested at the start of each month, then that month's growth applies.
- * - Irish tax treatment (2026 figures, editable via TaxRates):
+ * - Irish tax treatment (rates from Budget 2027 / Finance (No. 2) Bill 2026 for events from 2027,
+ *   editable via TaxRates; see src/config/irishTax.ts):
  *   - ETFs / funds: exit tax on gains when sold, plus deemed disposal on the 8th anniversary of
  *     EACH purchase (and every 8 years after). Each month's purchase is its own lot. Tax is paid by
  *     selling units and the remaining units are re-based at market value.
@@ -11,6 +12,8 @@
  *   - Deposits: DIRT deducted from interest as it is earned.
  *   - 'none': no tax (inside a pension, or the "no tax" comparison).
  */
+
+import { CGT_ANNUAL_EXEMPTION, CGT_RATE, DEEMED_DISPOSAL_YEARS, DIRT_RATE, EXIT_TAX_RATE } from '../config/irishTax';
 
 export type TaxTreatment = 'etf_fund' | 'individual_shares' | 'deposit' | 'none';
 
@@ -22,12 +25,13 @@ export interface TaxRates {
   deemedDisposalYears: number;
 }
 
-export const IRISH_TAX_RATES_2026: TaxRates = {
-  exitTaxRate: 0.38,
-  cgtRate: 0.33,
-  cgtAnnualExemption: 1270,
-  dirtRate: 0.33,
-  deemedDisposalYears: 8,
+/** Rates for future events (projections start now, so sales and deemed disposals fall in 2027 or later). */
+export const IRISH_TAX_RATES: TaxRates = {
+  exitTaxRate: EXIT_TAX_RATE,
+  cgtRate: CGT_RATE,
+  cgtAnnualExemption: CGT_ANNUAL_EXEMPTION,
+  dirtRate: DIRT_RATE,
+  deemedDisposalYears: DEEMED_DISPOSAL_YEARS,
 };
 
 export const TAX_TREATMENT_LABELS: Record<TaxTreatment, string> = {
@@ -50,11 +54,11 @@ export const clampYears = (value: number, min = 1): number =>
 export const monthlyRateFromAnnual = (annualRate: number): number =>
   Math.pow(1 + clampRate(annualRate, -0.99, 10), 1 / 12) - 1;
 
-export const sanitiseRates = (rates: TaxRates = IRISH_TAX_RATES_2026): TaxRates => ({
-  exitTaxRate: clampRate(rates.exitTaxRate, 0, 1, IRISH_TAX_RATES_2026.exitTaxRate),
-  cgtRate: clampRate(rates.cgtRate, 0, 1, IRISH_TAX_RATES_2026.cgtRate),
+export const sanitiseRates = (rates: TaxRates = IRISH_TAX_RATES): TaxRates => ({
+  exitTaxRate: clampRate(rates.exitTaxRate, 0, 1, IRISH_TAX_RATES.exitTaxRate),
+  cgtRate: clampRate(rates.cgtRate, 0, 1, IRISH_TAX_RATES.cgtRate),
   cgtAnnualExemption: nonNegative(rates.cgtAnnualExemption),
-  dirtRate: clampRate(rates.dirtRate, 0, 1, IRISH_TAX_RATES_2026.dirtRate),
+  dirtRate: clampRate(rates.dirtRate, 0, 1, IRISH_TAX_RATES.dirtRate),
   deemedDisposalYears: Math.max(1, Math.round(nonNegative(rates.deemedDisposalYears)) || 8),
 });
 

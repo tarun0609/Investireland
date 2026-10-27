@@ -1,12 +1,19 @@
 import React, { useEffect, useId, useState } from 'react';
-import { ArrowLeft, Calculator, ChevronRight, Info } from 'lucide-react';
+import { ArrowLeft, BookOpen, Calculator, ChevronRight, Info } from 'lucide-react';
 import {
   CALCULATOR_TAX_NOTE,
   CALCULATOR_TOOLS,
   CALCULATORS_HUB,
+  GUIDE_PAGES,
+  calculatorPageForView,
+  formatIsoDate,
   type CalculatorPage,
   type CalculatorView,
+  type ContentSection,
+  type PageKind,
 } from '../config/calculators';
+import { SITE_NAME } from '../config/site';
+import { CGT_ANNUAL_EXEMPTION, CGT_RATE, DIRT_RATE, EXIT_TAX_RATE, TAX_RULES_SOURCE, pct as ratePct } from '../config/irishTax';
 import { isModifiedClick } from '../utils/links';
 import type { TaxTreatment } from '../services/investmentEngine';
 
@@ -107,9 +114,9 @@ export const NumberField: React.FC<NumberFieldProps> = ({ label, value, onChange
 };
 
 const TREATMENT_OPTIONS: { value: TaxTreatment; label: string; detail: string }[] = [
-  { value: 'etf_fund', label: 'ETF / fund', detail: '38% exit tax + deemed disposal' },
-  { value: 'individual_shares', label: 'Shares', detail: '33% CGT, €1,270 exemption' },
-  { value: 'deposit', label: 'Deposit', detail: '33% DIRT on interest' },
+  { value: 'etf_fund', label: 'ETF / fund', detail: `${ratePct(EXIT_TAX_RATE)} exit tax + deemed disposal` },
+  { value: 'individual_shares', label: 'Shares', detail: `${ratePct(CGT_RATE)} CGT, €${CGT_ANNUAL_EXEMPTION.toLocaleString('en-IE')} exemption` },
+  { value: 'deposit', label: 'Deposit', detail: `${ratePct(DIRT_RATE)} DIRT on interest` },
   { value: 'none', label: 'No tax', detail: 'e.g. inside a pension' },
 ];
 
@@ -254,13 +261,119 @@ export const Assumptions: React.FC<{ items: string[] }> = ({ items }) => (
 interface CalculatorLayoutProps {
   page: CalculatorPage;
   onNavigate: (view: CalculatorView | 'landing') => void;
-  children: React.ReactNode;
+  children?: React.ReactNode;
 }
 
-/** Shared page shell: breadcrumb, heading, intro, FAQs and links to the other calculators. */
+const PageLinkList: React.FC<{
+  pages: CalculatorPage[];
+  onNavigate: (view: CalculatorView) => void;
+  columns?: string;
+}> = ({ pages, onNavigate, columns = 'sm:grid-cols-2 lg:grid-cols-4' }) => (
+  <ul className={`mt-4 grid gap-3 ${columns}`}>
+    {pages.map((t) => (
+      <li key={t.view}>
+        <CalculatorLink
+          view={t.view}
+          path={t.path}
+          onNavigate={onNavigate}
+          className="flex h-full items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white p-4 text-sm font-semibold text-slate-800 hover:border-emerald-600 hover:text-emerald-800"
+        >
+          {t.name}
+          <ChevronRight className="h-4 w-4 shrink-0" aria-hidden="true" />
+        </CalculatorLink>
+      </li>
+    ))}
+  </ul>
+);
+
+/** Renders a plain-text content section from the page config (also rendered statically by the SEO plugin). */
+export const ContentSectionView: React.FC<{ section: ContentSection; onNavigate: (view: CalculatorView) => void }> = ({ section, onNavigate }) => (
+  <section aria-labelledby={`s-${section.id}`} className="mt-10 max-w-3xl">
+    <h2 id={`s-${section.id}`} className="text-xl font-extrabold text-slate-900">
+      {section.heading}
+    </h2>
+    {section.paragraphs?.map((p) => (
+      <p key={p} className="mt-3 text-[15px] leading-relaxed text-slate-700">
+        {p}
+      </p>
+    ))}
+    {section.bullets && (
+      <ul className="mt-3 list-disc space-y-1.5 pl-5 text-[15px] leading-relaxed text-slate-700">
+        {section.bullets.map((b) => (
+          <li key={b}>{b}</li>
+        ))}
+      </ul>
+    )}
+    {section.table && (
+      <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200 bg-white">
+        <table className="w-full min-w-[40rem] text-left text-sm">
+          <caption className="p-3 text-left text-xs font-semibold text-slate-500">{section.table.caption}</caption>
+          <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
+            <tr>
+              {section.table.headers.map((h, i) => (
+                <th key={i} scope="col" className="px-3 py-2">
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100 text-slate-700">
+            {section.table.rows.map((row) => (
+              <tr key={row[0]}>
+                {row.map((cell, j) =>
+                  j === 0 ? (
+                    <th key={j} scope="row" className="px-3 py-2 align-top font-semibold text-slate-900">
+                      {cell}
+                    </th>
+                  ) : (
+                    <td key={j} className="px-3 py-2 align-top">
+                      {cell}
+                    </td>
+                  )
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )}
+    {section.links && section.links.length > 0 && (
+      <p className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+        <span className="font-semibold text-slate-500">Related:</span>
+        {section.links.map((view) => {
+          const target = calculatorPageForView(view);
+          return (
+            <CalculatorLink key={view} view={view} path={target.path} onNavigate={onNavigate} className="font-semibold text-emerald-700 underline-offset-2 hover:underline">
+              {target.name}
+            </CalculatorLink>
+          );
+        })}
+      </p>
+    )}
+  </section>
+);
+
+const BADGE: Record<PageKind, string> = {
+  hub: 'Free · Irish tax rules · No sign-up',
+  tool: 'Free · Irish tax rules · No sign-up',
+  guide: 'Guide · Irish tax rules explained',
+  about: 'About us',
+};
+
+/**
+ * Shared page shell: breadcrumb, heading, intro, the interactive part (children), content sections,
+ * FAQs, sources and links to related guides and calculators. On guides the interactive part follows
+ * the first section; on calculators it comes first with the explanation underneath.
+ */
 export const CalculatorLayout: React.FC<CalculatorLayoutProps> = ({ page, onNavigate, children }) => {
-  const others = CALCULATOR_TOOLS.filter((t) => t.view !== page.view);
-  const isHub = page.view === CALCULATORS_HUB.view;
+  const isHub = page.kind === 'hub';
+  const otherTools = CALCULATOR_TOOLS.filter((t) => t.view !== page.view);
+  const otherGuides = GUIDE_PAGES.filter((g) => g.view !== page.view);
+  const sections = page.sections ?? [];
+  const [leadSections, restSections] = page.kind === 'guide' ? [sections.slice(0, 1), sections.slice(1)] : [[], sections];
+  const crumbParent = page.kind === 'tool' ? CALCULATORS_HUB : null;
+  const updatedLabel = formatIsoDate(page.updated);
+
   return (
     <main className="bg-[#F8FAFC]">
       <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
@@ -279,37 +392,53 @@ export const CalculatorLayout: React.FC<CalculatorLayoutProps> = ({ page, onNavi
                 Home
               </a>
             </li>
-            <li aria-hidden="true">
-              <ChevronRight className="h-3 w-3" />
-            </li>
-            {isHub ? (
-              <li aria-current="page" className="font-semibold text-slate-700">Calculators</li>
-            ) : (
+            {crumbParent && (
               <>
-                <li>
-                  <CalculatorLink view="calculators" path={CALCULATORS_HUB.path} onNavigate={onNavigate} className="hover:text-emerald-700">
-                    Calculators
-                  </CalculatorLink>
-                </li>
                 <li aria-hidden="true">
                   <ChevronRight className="h-3 w-3" />
                 </li>
-                <li aria-current="page" className="font-semibold text-slate-700">{page.name}</li>
+                <li>
+                  <CalculatorLink view={crumbParent.view} path={crumbParent.path} onNavigate={onNavigate} className="hover:text-emerald-700">
+                    Calculators
+                  </CalculatorLink>
+                </li>
               </>
             )}
+            <li aria-hidden="true">
+              <ChevronRight className="h-3 w-3" />
+            </li>
+            <li aria-current="page" className="font-semibold text-slate-700">
+              {isHub ? 'Calculators' : page.name}
+            </li>
           </ol>
         </nav>
 
         <header className="mb-6 max-w-3xl">
           <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-emerald-800">
-            <Calculator className="h-3.5 w-3.5" aria-hidden="true" />
-            Free · Irish tax rules · No sign-up
+            {page.kind === 'guide' ? <BookOpen className="h-3.5 w-3.5" aria-hidden="true" /> : <Calculator className="h-3.5 w-3.5" aria-hidden="true" />}
+            {BADGE[page.kind]}
           </span>
           <h1 className="mt-3 text-3xl font-extrabold tracking-tight text-slate-900 sm:text-4xl">{page.h1}</h1>
           <p className="mt-3 text-base leading-relaxed text-slate-600">{page.intro}</p>
+          {page.kind !== 'hub' && (
+            <p className="mt-3 text-xs text-slate-500">
+              Last updated <time dateTime={page.updated}>{updatedLabel}</time> · By {SITE_NAME} ·{' '}
+              <CalculatorLink view="about" path="/about" onNavigate={onNavigate} className="font-semibold text-emerald-700 hover:underline">
+                About us
+              </CalculatorLink>
+            </p>
+          )}
         </header>
 
-        {children}
+        {leadSections.map((section) => (
+          <ContentSectionView key={section.id} section={section} onNavigate={onNavigate} />
+        ))}
+
+        {children && <div className={page.kind === 'guide' ? 'mt-10' : undefined}>{children}</div>}
+
+        {restSections.map((section) => (
+          <ContentSectionView key={section.id} section={section} onNavigate={onNavigate} />
+        ))}
 
         {page.faqs.length > 0 && (
           <section aria-labelledby="calc-faq" className="mt-12 max-w-3xl">
@@ -332,26 +461,41 @@ export const CalculatorLayout: React.FC<CalculatorLayoutProps> = ({ page, onNavi
           </section>
         )}
 
-        {!isHub && (
-          <section aria-labelledby="calc-related" className="mt-12">
-            <h2 id="calc-related" className="text-xl font-extrabold text-slate-900">
-              More Irish calculators
+        {page.sources && page.sources.length > 0 && (
+          <section aria-labelledby="calc-sources" className="mt-12 max-w-3xl">
+            <h2 id="calc-sources" className="text-xl font-extrabold text-slate-900">
+              Sources
             </h2>
-            <ul className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              {others.map((t) => (
-                <li key={t.view}>
-                  <CalculatorLink
-                    view={t.view}
-                    path={t.path}
-                    onNavigate={onNavigate}
-                    className="flex h-full items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white p-4 text-sm font-semibold text-slate-800 hover:border-emerald-600 hover:text-emerald-800"
-                  >
-                    {t.name}
-                    <ChevronRight className="h-4 w-4 shrink-0" aria-hidden="true" />
-                  </CalculatorLink>
+            <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-slate-700">
+              {page.sources.map((src) => (
+                <li key={src.url + src.label}>
+                  <a href={src.url} target="_blank" rel="noopener noreferrer" className="text-emerald-700 underline-offset-2 hover:underline">
+                    {src.label}
+                  </a>
                 </li>
               ))}
             </ul>
+            <p className="mt-3 text-xs leading-relaxed text-slate-500">
+              Tax rules last reviewed {updatedLabel} and based on {TAX_RULES_SOURCE}, which may change before becoming law. This page is educational information, not financial advice.
+            </p>
+          </section>
+        )}
+
+        {otherGuides.length > 0 && (
+          <section aria-labelledby="calc-guides" className="mt-12">
+            <h2 id="calc-guides" className="text-xl font-extrabold text-slate-900">
+              Irish investing guides
+            </h2>
+            <PageLinkList pages={otherGuides} onNavigate={onNavigate} columns="sm:grid-cols-2 lg:grid-cols-3" />
+          </section>
+        )}
+
+        {!isHub && (
+          <section aria-labelledby="calc-related" className="mt-12">
+            <h2 id="calc-related" className="text-xl font-extrabold text-slate-900">
+              {page.kind === 'tool' ? 'More Irish calculators' : 'Free Irish calculators'}
+            </h2>
+            <PageLinkList pages={otherTools} onNavigate={onNavigate} />
             <div className="mt-6">
               <CalculatorLink
                 view="calculators"
@@ -382,13 +526,20 @@ export const CalculatorGrid: React.FC<{ inputs: React.ReactNode; results: React.
   </div>
 );
 
-export const DataTable: React.FC<{ caption: string; headers: string[]; rows: (string | number)[][]; highlightRows?: Set<number> }> = ({
+export const DataTable: React.FC<{
+  caption: string;
+  headers: string[];
+  rows: (string | number)[][];
+  highlightRows?: Set<number>;
+  defaultOpen?: boolean;
+}> = ({
   caption,
   headers,
   rows,
   highlightRows,
+  defaultOpen = false,
 }) => (
-  <details className="rounded-xl border border-slate-200 bg-white">
+  <details open={defaultOpen} className="rounded-xl border border-slate-200 bg-white">
     <summary className="cursor-pointer p-4 text-sm font-bold text-slate-900">{caption}</summary>
     <div className="max-h-96 overflow-auto border-t border-slate-100">
       <table className="w-full text-left text-xs">

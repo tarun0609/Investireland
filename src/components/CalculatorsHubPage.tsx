@@ -1,5 +1,5 @@
 import React from 'react';
-import { Calculator, ChevronRight, Home, PiggyBank, Receipt, Target, TrendingUp } from 'lucide-react';
+import { Calculator, ChevronRight, Home, Hourglass, Landmark, PiggyBank, Receipt, Scale, Target, TrendingUp } from 'lucide-react';
 import { CALCULATORS_HUB, CALCULATOR_TOOLS, type CalculatorView } from '../config/calculators';
 import { CalculatorLayout, CalculatorLink } from './CalculatorUi';
 
@@ -13,6 +13,9 @@ const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   'pension-calculator': PiggyBank,
   'savings-goal-calculator': Target,
   'mortgage-vs-investing-calculator': Home,
+  'investment-account-calculator': Landmark,
+  'exit-tax-calculator': Scale,
+  'deemed-disposal-calculator': Hourglass,
 };
 
 export const CalculatorsHubPage: React.FC<Props> = ({ onNavigate }) => (

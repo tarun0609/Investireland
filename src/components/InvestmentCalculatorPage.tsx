@@ -19,7 +19,7 @@ export const InvestmentCalculatorPage: React.FC<Props> = ({ currentCurrency, onO
       <Assumptions
         items={[
           'Monthly contributions with monthly compounding. Enter returns after fund fees.',
-          'Current rules (FY26): ETF/fund gains taxed at 38% exit tax, with deemed disposal 8 years after each purchase; shares at 33% CGT above €1,270.',
+          'Current rules after Budget 2027: ETF/fund gains taxed at 35% exit tax (38% for 2026 disposals), with deemed disposal 8 years after each purchase; shares at 31% CGT above €1,270.',
           'Proposed Investment Account (FY27): up to €12,000 a year (lump sum and contributions combined); anything above that is invested under current rules. 0% tax up to €50,000 and a 1% yearly charge on the value above it. Not yet law – details may change.',
         ]}
       />

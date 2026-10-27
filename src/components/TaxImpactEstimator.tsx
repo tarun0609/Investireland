@@ -6,8 +6,10 @@ import {
   calculateTaxImpact, 
   TaxSimulationInputs, 
   DEFAULT_TAX_INPUTS,
-  IRISH_EXIT_TAX_RATE
+  IRISH_EXIT_TAX_RATE,
+  IRISH_CGT_RATE
 } from '../services/taxEstimatorService';
+import { EXIT_TAX_RATE, EXIT_TAX_RATE_2026, pct } from '../config/irishTax';
 import { 
   Receipt, 
   Globe2, 
@@ -46,7 +48,8 @@ const fmtSignedEUR = (amount: number, fractionDigits = 0) => {
   const formatted = fmtEUR(amount, fractionDigits);
   return formatted.startsWith('-') ? formatted : `+${formatted}`;
 };
-const EXIT_TAX_PCT = Math.round(IRISH_EXIT_TAX_RATE * 100);
+const EXIT_TAX_PCT = pct(IRISH_EXIT_TAX_RATE);
+const CGT_PCT = pct(IRISH_CGT_RATE);
 
 interface TaxImpactEstimatorProps {
   holdings: Holding[];
@@ -109,7 +112,7 @@ Total Unrealised Gains/Losses: ${fmtSignedEUR(taxResults.totalUnrealizedGainsEUR
 
 Estimated Tax Liabilities:
 1. Ireland (Revenue): ${fmtEUR(taxResults.irelandSummary.grossTaxLiabilityEUR)}
-   (Exit tax ${fmtEUR(taxResults.irishExitTaxEUR)} at ${EXIT_TAX_PCT}% on funds/ETFs; CGT ${fmtEUR(taxResults.irishCgtEUR)} at 33% after loss netting${inputs.applyIrishCgtExemption ? ' and €1,270 exemption' : ''})
+   (Exit tax ${fmtEUR(taxResults.irishExitTaxEUR)} at ${EXIT_TAX_PCT} on funds/ETFs; CGT ${fmtEUR(taxResults.irishCgtEUR)} at ${CGT_PCT} after loss netting${inputs.applyIrishCgtExemption ? ' and €1,270 exemption' : ''})
 2. India (Income Tax Dept): ${fmtEUR(taxResults.indiaSummary.grossTaxLiabilityEUR)} (INR ${Math.round(taxResults.indiaSummary.totalUnrealizedGainsLocal).toLocaleString('en-IN')} net gains${inputs.applyIndianLtcgExemption ? ', INR 1.25L LTCG exemption applied' : ''})
 3. United States (IRS): ${usLine}
 
@@ -333,7 +336,7 @@ Estimates only, based on ${describeFxRates()} and simplified rules. Confirm with
                     <span className={`font-mono font-bold ${taxResults.irelandSummary.totalUnrealizedGainsEUR < 0 ? 'text-rose-700' : 'text-slate-800'}`}>{fmtSignedEUR(taxResults.irelandSummary.totalUnrealizedGainsEUR)}</span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-slate-500">Exit Tax ({EXIT_TAX_PCT}% on funds/ETFs):</span>
+                    <span className="text-slate-500">Exit Tax ({EXIT_TAX_PCT} on funds/ETFs):</span>
                     <span className="font-mono font-bold text-amber-700">{fmtEUR(taxResults.irishExitTaxEUR)}</span>
                   </div>
                   {taxResults.cgtLossesOffsetEUR > 0 && (
@@ -350,7 +353,7 @@ Estimates only, based on ${describeFxRates()} and simplified rules. Confirm with
                     <span className="font-mono font-bold">-{fmtEUR(taxResults.irelandSummary.statutoryExemptionEUR)}</span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-slate-500">Standard CGT (33%):</span>
+                    <span className="text-slate-500">Standard CGT ({CGT_PCT}):</span>
                     <span className="font-mono font-bold text-slate-800">
                       {fmtEUR(taxResults.irishCgtEUR)}
                     </span>
@@ -445,7 +448,7 @@ Estimates only, based on ${describeFxRates()} and simplified rules. Confirm with
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-slate-500">Taxable in Ireland:</span>
-                    <span className="font-mono font-bold text-slate-800">Yes (TCA 1997 s.28 @ 33%)</span>
+                    <span className="font-mono font-bold text-slate-800">Yes (TCA 1997 s.28 @ {CGT_PCT})</span>
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-slate-500">RSU Vest Basis Rule:</span>
@@ -478,7 +481,7 @@ Estimates only, based on ${describeFxRates()} and simplified rules. Confirm with
                     </span>
                   </div>
                   <p className="text-xs text-slate-300 mt-1 max-w-2xl leading-relaxed">
-                    Under current Irish rules, gains on UCITS ETFs/funds incur {EXIT_TAX_PCT}% exit tax and 8-year deemed disposal. The announced Investment Account is proposed to shelter new contributions from exit tax; selling existing ETFs to move them would itself trigger exit tax. Final rules are subject to legislation.
+                    Under current Irish rules, gains on UCITS ETFs/funds incur exit tax ({pct(EXIT_TAX_RATE_2026)} in 2026, {pct(EXIT_TAX_RATE)} from 1 January 2027) and 8-year deemed disposal. The announced Investment Account is proposed to shelter new contributions from exit tax; selling existing ETFs to move them would itself trigger exit tax. Final rules are subject to legislation.
                   </p>
                 </div>
               </div>
@@ -787,7 +790,7 @@ Estimates only, based on ${describeFxRates()} and simplified rules. Confirm with
                             </td>
                             <td className="px-4 py-3">
                               <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold ${
-                                h.taxTreatment === 'Exit Tax (38%)' ? 'bg-amber-100 text-amber-800' :
+                                h.taxTreatment === 'Exit Tax' ? 'bg-amber-100 text-amber-800' :
                                 h.taxTreatment.includes('12.5%') ? 'bg-orange-100 text-orange-800' :
                                 h.taxTreatment.includes('Pension') ? 'bg-indigo-100 text-indigo-800' :
                                 'bg-slate-100 text-slate-800'

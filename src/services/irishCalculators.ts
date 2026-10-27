@@ -1,5 +1,5 @@
 import {
-  IRISH_TAX_RATES_2026,
+  IRISH_TAX_RATES,
   InvestmentSimulation,
   TaxRates,
   TaxTreatment,
@@ -12,6 +12,7 @@ import {
   nonNegative,
   simulateInvestment,
 } from './investmentEngine';
+import { DEEMED_DISPOSAL_YEARS, exitTaxRateForYear } from '../config/irishTax';
 
 /* ------------------------------------------------------------------ */
 /* ETF tax calculator                                                  */
@@ -485,4 +486,126 @@ export function compareMortgageVsInvesting(inputs: MortgageVsInvestInputs): Mort
   };
 }
 
-export { IRISH_TAX_RATES_2026 };
+/* ------------------------------------------------------------------ */
+/* Exit tax on selling an ETF / fund holding                            */
+/* ------------------------------------------------------------------ */
+
+export interface ExitTaxInputs {
+  /** What you originally paid for the units, including purchase costs. */
+  purchaseCost: number;
+  /** What you sell them for. */
+  saleValue: number;
+  /** Calendar year of the sale; sets the exit tax rate. */
+  saleYear: number;
+  /** Exit tax already paid on these units at earlier deemed disposals. */
+  deemedDisposalTaxPaid: number;
+}
+
+export interface ExitTaxResult {
+  gain: number;
+  rate: number;
+  /** Exit tax on the whole gain since purchase, before any credit. */
+  taxOnGain: number;
+  /** Deemed disposal tax credited against taxOnGain. */
+  credit: number;
+  /** Tax to pay on this sale. */
+  taxDue: number;
+  /** Deemed disposal tax that can be reclaimed because it exceeds the tax on the actual gain. */
+  refund: number;
+  /** Sale value less tax due (any refund is paid separately). */
+  netProceeds: number;
+}
+
+/**
+ * Exit tax on an actual disposal. The gain is measured from the original cost, taxed at the rate for
+ * the year of sale, and any tax paid at earlier deemed disposals is credited. If that credit is more
+ * than the tax on the final gain (for example because the value fell), the excess is refundable.
+ */
+export function calculateExitTax(inputs: ExitTaxInputs): ExitTaxResult {
+  const cost = nonNegative(inputs.purchaseCost);
+  const sale = nonNegative(inputs.saleValue);
+  const paid = nonNegative(inputs.deemedDisposalTaxPaid);
+  const year = Number.isFinite(inputs.saleYear) ? Math.round(inputs.saleYear) : new Date().getFullYear();
+  const rate = exitTaxRateForYear(year);
+  const gain = sale - cost;
+  const taxOnGain = Math.max(0, gain) * rate;
+  const credit = Math.min(paid, taxOnGain);
+  const taxDue = taxOnGain - credit;
+  const refund = paid - credit;
+  return { gain, rate, taxOnGain, credit, taxDue, refund, netProceeds: sale - taxDue };
+}
+
+/* ------------------------------------------------------------------ */
+/* Deemed disposal schedule                                             */
+/* ------------------------------------------------------------------ */
+
+export interface DeemedDisposalLot {
+  purchaseYear: number;
+  amount: number;
+}
+
+export interface DeemedDisposalScheduleInputs {
+  lots: DeemedDisposalLot[];
+  annualReturn: number;
+  /** Last calendar year to include. */
+  untilYear: number;
+}
+
+export interface DeemedDisposalEventRow {
+  /** 0-based index of the lot in the input list. */
+  lot: number;
+  purchaseYear: number;
+  year: number;
+  value: number;
+  gain: number;
+  rate: number;
+  tax: number;
+}
+
+export interface DeemedDisposalScheduleResult {
+  events: DeemedDisposalEventRow[];
+  totalTax: number;
+  byYear: { year: number; tax: number }[];
+}
+
+export const MAX_DEEMED_DISPOSAL_LOTS = 20;
+const MIN_PURCHASE_YEAR = 1990;
+const MAX_SCHEDULE_YEAR = 2100;
+
+/**
+ * Every 8 years after each purchase, the units are treated as sold and bought back at market value.
+ * Exit tax for that year is charged on the gain since the purchase (or the previous deemed disposal),
+ * and the cost is re-based to the market value. Assumes the tax is paid from other money, so the
+ * holding keeps compounding untouched.
+ */
+export function deemedDisposalSchedule(inputs: DeemedDisposalScheduleInputs): DeemedDisposalScheduleResult {
+  const growth = 1 + clampRate(inputs.annualReturn, -0.99, 10);
+  const until = Math.min(MAX_SCHEDULE_YEAR, Math.round(Number.isFinite(inputs.untilYear) ? inputs.untilYear : MAX_SCHEDULE_YEAR));
+  const events: DeemedDisposalEventRow[] = [];
+
+  inputs.lots.slice(0, MAX_DEEMED_DISPOSAL_LOTS).forEach((lot, index) => {
+    const amount = nonNegative(lot.amount);
+    const purchaseYear = Math.round(lot.purchaseYear);
+    if (amount === 0 || !Number.isFinite(purchaseYear) || purchaseYear < MIN_PURCHASE_YEAR) return;
+    let value = amount;
+    let cost = amount;
+    for (let year = purchaseYear + DEEMED_DISPOSAL_YEARS; year <= until; year += DEEMED_DISPOSAL_YEARS) {
+      value *= Math.pow(growth, DEEMED_DISPOSAL_YEARS);
+      const gain = Math.max(0, value - cost);
+      const rate = exitTaxRateForYear(year);
+      events.push({ lot: index, purchaseYear, year, value, gain, rate, tax: gain * rate });
+      cost = value;
+    }
+  });
+
+  events.sort((a, b) => a.year - b.year || a.lot - b.lot);
+  const totals = new Map<number, number>();
+  for (const e of events) totals.set(e.year, (totals.get(e.year) ?? 0) + e.tax);
+  return {
+    events,
+    totalTax: events.reduce((sum, e) => sum + e.tax, 0),
+    byYear: [...totals].map(([year, tax]) => ({ year, tax })),
+  };
+}
+
+export { IRISH_TAX_RATES };

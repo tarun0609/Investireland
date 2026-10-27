@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { SITE_URL, absoluteUrl } from '../src/config/site';
+import { CALCULATOR_PAGES } from '../src/config/calculators';
 import { SITEMAP_PAGES } from './seoPlugin';
 
 /** Reads a built file relative to the output directory, or returns null when it does not exist. */
@@ -95,7 +96,15 @@ export function validateSeoOutput(read: ReadBuiltFile): string[] {
     if (JSON.stringify(locs) !== JSON.stringify(expected)) {
       errors.push(`sitemap.xml must list exactly ${expected.join(', ')} (found ${locs.join(', ')})`);
     }
-    if (/<(lastmod|changefreq|priority)>/.test(sitemap)) errors.push('sitemap.xml must not contain unverifiable lastmod/changefreq/priority');
+    if (/<(changefreq|priority)>/.test(sitemap)) errors.push('sitemap.xml must not contain changefreq/priority');
+    // lastmod is only allowed when it matches the "Last updated" date shown on that page.
+    for (const block of attr(sitemap, /<url>([\s\S]*?)<\/url>/g)) {
+      const loc = /<loc>([^<]*)<\/loc>/.exec(block)?.[1];
+      const lastmod = /<lastmod>([^<]*)<\/lastmod>/.exec(block)?.[1];
+      if (!lastmod) continue;
+      const page = CALCULATOR_PAGES.find((p) => absoluteUrl(p.path) === loc);
+      if (!page || page.updated !== lastmod) errors.push(`sitemap.xml lastmod for ${loc} must match the page's displayed update date`);
+    }
   }
 
   const robotsTxt = read('robots.txt');

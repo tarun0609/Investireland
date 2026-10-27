@@ -19,7 +19,12 @@ import {
   CALCULATOR_PAGES,
   CALCULATOR_TAX_NOTE,
   CALCULATOR_TOOLS,
+  GUIDE_PAGES,
+  ABOUT_PAGE,
+  calculatorPageForView,
+  formatIsoDate,
   type CalculatorPage,
+  type ContentSection,
 } from '../src/config/calculators';
 
 const HEAD_START = '<!-- seo:start -->';
@@ -72,18 +77,20 @@ const calculatorPageFor = (page: PageSeo): CalculatorPage | undefined => CALCULA
 
 function calculatorStructuredData(page: CalculatorPage, url: string): Record<string, unknown>[] {
   const crumbs = [{ name: 'Home', item: `${SITE_URL}/` }];
-  if (page.path !== CALCULATORS_HUB.path) crumbs.push({ name: 'Calculators', item: absoluteUrl(CALCULATORS_HUB.path) });
+  if (page.kind === 'tool') crumbs.push({ name: 'Calculators', item: absoluteUrl(CALCULATORS_HUB.path) });
   crumbs.push({ name: page.name, item: url });
 
   const nodes: Record<string, unknown>[] = [
     {
-      '@type': 'WebPage',
+      '@type': page.kind === 'about' ? 'AboutPage' : 'WebPage',
       '@id': `${url}#webpage`,
       url,
       name: page.title,
       description: page.description,
       inLanguage: 'en-IE',
+      dateModified: page.updated,
       isPartOf: { '@id': `${SITE_URL}/#website` },
+      ...(page.kind === 'about' ? { mainEntity: { '@id': `${SITE_URL}/#organization` } } : {}),
       breadcrumb: {
         '@type': 'BreadcrumbList',
         itemListElement: crumbs.map((c, i) => ({ '@type': 'ListItem', position: i + 1, name: c.name, item: c.item })),
@@ -91,7 +98,7 @@ function calculatorStructuredData(page: CalculatorPage, url: string): Record<str
     },
   ];
 
-  if (page.path === CALCULATORS_HUB.path) {
+  if (page.kind === 'hub') {
     nodes.push({
       '@type': 'ItemList',
       '@id': `${url}#calculators`,
@@ -102,7 +109,20 @@ function calculatorStructuredData(page: CalculatorPage, url: string): Record<str
         url: absoluteUrl(tool.path),
       })),
     });
-  } else {
+  } else if (page.kind === 'guide') {
+    nodes.push({
+      '@type': 'Article',
+      '@id': `${url}#article`,
+      headline: page.h1,
+      description: page.description,
+      image: SITE_OG_IMAGE,
+      inLanguage: 'en-IE',
+      dateModified: page.updated,
+      mainEntityOfPage: { '@id': `${url}#webpage` },
+      author: { '@id': `${SITE_URL}/#organization` },
+      publisher: { '@id': `${SITE_URL}/#organization` },
+    });
+  } else if (page.kind === 'tool') {
     nodes.push({
       '@type': 'WebApplication',
       '@id': `${url}#app`,
@@ -225,13 +245,15 @@ export function renderNoscript(): string {
         <p>${escapeHtml(HOME_SEO.description)}</p>
         <h2>What you can do</h2>
         <ul>
-          <li>Compare the current 38% exit tax and 8-year deemed disposal with the proposed Investment Account (€12,000 annual limit, €50,000 tax-free threshold, 1% charge above it).</li>
+          <li>Compare exit tax (38% in 2026, 35% from 2027) and 8-year deemed disposal with the proposed Investment Account (€12,000 annual limit, €50,000 tax-free threshold, 1% charge above it).</li>
           <li>Estimate the impact of FY26 vs FY27 rules with the budget calculator and scenario planner.</li>
           <li>Track Irish, EU, US and Indian holdings in one place with indicative currency conversion.</li>
           <li>Read guides that link to official sources such as gov.ie, the Department of Finance and Revenue.</li>
         </ul>
         <h2>Free Irish calculators</h2>
         <ul>${CALCULATOR_TOOLS.map((t) => `<li><a href="${t.path}">${escapeHtml(t.name)} Ireland</a></li>`).join('')}<li><a href="${CALCULATORS_HUB.path}">All calculators</a></li></ul>
+        <h2>Guides</h2>
+        <ul>${GUIDE_PAGES.map((g) => `<li><a href="${g.path}">${escapeHtml(g.name)}</a></li>`).join('')}<li><a href="${ABOUT_PAGE.path}">About ${escapeHtml(SITE_NAME)}</a></li></ul>
         <h2>Frequently asked questions</h2>
         <dl>${faqs}</dl>
         <p>${escapeHtml(SITE_NAME)} is an educational tool, not a regulated financial adviser. Contact: <a href="mailto:${SITE_FACTS.contactEmail}">${SITE_FACTS.contactEmail}</a>. <a href="/privacy">Privacy &amp; Cookies</a>.</p>
@@ -247,17 +269,43 @@ const replaceBetween = (html: string, startMarker: string, endMarker: string, re
   return html.slice(0, start) + replacement + html.slice(end + endMarker.length);
 };
 
-/** Crawlable fallback for a calculator page: heading, summary, FAQs and links to the other calculators. */
+function renderSection(section: ContentSection): string {
+  const paragraphs = (section.paragraphs ?? []).map((p) => `<p>${escapeHtml(p)}</p>`).join('');
+  const bullets = section.bullets?.length ? `<ul>${section.bullets.map((b) => `<li>${escapeHtml(b)}</li>`).join('')}</ul>` : '';
+  const table = section.table
+    ? `<table><caption>${escapeHtml(section.table.caption)}</caption><thead><tr>${section.table.headers
+        .map((h) => `<th scope="col">${escapeHtml(h)}</th>`)
+        .join('')}</tr></thead><tbody>${section.table.rows
+        .map((row) => `<tr>${row.map((cell, i) => (i === 0 ? `<th scope="row">${escapeHtml(cell)}</th>` : `<td>${escapeHtml(cell)}</td>`)).join('')}</tr>`)
+        .join('')}</tbody></table>`
+    : '';
+  const links = section.links?.length
+    ? `<p>Related: ${section.links
+        .map((view) => {
+          const target = calculatorPageForView(view);
+          return `<a href="${target.path}">${escapeHtml(target.name)}</a>`;
+        })
+        .join(' · ')}</p>`
+    : '';
+  return `<h2>${escapeHtml(section.heading)}</h2>${paragraphs}${bullets}${table}${links}`;
+}
+
+/** Crawlable fallback for a calculator, guide or about page: the full text content, FAQs, sources and links. */
 export function renderCalculatorNoscript(page: CalculatorPage): string {
   const highlights = page.highlights.length
     ? `<ul>${page.highlights.map((h) => `<li>${escapeHtml(h)}</li>`).join('')}</ul>`
     : '';
-  const tools = page.path === CALCULATORS_HUB.path
+  const tools = page.kind === 'hub'
     ? `<ul>${CALCULATOR_TOOLS.map((t) => `<li><a href="${t.path}">${escapeHtml(t.name)}</a>: ${escapeHtml(t.description)}</li>`).join('')}</ul>`
     : '';
   const faqs = page.faqs.length
     ? `<h2>Frequently asked questions</h2><dl>${page.faqs.map((f) => `<dt><strong>${escapeHtml(f.q)}</strong></dt><dd>${escapeHtml(f.a)}</dd>`).join('')}</dl>`
     : '';
+  const sections = (page.sections ?? []).map(renderSection).join('');
+  const sources = page.sources?.length
+    ? `<h2>Sources</h2><ul>${page.sources.map((src) => `<li><a href="${escapeHtml(src.url)}" rel="noopener noreferrer">${escapeHtml(src.label)}</a></li>`).join('')}</ul>`
+    : '';
+  const updated = page.kind === 'hub' ? '' : `<p>Last updated <time datetime="${page.updated}">${escapeHtml(formatIsoDate(page.updated))}</time>.</p>`;
   const related = CALCULATOR_PAGES.filter((p) => p.path !== page.path)
     .map((p) => `<li><a href="${p.path}">${escapeHtml(p.name)}</a></li>`)
     .join('');
@@ -265,12 +313,12 @@ export function renderCalculatorNoscript(page: CalculatorPage): string {
       <main style="max-width:48rem;margin:2rem auto;padding:0 1rem;font-family:system-ui,sans-serif;line-height:1.6">
         <h1>${escapeHtml(page.h1)}</h1>
         <p>${escapeHtml(page.intro)}</p>
-        ${highlights}${tools}${faqs}
-        <p>${escapeHtml(CALCULATOR_TAX_NOTE)} Results are estimates, not financial advice.</p>
-        <h2>More calculators</h2>
+        ${updated}${highlights}${tools}${sections}${faqs}${sources}
+        <p>${escapeHtml(CALCULATOR_TAX_NOTE)} Educational information and estimates, not financial advice.</p>
+        <h2>More calculators and guides</h2>
         <ul>${related}</ul>
         <p><a href="/">Back to ${escapeHtml(SITE_NAME)}</a> · <a href="/privacy">Privacy &amp; Cookies</a></p>
-        <p>Please enable JavaScript to use the interactive calculator.</p>
+        ${page.kind === 'about' ? '' : '<p>Please enable JavaScript to use the interactive calculator.</p>'}
       </main>
     </noscript>${NOSCRIPT_END}`;
 }
@@ -289,10 +337,14 @@ export function renderPrivacyDocument(indexHtml: string): string {
 /** Indexable public URLs. Keep in sync with the routes the app serves with HTTP 200. */
 export const SITEMAP_PAGES: PageSeo[] = [HOME_SEO, ...CALCULATOR_PAGES, PRIVACY_SEO];
 
-// lastmod/changefreq/priority are intentionally omitted: no accurate per-page modification date exists,
-// and Google ignores changefreq/priority.
+// lastmod comes from each calculator/guide page's reviewed date (shown on the page as "Last updated").
+// It is omitted for pages without an accurate date. Google ignores changefreq/priority.
 export function renderSitemap(): string {
-  const body = SITEMAP_PAGES.map((page) => `  <url>\n    <loc>${absoluteUrl(page.path)}</loc>\n  </url>`).join('\n');
+  const body = SITEMAP_PAGES.map((page) => {
+    const updated = calculatorPageFor(page)?.updated;
+    const lastmod = updated ? `\n    <lastmod>${updated}</lastmod>` : '';
+    return `  <url>\n    <loc>${absoluteUrl(page.path)}</loc>${lastmod}\n  </url>`;
+  }).join('\n');
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${body}\n</urlset>\n`;
 }
 

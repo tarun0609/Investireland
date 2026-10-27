@@ -1,5 +1,6 @@
 import { Holding, Currency, FiscalDataResponse } from '../types';
 import { FALLBACK_FISCAL_DATA } from './fiscalDataService';
+import { CGT_ANNUAL_EXEMPTION, CGT_RATE, DIRT_RATE, EXIT_TAX_RATE, exitTaxRateForYear, pct } from '../config/irishTax';
 
 export interface TaxJurisdictionSummary {
   country: 'Ireland' | 'India' | 'US';
@@ -44,7 +45,7 @@ export interface HoldingTaxDetail {
   assetGainEUR: number;
   fxGainEUR: number;
   // Tax treatments
-  taxTreatment: 'Standard CGT' | 'Exit Tax (38%)' | 'Indian LTCG (12.5%)' | 'Indian STCG (20%)' | 'US W-8BEN (0% US / 33% IE)' | 'Tax-Exempt Pension' | 'DIRT Deposit';
+  taxTreatment: 'Standard CGT' | 'Exit Tax' | 'Indian LTCG (12.5%)' | 'Indian STCG (20%)' | 'US W-8BEN (0% US / Irish CGT)' | 'Tax-Exempt Pension' | 'DIRT Deposit';
   applicableRate: number;
   /** Combined tax on this holding's gain before annual exemptions, loss netting and foreign tax credits. */
   estimatedTaxEUR: number;
@@ -88,9 +89,9 @@ export interface TaxEstimatorResult {
   totalForeignTaxCreditsEUR: number;
   netPayableTaxEUR: number;
   overallEffectiveRatePct: number;
-  /** Irish exit tax (38%) on fund/ETF gains, shown separately from CGT. */
+  /** Irish exit tax (IRISH_EXIT_TAX_RATE) on fund/ETF gains, shown separately from CGT. */
   irishExitTaxEUR: number;
-  /** Irish CGT (33%) after loss netting and the annual exemption. */
+  /** Irish CGT (IRISH_CGT_RATE) after loss netting and the annual exemption. */
   irishCgtEUR: number;
   /** Losses on CGT assets netted against CGT gains before the annual exemption. */
   cgtLossesOffsetEUR: number;
@@ -123,10 +124,14 @@ export const HISTORICAL_FX_ACQUISITION: Record<Currency, number> = {
 
 // Fallback cost basis ratio when purchaseValue is missing (flagged via isEstimatedCostBasis)
 export const ESTIMATED_COST_BASIS_RATIO = 0.8;
-export const IRISH_CGT_RATE = 0.33;
-/** Irish exit tax for individuals on funds/ETFs: 38% for chargeable events from 1 Jan 2026 (Finance Act 2025). */
-export const IRISH_EXIT_TAX_RATE = 0.38;
-export const IRISH_CGT_EXEMPTION_EUR = 1270;
+/** Irish CGT on disposals made today (31% after Budget 2027). */
+export const IRISH_CGT_RATE = CGT_RATE;
+/** Irish exit tax on funds/ETFs for a sale today: 38% in 2026, 35% from 1 Jan 2027. */
+export const IRISH_EXIT_TAX_RATE = exitTaxRateForYear(new Date().getFullYear());
+export const IRISH_CGT_EXEMPTION_EUR = CGT_ANNUAL_EXEMPTION;
+const CGT_PCT = pct(IRISH_CGT_RATE);
+const EXIT_PCT = pct(IRISH_EXIT_TAX_RATE);
+const DIRT_PCT = pct(DIRT_RATE);
 const INDIA_LTCG_EXEMPTION_INR = 125000;
 const INDIA_CESS_MULTIPLIER = 1.04; // 4% health & education cess
 
@@ -214,50 +219,50 @@ export function calculateTaxImpact(
     } else if (isCash) {
       taxTreatment = 'DIRT Deposit';
       applicableRate = 0;
-      notes = 'DIRT (33%) is normally deducted at source by the bank on deposit interest, so no further tax is estimated here. Deposit principal is not subject to CGT.';
+      notes = `DIRT (${DIRT_PCT}) is normally deducted at source by the bank on deposit interest, so no further tax is estimated here. Deposit principal is not subject to CGT.`;
     } else if (h.assetType === 'ETF' || (h.assetType === 'Mutual Fund' && (h.country === 'Ireland' || h.country === 'Europe'))) {
       // UCITS ETFs and Irish/EU-domiciled funds fall under the exit tax regime, not CGT
-      taxTreatment = 'Exit Tax (38%)';
+      taxTreatment = 'Exit Tax';
       applicableRate = IRISH_EXIT_TAX_RATE;
       notes = h.assetType === 'ETF'
-        ? 'Irish/EU UCITS ETFs: 38% exit tax (TCA 1997 s.739D, rate from 1 Jan 2026) on disposal and on each 8-year deemed disposal. No €1,270 exemption and no offset of losses against other gains. Estimated here on the whole unrealised gain.'
-        : 'Irish/EU-domiciled funds: 38% exit tax on disposal and on each 8-year deemed disposal, like ETFs. No €1,270 exemption and no offset of losses against other gains.';
+        ? `Irish/EU UCITS ETFs: ${EXIT_PCT} exit tax (TCA 1997 s.739D; 38% in 2026, 35% from 1 Jan 2027) on disposal and on each 8-year deemed disposal. No €1,270 exemption and no offset of losses against other gains. Estimated here on the whole unrealised gain.`
+        : `Irish/EU-domiciled funds: ${EXIT_PCT} exit tax on disposal and on each 8-year deemed disposal, like ETFs. No €1,270 exemption and no offset of losses against other gains.`;
     } else if (h.country === 'India') {
       taxJurisdiction = 'India';
       dtaaCreditEligible = true;
       if (inputs.holdingPeriod === 'long_term') {
         taxTreatment = 'Indian LTCG (12.5%)';
         applicableRate = 0.125; // Union Budget 2024 LTCG rate
-        notes = 'India LTCG under Section 112A at 12.5% (+4% cess) above the ₹1.25 lakh exemption. Also chargeable to 33% Irish CGT, with Indian tax credited under the India-Ireland DTAA.';
+        notes = `India LTCG under Section 112A at 12.5% (+4% cess) above the ₹1.25 lakh exemption. Also chargeable to ${CGT_PCT} Irish CGT, with Indian tax credited under the India-Ireland DTAA.`;
       } else {
         taxTreatment = 'Indian STCG (20%)';
         applicableRate = 0.20; // Union Budget 2024 STCG rate
-        notes = 'India STCG under Section 111A at 20% (+4% cess). Also chargeable to 33% Irish CGT, with Indian tax credited under the India-Ireland DTAA.';
+        notes = `India STCG under Section 111A at 20% (+4% cess). Also chargeable to ${CGT_PCT} Irish CGT, with Indian tax credited under the India-Ireland DTAA.`;
       }
     } else if (h.country === 'US' || h.assetType === 'RSU') {
       taxJurisdiction = 'US';
       if (inputs.userTaxResidency === 'us_person_in_ireland') {
         taxTreatment = 'Standard CGT';
         applicableRate = 0.20; // US Federal LTCG
-        notes = 'US person: estimated 20% US federal tax plus 33% Irish CGT, with US tax credited against Irish tax on the same gain.';
+        notes = `US person: estimated 20% US federal tax plus ${CGT_PCT} Irish CGT, with US tax credited against Irish tax on the same gain.`;
       } else if (inputs.hasW8Ben) {
-        taxTreatment = 'US W-8BEN (0% US / 33% IE)';
-        applicableRate = IRISH_CGT_RATE; // 0% US, 33% Irish CGT
-        notes = 'With a valid W-8BEN, US tax on capital gains is generally 0% under the US-Ireland treaty. Taxable at 33% under Irish CGT.';
+        taxTreatment = 'US W-8BEN (0% US / Irish CGT)';
+        applicableRate = IRISH_CGT_RATE; // 0% US, Irish CGT
+        notes = `With a valid W-8BEN, US tax on capital gains is generally 0% under the US-Ireland treaty. Taxable at ${CGT_PCT} under Irish CGT.`;
       } else {
         taxTreatment = 'Standard CGT';
         applicableRate = 0.30;
-        notes = 'Assumes 30% US withholding without a valid W-8BEN, credited against 33% Irish CGT on the same gain.';
+        notes = `Assumes 30% US withholding without a valid W-8BEN, credited against ${CGT_PCT} Irish CGT on the same gain.`;
       }
     } else {
       // Domestic Irish / European equities
-      notes = 'Standard Irish Capital Gains Tax (33%) under TCA 1997 s.28.';
+      notes = `Standard Irish Capital Gains Tax (${CGT_PCT}) under TCA 1997 s.28.`;
     }
 
     // Combined per-holding estimate before exemptions, loss netting and credits. Irish residents pay
     // Irish CGT on worldwide gains with foreign tax credited, so the burden is the higher of the two rates.
     let estimatedTaxEUR = 0;
-    if (taxTreatment === 'Exit Tax (38%)') {
+    if (taxTreatment === 'Exit Tax') {
       estimatedTaxEUR = chargeableGainEUR * IRISH_EXIT_TAX_RATE;
     } else if (taxTreatment !== 'Tax-Exempt Pension' && taxTreatment !== 'DIRT Deposit') {
       const foreignRate = taxJurisdiction === 'India'
@@ -311,16 +316,16 @@ export function calculateTaxImpact(
   const irishFxGainEUR = sumBy(irishHoldings, h => h.fxGainEUR);
 
   // Irish Exit Tax Holdings (ETFs): each fund is taxed on its own gain; fund losses give no relief.
-  const exitTaxHoldings = holdingDetails.filter(h => h.taxTreatment === 'Exit Tax (38%)');
+  const exitTaxHoldings = holdingDetails.filter(h => h.taxTreatment === 'Exit Tax');
   const exitTaxGainsEUR = sumBy(exitTaxHoldings, h => Math.max(0, h.totalGainEUR));
   const exitTaxLiabilityEUR = exitTaxGainsEUR * IRISH_EXIT_TAX_RATE;
 
   // Irish CGT Qualifying Holdings (Shares, RSUs, US assets and Indian equities/funds).
-  // Irish residents are taxed on worldwide gains, so Indian gains are also chargeable to 33% Irish CGT;
+  // Irish residents are taxed on worldwide gains, so Indian gains are also chargeable to Irish CGT;
   // Indian tax paid is relieved separately via the capped DTAA credit below.
   const isIrishCgtHolding = (h: HoldingTaxDetail): boolean =>
     h.taxTreatment === 'Standard CGT' ||
-    h.taxTreatment === 'US W-8BEN (0% US / 33% IE)' ||
+    h.taxTreatment === 'US W-8BEN (0% US / Irish CGT)' ||
     h.taxTreatment === 'Indian LTCG (12.5%)' ||
     h.taxTreatment === 'Indian STCG (20%)';
   const cgtHoldings = holdingDetails.filter(isIrishCgtHolding);
@@ -424,13 +429,13 @@ export function calculateTaxImpact(
     netTaxLiabilityEUR: netIrishTaxLiabilityEUR,
     effectiveTaxRatePct: irishTaxableBaseGainsEUR > 0 ? (netIrishTaxLiabilityEUR / irishTaxableBaseGainsEUR) * 100 : 0,
     applicableRules: [
-      'Standard CGT: 33% (TCA 1997 s.28)',
-      'UCITS ETF Exit Tax: 38% from 1 Jan 2026 (s.739D), no annual exemption or loss relief',
+      `Standard CGT: ${CGT_PCT} (TCA 1997 s.28)`,
+      `UCITS ETF Exit Tax: ${EXIT_PCT} (s.739D; 38% in 2026, 35% from 1 Jan 2027), no annual exemption or loss relief`,
       `Annual Personal Exemption: €${IRISH_CGT_EXEMPTION_EUR.toLocaleString('en-IE')} on net chargeable gains after losses`,
       'Foreign Asset Rule: Disposal & purchase converted at respective transaction date FX rates',
       'Worldwide Basis: Indian & US gains are chargeable to Irish tax, less capped DTAA / treaty foreign tax credits'
     ],
-    keyAdvice: `Using your €${IRISH_CGT_EXEMPTION_EUR.toLocaleString('en-IE')} annual CGT exemption saves ${formatEUR(appliedIrishExemptionEUR * IRISH_CGT_RATE, 2)} in tax. ETFs held outside the announced 2027 Investment Account remain subject to 38% exit tax and 8-year deemed disposal.`
+    keyAdvice: `Using your €${IRISH_CGT_EXEMPTION_EUR.toLocaleString('en-IE')} annual CGT exemption saves ${formatEUR(appliedIrishExemptionEUR * IRISH_CGT_RATE, 2)} in tax. ETFs held outside the announced 2027 Investment Account remain subject to exit tax (${pct(EXIT_TAX_RATE)} from 2027) and 8-year deemed disposal.`
   };
 
   const indiaSummary: TaxJurisdictionSummary = {
@@ -484,7 +489,7 @@ export function calculateTaxImpact(
         : inputs.hasW8Ben ? 'W-8BEN Treaty Article 14: 0% US withholding on capital gains' : '30% statutory US withholding (No W-8BEN)',
       'RSU Vesting Rule: Cost basis is FMV on vest date; only post-vest growth subject to CGT',
       'Currency Volatility: EUR/USD movements directly amplify or dampen Irish taxable EUR gain',
-      'Irish Reporting: US stock gains must be reported on Irish Form 11 / MyAccount under 33% CGT'
+      `Irish Reporting: US stock gains must be reported on Irish Form 11 / MyAccount under ${CGT_PCT} CGT`
     ],
     keyAdvice: inputs.userTaxResidency === 'us_person_in_ireland'
       ? 'As a US person you file US returns on worldwide gains; claim US tax paid as a credit against Irish CGT on the same gains.'
@@ -521,7 +526,7 @@ export function calculateTaxImpact(
   }
   if (exitTaxGainsEUR > 0) {
     taxHarvestingInsights.push(
-      `Budget 2027 Investment Account (announced): ${formatEUR(exitTaxGainsEUR)} of unrealised ETF gains face 38% exit tax (${formatEUR(exitTaxLiabilityEUR)}). The announced account is intended to remove exit tax and deemed disposal on new qualifying investments within its limits; selling existing ETFs to move them would itself trigger exit tax.`
+      `Budget 2027 Investment Account (announced): ${formatEUR(exitTaxGainsEUR)} of unrealised ETF gains face ${EXIT_PCT} exit tax (${formatEUR(exitTaxLiabilityEUR)}). The announced account is intended to remove exit tax and deemed disposal on new qualifying investments within its limits; selling existing ETFs to move them would itself trigger exit tax.`
     );
   }
   if (Math.abs(totalFxGainEUR) >= 0.005) {
@@ -545,12 +550,12 @@ export function calculateTaxImpact(
   }
   if (exitTaxHoldings.length > 0) {
     assumptions.push(
-      'Exit tax (38%) is estimated on the whole unrealised gain of each ETF, as if sold or deemed disposed of today. In practice deemed disposal applies to each purchase lot on its 8th anniversary, and exit tax already paid is credited on final disposal.'
+      `Exit tax (${EXIT_PCT}) is estimated on the whole unrealised gain of each ETF, as if sold or deemed disposed of today. In practice deemed disposal applies to each purchase lot on its 8th anniversary, and exit tax already paid is credited on final disposal.`
     );
   }
   if (holdingDetails.some(h => h.taxTreatment === 'DIRT Deposit')) {
     assumptions.push(
-      'Deposits: DIRT (33%) on interest is assumed to be deducted at source by your bank, so no deposit tax is included. Deposit principal is not subject to CGT.'
+      `Deposits: DIRT (${DIRT_PCT}) on interest is assumed to be deducted at source by your bank, so no deposit tax is included. Deposit principal is not subject to CGT.`
     );
   }
   if (cgtHoldings.some(h => h.totalGainEUR < 0) || exitTaxHoldings.some(h => h.totalGainEUR < 0)) {

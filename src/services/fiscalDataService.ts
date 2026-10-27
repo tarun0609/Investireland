@@ -1,8 +1,17 @@
 import { FiscalDataResponse, Currency } from '../types';
 import { getFxRates } from './fxRateService';
+import {
+  CGT_ANNUAL_EXEMPTION,
+  CGT_RATE,
+  DEEMED_DISPOSAL_YEARS,
+  DIRT_RATE,
+  EXIT_TAX_RATE,
+  EXIT_TAX_RATE_2026,
+  TAX_RULES_LAST_REVIEWED,
+} from '../config/irishTax';
 
 /** Date the bundled reference figures were last manually reviewed against official sources. */
-export const FISCAL_DATA_LAST_REVIEWED = '2026-10-01';
+export const FISCAL_DATA_LAST_REVIEWED = TAX_RULES_LAST_REVIEWED;
 
 export const FALLBACK_FISCAL_DATA: FiscalDataResponse = {
   jurisdiction: 'Ireland (Éire)',
@@ -13,11 +22,11 @@ export const FALLBACK_FISCAL_DATA: FiscalDataResponse = {
     fy26: {
       budgetYear: 'FY2026',
       status: 'Current Enacted Law',
-      exitTaxRate: 0.38,
-      deemedDisposalCycleYears: 8,
-      cgtRate: 0.33,
-      cgtAnnualExemption: 1270,
-      dirtRate: 0.33,
+      exitTaxRate: EXIT_TAX_RATE_2026,
+      deemedDisposalCycleYears: DEEMED_DISPOSAL_YEARS,
+      cgtRate: CGT_RATE,
+      cgtAnnualExemption: CGT_ANNUAL_EXEMPTION,
+      dirtRate: DIRT_RATE,
       personalInvestmentAccountAvailable: false,
       primaryLegislation: 'Taxes Consolidation Act 1997 (s.739D)'
     },
@@ -33,7 +42,7 @@ export const FALLBACK_FISCAL_DATA: FiscalDataResponse = {
       eligibleInvestments: ['UCITS ETFs', 'Listed Equities', 'Government & Corporate Bonds', 'Regulated Investment Funds', 'Cash Deposits'],
       excludedInvestments: ['Crypto-assets', 'Unlisted speculative derivatives', 'Direct residential property'],
       residencyRequirement: 'Irish Tax Resident (PPSN required, aged 18+)',
-      exitTaxOutsideScheme: 0.38,
+      exitTaxOutsideScheme: EXIT_TAX_RATE,
       primaryLegislation: 'General Scheme of the Investment Accounts Bill 2026/27 (Dept of Finance)'
     }
   },

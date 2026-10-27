@@ -1,7 +1,16 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Currency } from '../types';
 import { isModifiedClick } from '../utils/links';
-import { CALCULATORS_HUB, CALCULATOR_TOOLS, isCalculatorView, type AppView } from '../config/calculators';
+import {
+  ABOUT_PAGE,
+  BEST_INVESTMENT_OPTIONS_GUIDE,
+  CALCULATORS_HUB,
+  CALCULATOR_TOOLS,
+  GUIDE_PAGES,
+  calculatorPageForView,
+  isCalculatorView,
+  type AppView,
+} from '../config/calculators';
 import { 
   ShieldCheck, 
   Sparkles, 
@@ -98,6 +107,9 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   // Calculator pages are part of the public website, so they share the landing navigation.
   const isWebsite = activeView === 'landing' || isCalculatorView(activeView);
+  const pageKind = isCalculatorView(activeView) ? calculatorPageForView(activeView).kind : null;
+  const onCalculatorPage = pageKind === 'hub' || pageKind === 'tool';
+  const onGuidePage = pageKind === 'guide';
 
   const handleViewChange = (view: AppView) => {
     onViewChange(view);
@@ -162,15 +174,28 @@ export const Navbar: React.FC<NavbarProps> = ({
 
               <a
                 href={CALCULATORS_HUB.path}
-                aria-current={isCalculatorView(activeView) ? 'page' : undefined}
+                aria-current={onCalculatorPage ? 'page' : undefined}
                 onClick={(e) => {
                   if (isModifiedClick(e)) return;
                   e.preventDefault();
                   handleViewChange('calculators');
                 }}
-                className={`${isCalculatorView(activeView) ? 'text-emerald-700' : ''} hover:text-emerald-700 transition-colors cursor-pointer py-1`}
+                className={`${onCalculatorPage ? 'text-emerald-700' : ''} hover:text-emerald-700 transition-colors cursor-pointer py-1`}
               >
                 Calculators
+              </a>
+
+              <a
+                href={BEST_INVESTMENT_OPTIONS_GUIDE.path}
+                aria-current={onGuidePage ? 'page' : undefined}
+                onClick={(e) => {
+                  if (isModifiedClick(e)) return;
+                  e.preventDefault();
+                  handleViewChange(BEST_INVESTMENT_OPTIONS_GUIDE.view);
+                }}
+                className={`${onGuidePage ? 'text-emerald-700' : ''} hover:text-emerald-700 transition-colors cursor-pointer py-1`}
+              >
+                Guides
               </a>
 
               {/* Clean 'More' Dropdown */}
@@ -346,6 +371,25 @@ export const Navbar: React.FC<NavbarProps> = ({
                 className="w-full flex items-center gap-2 py-2 px-2 hover:bg-slate-50 rounded-lg cursor-pointer"
               >
                 <Calculator className="w-4 h-4 text-emerald-600" aria-hidden="true" />
+                <span>{page.name}</span>
+              </a>
+            ))}
+          </div>
+          <div className="pb-2 mb-1 border-b border-slate-100">
+            <div className="px-2 pb-1 text-[11px] font-bold uppercase tracking-wider text-slate-400">Guides</div>
+            {[...GUIDE_PAGES, ABOUT_PAGE].map((page) => (
+              <a
+                key={page.view}
+                href={page.path}
+                aria-current={activeView === page.view ? 'page' : undefined}
+                onClick={(e) => {
+                  if (isModifiedClick(e)) return;
+                  e.preventDefault();
+                  handleViewChange(page.view);
+                }}
+                className="w-full flex items-center gap-2 py-2 px-2 hover:bg-slate-50 rounded-lg cursor-pointer"
+              >
+                <BookOpen className="w-4 h-4 text-emerald-600" aria-hidden="true" />
                 <span>{page.name}</span>
               </a>
             ))}

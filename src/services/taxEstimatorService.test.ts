@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { calculateTaxImpact, DEFAULT_TAX_INPUTS, TaxSimulationInputs } from './taxEstimatorService';
+import { calculateTaxImpact, DEFAULT_TAX_INPUTS, IRISH_CGT_RATE, IRISH_EXIT_TAX_RATE, TaxSimulationInputs } from './taxEstimatorService';
 import { FALLBACK_FISCAL_DATA } from './fiscalDataService';
 import { FiscalDataResponse, Holding } from '../types';
 
@@ -39,7 +39,7 @@ describe('calculateTaxImpact - Indian gains & DTAA credit', () => {
     });
     const result = run([indianFund]);
 
-    const irishTax = (10000 - 1270) * 0.33; // 2,880.90
+    const irishTax = (10000 - 1270) * IRISH_CGT_RATE;
     const indianTax = (inr(10000) - 125000) * 0.125 * 1.04 / 88.5; // ~1,116.38
 
     expect(result.irelandSummary.grossTaxLiabilityEUR).toBeCloseTo(irishTax, 2);
@@ -59,7 +59,7 @@ describe('calculateTaxImpact - Indian gains & DTAA credit', () => {
     });
     const result = run([indianShare], { holdingPeriod: 'short_term' });
 
-    const irishTax = (1500 - 1270) * 0.33; // 75.90
+    const irishTax = (1500 - 1270) * IRISH_CGT_RATE;
     const indianTax = 1500 * 0.20 * 1.04; // 312
 
     expect(result.indiaSummary.grossTaxLiabilityEUR).toBeCloseTo(indianTax, 2);
@@ -87,7 +87,7 @@ describe('calculateTaxImpact - Indian gains & DTAA credit', () => {
     });
     const result = run([irishShare, indianFund]);
 
-    const irishTotal = (10000 - 1270) * 0.33;
+    const irishTotal = (10000 - 1270) * IRISH_CGT_RATE;
     const irishOnIndian = irishTotal / 2;
     const indianTax = (inr(5000) - 125000) * 0.13 / 88.5;
 
@@ -119,12 +119,12 @@ describe('calculateTaxImpact - Indian gains & DTAA credit', () => {
 });
 
 describe('calculateTaxImpact - US holdings', () => {
-  it('charges 0% US tax with W-8BEN and 33% Irish CGT', () => {
+  it('charges 0% US tax with W-8BEN and Irish CGT', () => {
     const rsu = holding({ assetType: 'RSU', country: 'US', currency: 'USD', purchaseValue: 10500, currentValue: 21000 });
     const r = run([rsu], { applyIrishCgtExemption: false });
     expect(r.usSummary.grossTaxLiabilityEUR).toBe(0);
     expect(r.totalForeignTaxCreditsEUR).toBe(0);
-    expect(r.netPayableTaxEUR).toBeCloseTo(10000 * 0.33, 2);
+    expect(r.netPayableTaxEUR).toBeCloseTo(10000 * IRISH_CGT_RATE, 2);
   });
 
   it('credits US withholding against Irish CGT without W-8BEN, capped at the Irish tax', () => {
@@ -132,7 +132,7 @@ describe('calculateTaxImpact - US holdings', () => {
     const r = run([rsu], { hasW8Ben: false, applyIrishCgtExemption: false });
     expect(r.usSummary.grossTaxLiabilityEUR).toBeCloseTo(3000, 2);
     expect(r.totalForeignTaxCreditsEUR).toBeCloseTo(3000, 2);
-    expect(r.netPayableTaxEUR).toBeCloseTo(3300, 2);
+    expect(r.netPayableTaxEUR).toBeCloseTo(Math.max(3000, 10000 * IRISH_CGT_RATE), 2);
   });
 });
 
@@ -163,20 +163,20 @@ describe('calculateTaxImpact - losses, exit tax & edge cases', () => {
     const r = run([winner, loser]);
     expect(r.cgtLossesOffsetEUR).toBeCloseTo(4000, 6);
     expect(r.irelandSummary.statutoryExemptionEUR).toBe(1270);
-    expect(r.irishCgtEUR).toBeCloseTo((6000 - 1270) * 0.33, 6);
-    expect(r.netPayableTaxEUR).toBeCloseTo((6000 - 1270) * 0.33, 6);
+    expect(r.irishCgtEUR).toBeCloseTo((6000 - 1270) * IRISH_CGT_RATE, 6);
+    expect(r.netPayableTaxEUR).toBeCloseTo((6000 - 1270) * IRISH_CGT_RATE, 6);
     expect(r.assumptions.some(a => a.startsWith('Losses'))).toBe(true);
   });
 
-  it('applies 38% exit tax to ETF gains with no exemption and no offset of share losses', () => {
+  it('applies exit tax to ETF gains with no exemption and no offset of share losses', () => {
     const etf = holding({ assetType: 'ETF', country: 'Europe', purchaseValue: 10000, currentValue: 15000 });
     const loser = holding({ assetType: 'Share', purchaseValue: 10000, currentValue: 8000 });
     const r = run([etf, loser]);
-    expect(r.holdingDetails[0].taxTreatment).toBe('Exit Tax (38%)');
-    expect(r.irishExitTaxEUR).toBeCloseTo(5000 * 0.38, 6);
+    expect(r.holdingDetails[0].taxTreatment).toBe('Exit Tax');
+    expect(r.irishExitTaxEUR).toBeCloseTo(5000 * IRISH_EXIT_TAX_RATE, 6);
     expect(r.irishCgtEUR).toBe(0);
-    expect(r.netPayableTaxEUR).toBeCloseTo(1900, 6);
-    expect(r.overallEffectiveRatePct).toBeCloseTo(38, 6);
+    expect(r.netPayableTaxEUR).toBeCloseTo(5000 * IRISH_EXIT_TAX_RATE, 6);
+    expect(r.overallEffectiveRatePct).toBeCloseTo(IRISH_EXIT_TAX_RATE * 100, 6);
     expect(r.assumptions.some(a => a.includes('deemed disposal'))).toBe(true);
   });
 
@@ -184,7 +184,7 @@ describe('calculateTaxImpact - losses, exit tax & edge cases', () => {
     const etfGain = holding({ assetType: 'ETF', country: 'Europe', purchaseValue: 1000, currentValue: 2000 });
     const etfLoss = holding({ assetType: 'ETF', country: 'Europe', purchaseValue: 1000, currentValue: 500 });
     const r = run([etfGain, etfLoss]);
-    expect(r.irishExitTaxEUR).toBeCloseTo(380, 6);
+    expect(r.irishExitTaxEUR).toBeCloseTo(1000 * IRISH_EXIT_TAX_RATE, 6);
   });
 
   it('treats deposits as DIRT (deducted at source), not CGT, and discloses it', () => {
@@ -211,7 +211,7 @@ describe('calculateTaxImpact - losses, exit tax & edge cases', () => {
       purchaseValue: inr(10000), currentValue: inr(20000),
     });
     const r = run([indianFund]);
-    expect(r.holdingDetails[0].estimatedTaxEUR).toBeCloseTo(10000 * 0.33, 2);
+    expect(r.holdingDetails[0].estimatedTaxEUR).toBeCloseTo(10000 * IRISH_CGT_RATE, 2);
   });
 
   it('computes Indian tax on the rupee gain, unaffected by EUR/INR moves', () => {

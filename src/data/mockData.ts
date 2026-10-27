@@ -121,7 +121,7 @@ export const EDUCATIONAL_ARTICLES = [
   },
   {
     slug: 'etf-exit-tax-vs-new-scheme',
-    title: '38% Exit Tax & Deemed Disposal vs The New Scheme',
+    title: 'Exit Tax (35% from 2027) & Deemed Disposal vs The New Scheme',
     summary: 'Why Ireland has had the harshest ETF tax regime in Europe for two decades and how the 2027 account finally changes the math.',
     lastUpdated: 'October 2026',
     source: 'Revenue Commissioners (TCA 1997 s.739D)',
@@ -224,7 +224,7 @@ export function calculateQuizScore(answers: Record<number, number>): QuizResult 
       title: 'Moderate Readiness (Building Momentum)',
       verdict: 'You have solid financial fundamentals with meaningful savings or pensions. Your biggest leap forward will be organizing your cross-border assets and eliminating unnecessary tax drag.',
       recommendations: [
-        'Explore how the €50,000 tax-free threshold saves you from Ireland’s 38% exit tax.',
+        'Explore how the €50,000 tax-free threshold saves you from Ireland’s exit tax (35% from 2027, 38% in 2026).',
         'Consolidate your Indian/US holdings into a single dashboard view.',
         'Use our Scenario Planner to simulate a 10-year monthly investment roadmap.'
       ]

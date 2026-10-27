@@ -15,7 +15,7 @@ const hasSource = (source?: string) => !!source && source.trim() !== '' && sourc
 
 const QUICK_PROMPTS = [
   'Explain the €50,000 threshold and 1% fee.',
-  'How will the new 2027 scheme replace 38% deemed disposal?',
+  'How will the new 2027 scheme replace exit tax and deemed disposal?',
   'I have Indian mutual funds via SIPs. How does Irish tax work?',
   'What is the difference between an ETF and a mutual fund?',
   'Can I hold US company RSUs in the new Investment Account?'
@@ -32,7 +32,7 @@ export const AiAssistantSection: React.FC = () => {
     {
       id: 'msg-2',
       sender: 'assistant',
-      text: 'Under the proposed Budget 2027 Personal Savings & Investment Account (subject to legislation), the first €50,000 of account value is expected to be tax-free. If your portfolio grows to €65,000, you only pay a 1.0% annual charge on the €15,000 that sits above the threshold (€150/year). The current 38% exit tax and 8-year deemed disposal are not expected to apply within this account.',
+      text: 'Under the proposed Budget 2027 Personal Savings & Investment Account (subject to legislation), the first €50,000 of account value is expected to be tax-free. If your portfolio grows to €65,000, you only pay a 1.0% annual charge on the €15,000 that sits above the threshold (€150/year). Exit tax (38% in 2026, 35% from 2027) and 8-year deemed disposal are not expected to apply within this account.',
       timestamp: '10:00',
       sourceCitation: 'Example answer — verify with gov.ie/finance and revenue.ie',
       isGrounded: false
