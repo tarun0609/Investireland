@@ -128,7 +128,7 @@ export const SavingsGoalCalculatorPage: React.FC<Props> = ({ onNavigate }) => {
             <Assumptions
               items={[
                 'Monthly saving is added at the start of each month and interest or growth compounds monthly.',
-                'Deposit accounts: DIRT at 33% is taken from interest each month. ETFs: 38% exit tax with deemed disposal. Shares: 33% CGT on sale above €1,270.',
+                'Deposit accounts: DIRT at 33% is taken from interest each month. ETFs: 35% exit tax (from 2027) with deemed disposal. Shares: 31% CGT on sale above €1,270.',
                 '"Value after tax" is what you would have if you sold or withdrew everything at the end of that year.',
               ]}
             />

@@ -17,7 +17,7 @@ export const HOME_SEO: PageSeo = {
   path: '/',
   title: "InvestIreland AI – Ireland's Investment Account Calculator & Portfolio Tracker",
   description:
-    "Free educational tools for Ireland's proposed Investment Account: compare 38% exit tax with the new account, model scenarios and track Irish, EU, US and Indian investments.",
+    "Free educational tools for Ireland's proposed Investment Account: compare exit tax (35% from 2027) with the new account, model scenarios and track Irish, EU, US and Indian investments.",
 };
 
 export const PRIVACY_SEO: PageSeo = {

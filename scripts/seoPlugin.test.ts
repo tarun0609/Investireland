@@ -10,7 +10,14 @@ import {
   seoPlugin,
   structuredData,
 } from './seoPlugin';
-import { CALCULATORS_HUB, CALCULATOR_PAGES, ETF_TAX_CALCULATOR } from '../src/config/calculators';
+import {
+  ABOUT_PAGE,
+  BEST_INVESTMENT_OPTIONS_GUIDE,
+  CALCULATORS_HUB,
+  CALCULATOR_PAGES,
+  CALCULATOR_TOOLS,
+  ETF_TAX_CALCULATOR,
+} from '../src/config/calculators';
 
 const extractJsonLd = (html: string) => {
   const match = html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/);
@@ -69,14 +76,18 @@ describe('seoPlugin', () => {
     expect(renderNoscript()).toContain('<dl>');
   });
 
-  it('renders a valid sitemap with only the canonical public URLs and no fake dates', () => {
+  it('renders a valid sitemap with only the canonical public URLs and only real page dates', () => {
     const xml = renderSitemap();
     expect(xml.startsWith('<?xml version="1.0" encoding="UTF-8"?>')).toBe(true);
     expect(xml.match(/<loc>/g)).toHaveLength(2 + CALCULATOR_PAGES.length);
     expect(xml).toContain('<loc>https://www.investirelandai.ie/</loc>');
     expect(xml).toContain('<loc>https://www.investirelandai.ie/privacy</loc>');
     for (const page of CALCULATOR_PAGES) expect(xml).toContain(`<loc>https://www.investirelandai.ie${page.path}</loc>`);
-    expect(xml).not.toMatch(/lastmod|changefreq|priority/);
+    expect(xml).not.toMatch(/changefreq|priority/);
+    for (const page of CALCULATOR_PAGES) {
+      expect(xml).toContain(`<loc>https://www.investirelandai.ie${page.path}</loc>\n    <lastmod>${page.updated}</lastmod>`);
+    }
+    expect(xml).toContain('<loc>https://www.investirelandai.ie/</loc>\n  </url>');
   });
 
   it('builds calculator pages with their own head, FAQ schema, breadcrumbs and crawlable content', () => {
@@ -97,6 +108,29 @@ describe('seoPlugin', () => {
   it('lists every calculator on the hub page', () => {
     const graph = structuredData(CALCULATORS_HUB)['@graph'] as Record<string, any>[];
     const list = graph.find((n) => n['@type'] === 'ItemList')!;
-    expect(list.itemListElement).toHaveLength(CALCULATOR_PAGES.length - 1);
+    expect(list.itemListElement).toHaveLength(CALCULATOR_TOOLS.length);
+  });
+
+  it('marks guides as dated articles with a Home > guide breadcrumb', () => {
+    const graph = structuredData(BEST_INVESTMENT_OPTIONS_GUIDE)['@graph'] as Record<string, any>[];
+    const article = graph.find((n) => n['@type'] === 'Article')!;
+    expect(article.headline).toBe(BEST_INVESTMENT_OPTIONS_GUIDE.h1);
+    expect(article.dateModified).toBe(BEST_INVESTMENT_OPTIONS_GUIDE.updated);
+    expect(graph.some((n) => n['@type'] === 'WebApplication')).toBe(false);
+    const crumbs = graph.find((n) => n['@type'] === 'WebPage')!.breadcrumb.itemListElement.map((c: any) => c.name);
+    expect(crumbs).toEqual(['Home', BEST_INVESTMENT_OPTIONS_GUIDE.name]);
+  });
+
+  it('renders guide content, tables and sources without JavaScript', () => {
+    const html = renderCalculatorDocument('<head><!-- seo:start --><!-- seo:end --></head><body><!-- seo:noscript-start --><!-- seo:noscript-end --></body>', BEST_INVESTMENT_OPTIONS_GUIDE);
+    expect(html).toContain('<table>');
+    expect(html).toContain('<h2>Sources</h2>');
+    expect(html).toContain(`datetime="${BEST_INVESTMENT_OPTIONS_GUIDE.updated}"`);
+    for (const section of BEST_INVESTMENT_OPTIONS_GUIDE.sections ?? []) expect(html).toContain(section.heading.replace(/&/g, '&amp;').replace(/'/g, '&#39;'));
+  });
+
+  it('uses the AboutPage type for the about page', () => {
+    const graph = structuredData(ABOUT_PAGE)['@graph'] as Record<string, any>[];
+    expect(graph.some((n) => n['@type'] === 'AboutPage')).toBe(true);
   });
 });

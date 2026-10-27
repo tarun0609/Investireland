@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest';
+import { EXIT_TAX_RATE } from '../config/irishTax';
 import { monthlyRepayment, simulateInvestment, inTodaysMoney } from './investmentEngine';
 import {
+  calculateExitTax,
+  deemedDisposalSchedule,
   ageRelatedReliefLimit,
   calculateEtfTax,
   calculatePension,
@@ -31,9 +34,9 @@ describe('investment engine', () => {
     const sim = simulateInvestment({ startingAmount: 10000, monthlyContribution: 0, years: 16, annualReturn: 0.1, treatment: 'etf_fund' });
     expect(sim.deemedDisposals.map(e => e.month)).toEqual([95, 191]);
     const y8 = 10000 * Math.pow(1.1, 8);
-    const after8 = y8 - (y8 - 10000) * 0.38;
+    const after8 = y8 - (y8 - 10000) * EXIT_TAX_RATE;
     const y16 = after8 * Math.pow(1.1, 8);
-    const after16 = y16 - (y16 - after8) * 0.38;
+    const after16 = y16 - (y16 - after8) * EXIT_TAX_RATE;
     expect(sim.net).toBeCloseTo(after16, 4);
     expect(sim.taxOnSale).toBeCloseTo(0, 6);
   });
@@ -233,5 +236,65 @@ describe('mortgage vs investing calculator', () => {
     const untaxed = compareMortgageVsInvesting({ ...base, extraMonthly: 300, treatment: 'none' });
     const etf = compareMortgageVsInvesting({ ...base, extraMonthly: 300, treatment: 'etf_fund' });
     expect(etf.breakEvenReturn!).toBeGreaterThan(untaxed.breakEvenReturn!);
+  });
+});
+
+describe('exit tax calculator', () => {
+  it('taxes the gain at the rate for the year of sale', () => {
+    const r2026 = calculateExitTax({ purchaseCost: 10000, saleValue: 15000, saleYear: 2026, deemedDisposalTaxPaid: 0 });
+    expect(r2026.rate).toBe(0.38);
+    expect(r2026.taxDue).toBeCloseTo(1900, 6);
+    const r2027 = calculateExitTax({ purchaseCost: 10000, saleValue: 15000, saleYear: 2027, deemedDisposalTaxPaid: 0 });
+    expect(r2027.rate).toBe(0.35);
+    expect(r2027.taxDue).toBeCloseTo(1750, 6);
+    expect(r2027.netProceeds).toBeCloseTo(13250, 6);
+  });
+
+  it('credits deemed disposal tax and refunds any excess', () => {
+    const credited = calculateExitTax({ purchaseCost: 10000, saleValue: 20000, saleYear: 2030, deemedDisposalTaxPaid: 1000 });
+    expect(credited.taxOnGain).toBeCloseTo(3500, 6);
+    expect(credited.taxDue).toBeCloseTo(2500, 6);
+    expect(credited.refund).toBe(0);
+    const refunded = calculateExitTax({ purchaseCost: 10000, saleValue: 11000, saleYear: 2030, deemedDisposalTaxPaid: 1000 });
+    expect(refunded.taxDue).toBe(0);
+    expect(refunded.refund).toBeCloseTo(650, 6);
+    // Overall tax always equals the tax on the real gain.
+    for (const r of [credited, refunded]) expect(1000 + r.taxDue - r.refund).toBeCloseTo(r.taxOnGain, 6);
+  });
+
+  it('charges nothing on a loss', () => {
+    const r = calculateExitTax({ purchaseCost: 10000, saleValue: 8000, saleYear: 2028, deemedDisposalTaxPaid: 0 });
+    expect(r.gain).toBe(-2000);
+    expect(r.taxDue).toBe(0);
+    expect(r.netProceeds).toBe(8000);
+  });
+});
+
+describe('deemed disposal schedule', () => {
+  it('charges each lot every 8 years at that year’s rate and re-bases the cost', () => {
+    const r = deemedDisposalSchedule({ lots: [{ purchaseYear: 2018, amount: 10000 }], annualReturn: 0.05, untilYear: 2034 });
+    expect(r.events.map((e) => e.year)).toEqual([2026, 2034]);
+    const v8 = 10000 * Math.pow(1.05, 8);
+    const v16 = 10000 * Math.pow(1.05, 16);
+    expect(r.events[0].tax).toBeCloseTo((v8 - 10000) * 0.38, 6);
+    expect(r.events[1].tax).toBeCloseTo((v16 - v8) * 0.35, 6);
+    expect(r.totalTax).toBeCloseTo(r.events[0].tax + r.events[1].tax, 6);
+  });
+
+  it('groups by year, ignores empty lots and charges nothing when values fall', () => {
+    const r = deemedDisposalSchedule({
+      lots: [
+        { purchaseYear: 2020, amount: 5000 },
+        { purchaseYear: 2020, amount: 0 },
+        { purchaseYear: 2021, amount: 5000 },
+      ],
+      annualReturn: -0.02,
+      untilYear: 2029,
+    });
+    expect(r.events).toHaveLength(2);
+    expect(r.byYear).toEqual([
+      { year: 2028, tax: 0 },
+      { year: 2029, tax: 0 },
+    ]);
   });
 });

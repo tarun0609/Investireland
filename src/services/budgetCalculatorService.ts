@@ -1,6 +1,6 @@
 import { BudgetCalculatorInputs, BudgetCalculatorResult, YearProjection } from '../types';
 import {
-  IRISH_TAX_RATES_2026,
+  IRISH_TAX_RATES,
   MAX_YEARS,
   TaxablePortfolio,
   TaxTreatment,
@@ -9,11 +9,12 @@ import {
   nonNegative,
 } from './investmentEngine';
 
-export const FY26_EXIT_TAX_RATE = IRISH_TAX_RATES_2026.exitTaxRate;
-export const FY26_CGT_RATE = IRISH_TAX_RATES_2026.cgtRate;
-export const FY26_CGT_ANNUAL_EXEMPTION = IRISH_TAX_RATES_2026.cgtAnnualExemption;
-export const FY26_DIRT_RATE = IRISH_TAX_RATES_2026.dirtRate;
-export const DEEMED_DISPOSAL_CYCLE_YEARS = IRISH_TAX_RATES_2026.deemedDisposalYears;
+/** Rates applied to projected (2027+) sales and deemed disposals outside the Investment Account. */
+export const FY26_EXIT_TAX_RATE = IRISH_TAX_RATES.exitTaxRate;
+export const FY26_CGT_RATE = IRISH_TAX_RATES.cgtRate;
+export const FY26_CGT_ANNUAL_EXEMPTION = IRISH_TAX_RATES.cgtAnnualExemption;
+export const FY26_DIRT_RATE = IRISH_TAX_RATES.dirtRate;
+export const DEEMED_DISPOSAL_CYCLE_YEARS = IRISH_TAX_RATES.deemedDisposalYears;
 export const FY27_ANNUAL_CONTRIBUTION_LIMIT = 12000;
 export const FY27_TAX_FREE_THRESHOLD = 50000;
 export const FY27_ANNUAL_CHARGE_RATE = 0.01;

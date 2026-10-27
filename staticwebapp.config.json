@@ -53,6 +53,48 @@
       }
     },
     {
+      "route": "/investment-account-calculator",
+      "headers": {
+        "Cache-Control": "no-cache"
+      }
+    },
+    {
+      "route": "/exit-tax-calculator",
+      "headers": {
+        "Cache-Control": "no-cache"
+      }
+    },
+    {
+      "route": "/deemed-disposal-calculator",
+      "headers": {
+        "Cache-Control": "no-cache"
+      }
+    },
+    {
+      "route": "/best-investment-options-ireland",
+      "headers": {
+        "Cache-Control": "no-cache"
+      }
+    },
+    {
+      "route": "/etf-tax-ireland-beginners",
+      "headers": {
+        "Cache-Control": "no-cache"
+      }
+    },
+    {
+      "route": "/exit-tax-vs-investment-account",
+      "headers": {
+        "Cache-Control": "no-cache"
+      }
+    },
+    {
+      "route": "/about",
+      "headers": {
+        "Cache-Control": "no-cache"
+      }
+    },
+    {
       "route": "/calculator",
       "redirect": "/calculators",
       "statusCode": 301
@@ -115,6 +157,51 @@
     {
       "route": "/index",
       "redirect": "/",
+      "statusCode": 301
+    },
+    {
+      "route": "/investmentaccountcalculator",
+      "redirect": "/investment-account-calculator",
+      "statusCode": 301
+    },
+    {
+      "route": "/investment-account",
+      "redirect": "/investment-account-calculator",
+      "statusCode": 301
+    },
+    {
+      "route": "/exittaxcalculator",
+      "redirect": "/exit-tax-calculator",
+      "statusCode": 301
+    },
+    {
+      "route": "/exit-tax",
+      "redirect": "/exit-tax-calculator",
+      "statusCode": 301
+    },
+    {
+      "route": "/deemeddisposalcalculator",
+      "redirect": "/deemed-disposal-calculator",
+      "statusCode": 301
+    },
+    {
+      "route": "/deemed-disposal",
+      "redirect": "/deemed-disposal-calculator",
+      "statusCode": 301
+    },
+    {
+      "route": "/best-investment-options",
+      "redirect": "/best-investment-options-ireland",
+      "statusCode": 301
+    },
+    {
+      "route": "/etf-tax-ireland",
+      "redirect": "/etf-tax-ireland-beginners",
+      "statusCode": 301
+    },
+    {
+      "route": "/about-us",
+      "redirect": "/about",
       "statusCode": 301
     },
     {

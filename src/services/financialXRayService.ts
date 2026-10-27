@@ -1,5 +1,6 @@
 import { Holding, FinancialXRayData, Currency } from '../types';
 import { convertToEUR, convertFromEUR, formatCurrency, FALLBACK_FISCAL_DATA } from './fiscalDataService';
+import { EXIT_TAX_RATE, pct } from '../config/irishTax';
 
 /** A single holding at or above this share of the portfolio is flagged as concentrated. */
 export const SINGLE_HOLDING_CONCENTRATION_PCT = 25;
@@ -164,7 +165,7 @@ export function computeFinancialXRay(holdings: Holding[], displayCurrency: Curre
     ? `Your largest holding (${topHolding?.assetName ?? 'one position'}) is ${topHoldingPct}% of your wealth, indicating concentration risk`
     : `Your largest holding is ${topHoldingPct}% of your wealth, showing a reasonable spread`;
 
-  const aiDiagnosis = `Your portfolio holds ${totalDisplay} in total assets across ${holdingsWithEUR.length} tracked positions. You have approximately ${equityPct}% in equities and growth funds, ${cashPct}% in cash reserves, and ${Math.round((pensionEUR / totalAssetsEUR) * 100)}% in retirement accounts. Your primary geographic anchor is ${largestGeo} (${largestGeoPct}%). ${concentrationText}. Ireland’s proposed Investment Account (expected July 2027) would let you invest up to €12,000/year without the current 38% exit tax and 8-year deemed disposal rules.`;
+  const aiDiagnosis = `Your portfolio holds ${totalDisplay} in total assets across ${holdingsWithEUR.length} tracked positions. You have approximately ${equityPct}% in equities and growth funds, ${cashPct}% in cash reserves, and ${Math.round((pensionEUR / totalAssetsEUR) * 100)}% in retirement accounts. Your primary geographic anchor is ${largestGeo} (${largestGeoPct}%). ${concentrationText}. Ireland’s proposed Investment Account (expected July 2027) would let you invest up to €12,000/year without exit tax (${pct(EXIT_TAX_RATE)} from 2027) and the 8-year deemed disposal rule.`;
 
   return {
     totalAssetsEUR: Math.round(totalAssetsEUR),

@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Currency, BudgetCalculatorInputs, BudgetCalculatorResult } from '../types';
 import { calculateBudgetProjections, FY27_ANNUAL_CONTRIBUTION_LIMIT, FY27_TAX_FREE_THRESHOLD, ILLUSTRATIVE_INFLATION_RATE } from '../services/budgetCalculatorService';
 import { formatCurrency, convertFromEUR, convertToEUR } from '../services/fiscalDataService';
+import { CGT_RATE, EXIT_TAX_RATE, EXIT_TAX_RATE_2026, pct } from '../config/irishTax';
 import { 
   Calculator, 
   TrendingUp, 
@@ -100,7 +101,7 @@ export const BudgetCalculatorSection: React.FC<BudgetCalculatorSectionProps> = (
             FY26 vs FY27 Budget &amp; Investment Calculator
           </h2>
           <p className="mt-4 text-base sm:text-lg text-slate-600 leading-relaxed">
-            See the illustrative impact of moving from Ireland’s current <strong className="text-slate-900">38% deemed disposal regime</strong> to the new <strong className="text-slate-900">Budget 2027 Personal Savings &amp; Investment Account</strong>.
+            See the illustrative impact of moving from Ireland’s current <strong className="text-slate-900">exit tax and deemed disposal regime ({pct(EXIT_TAX_RATE)} exit tax from 2027, {pct(EXIT_TAX_RATE_2026)} in 2026)</strong> to the new <strong className="text-slate-900">Budget 2027 Personal Savings &amp; Investment Account</strong>.
           </p>
         </div>
 
@@ -141,7 +142,7 @@ export const BudgetCalculatorSection: React.FC<BudgetCalculatorSectionProps> = (
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              FY26 Current Regime (38% Deemed Disposal)
+              FY26 Current Regime ({pct(EXIT_TAX_RATE)} Exit Tax from 2027 + Deemed Disposal)
             </button>
           </div>
         </div>
@@ -321,7 +322,7 @@ export const BudgetCalculatorSection: React.FC<BudgetCalculatorSectionProps> = (
                     }`}
                   >
                     <div>UCITS ETFs &amp; Funds</div>
-                    <div className="text-[10px] text-slate-500 font-normal">FY26: 38% + 8-yr disposal</div>
+                    <div className="text-[10px] text-slate-500 font-normal">FY26 rules: {pct(EXIT_TAX_RATE)} from 2027 + 8-yr disposal</div>
                   </button>
                   <button
                     type="button"
@@ -334,7 +335,7 @@ export const BudgetCalculatorSection: React.FC<BudgetCalculatorSectionProps> = (
                     }`}
                   >
                     <div>Direct Equities</div>
-                    <div className="text-[10px] text-slate-500 font-normal">FY26: 33% CGT (€1,270 exempt)</div>
+                    <div className="text-[10px] text-slate-500 font-normal">FY26 rules: {pct(CGT_RATE)} CGT (€1,270 exempt)</div>
                   </button>
                 </div>
               </div>
@@ -411,7 +412,7 @@ export const BudgetCalculatorSection: React.FC<BudgetCalculatorSectionProps> = (
                     FY26 Current Regime
                   </span>
                   <span className="text-[11px] px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-mono font-medium">
-                    {assetClass === 'etf_fund' ? '38% Exit Tax' : '33% CGT'}
+                    {assetClass === 'etf_fund' ? `${pct(EXIT_TAX_RATE)} Exit Tax` : `${pct(CGT_RATE)} CGT`}
                   </span>
                 </div>
 

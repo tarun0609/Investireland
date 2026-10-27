@@ -19,7 +19,7 @@ export const FAQS: Faq[] = [
   },
   {
     q: 'What is Ireland’s new Investment Account?',
-    a: 'As announced in Budget 2027, it is a proposed personal investment account designed to encourage retail investing. Under current rules, gains on many funds and ETFs are subject to exit tax (38% from 1 January 2026) and the 8-year deemed disposal rule; the proposed account would replace these with simpler treatment up to the announced limits.'
+    a: 'Announced in Budget 2027, the Investment Account is a new personal account designed to encourage retail investing, launching on 1 July 2027. Outside it, gains on many funds and ETFs are subject to exit tax of 38% in 2026, falling to 35% from 1 January 2027, and the 8-year deemed disposal rule remains. Inside the account there is no CGT, deemed disposal or DWT: you can contribute up to €12,000 a year, growth is tax-free up to €50,000, and a 1% annual charge applies to value above that.'
   },
   {
     q: 'When does the new account open?',

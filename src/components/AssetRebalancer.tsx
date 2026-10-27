@@ -163,9 +163,9 @@ export const AssetRebalancer: React.FC<AssetRebalancerProps> = ({
             localVal: ieDiff,
             suggestedVehicle: ieDiff > 0 
               ? 'Budget 2027 Personal Investment Account (€12,000/yr tax shelter) or PRSA AVC pension' 
-              : 'Trim cash or bond deposits (avoid selling ETFs with 38% deemed disposal penalties)',
+              : 'Trim cash or bond deposits (avoid selling ETFs, which triggers exit tax of 35% from 2027, 38% in 2026)',
             taxNote: ieDiff < 0 
-              ? 'Selling Irish/EU funds triggers 38% Exit Tax. Prefer rebalancing via fresh deposits.' 
+              ? 'Selling Irish/EU funds triggers exit tax (35% from 2027, 38% in 2026). Prefer rebalancing via fresh deposits.' 
               : 'Qualifies for 2027 PSIA €12,000/yr exemption from 8-year deemed disposal.'
           },
           {
@@ -217,7 +217,7 @@ export const AssetRebalancer: React.FC<AssetRebalancerProps> = ({
             suggestedVehicle: otherDiff > 0
               ? 'Add global or European UCITS index funds'
               : 'Redirect European / global holdings towards your Ireland, India and US targets',
-            taxNote: 'Disposals of EU-domiciled funds are generally subject to 38% Irish Exit Tax.'
+            taxNote: 'Disposals of EU-domiciled funds are generally subject to Irish exit tax (35% from 2027, 38% in 2026).'
           }
         ].filter(item => item.region !== 'Europe / Global' || item.currentValEUR > 0 || item.targetPct > 0)
       };
@@ -600,7 +600,7 @@ export const AssetRebalancer: React.FC<AssetRebalancerProps> = ({
                   <span>Irish Tax-Smart Advantage: Zero Taxable Realizations</span>
                 </span>
                 <p className="text-[11px] text-emerald-800 mt-0.5">
-                  Instead of selling overweight assets (which triggers 38% exit tax or 33% CGT), inject fresh savings directly into underweight markets.
+                  Instead of selling overweight assets (which triggers 31% CGT, or exit tax of 35% from 2027 and 38% in 2026), inject fresh savings directly into underweight markets.
                 </p>
               </div>
 

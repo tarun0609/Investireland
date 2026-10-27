@@ -177,7 +177,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
                     {formatCurrency(convertFromEUR(investmentsEUR, currentCurrency), currentCurrency)}
                   </div>
                   <div className="text-[11px] text-slate-700 mt-1">
-                    ETFs, ₹ Funds &amp; RSUs (33%)
+                    ETFs, ₹ Funds &amp; RSUs (31% CGT)
                   </div>
                 </div>
 

@@ -233,7 +233,7 @@ export const EducationHubSection: React.FC<{ onOpenWaitlist: () => void }> = ({ 
       reviewer: 'Irish Financial Practice Group'
     },
     {
-      title: "Understanding 38% Exit Tax & 8-Year Deemed Disposal",
+      title: "Understanding Exit Tax (35% from 2027) & 8-Year Deemed Disposal",
       category: 'Taxation Basics',
       summary: 'How Irish collective investments are taxed under Section 739D of TCA 1997, why deemed disposal penalises long-term compounding, and what changes under the new scheme.',
       source: 'Revenue Commissioners Tax & Duty Manual 27-01a',

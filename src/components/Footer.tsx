@@ -2,7 +2,7 @@ import React from 'react';
 import { LifeBuoy, Mail, ShieldCheck } from 'lucide-react';
 import { CONTACT_EMAILS } from '../config/contact';
 import { isModifiedClick } from '../utils/links';
-import { CALCULATORS_HUB, CALCULATOR_TOOLS, type AppView } from '../config/calculators';
+import { ABOUT_PAGE, CALCULATORS_HUB, CALCULATOR_TOOLS, GUIDE_PAGES, type AppView } from '../config/calculators';
 
 interface FooterProps {
   onNavigateSection: (sectionId: string) => void;
@@ -105,6 +105,13 @@ export const Footer: React.FC<FooterProps> = ({ onNavigateSection, onOpenWaitlis
           <nav aria-label="Learn and sources" className="space-y-3">
             <div className="font-bold text-white uppercase tracking-wider text-[11px]">Learn &amp; Sources</div>
             <ul className="space-y-2">
+              {GUIDE_PAGES.map((page) => (
+                <li key={page.view}>
+                  <a href={page.path} onClick={viewClick(page.view)} className={linkClass}>
+                    {page.name}
+                  </a>
+                </li>
+              ))}
               {learnLinks.map((link) => (
                 <li key={link.label}>
                   <a href={`/#${link.id}`} onClick={sectionClick(link.id)} className={linkClass}>
@@ -123,6 +130,11 @@ export const Footer: React.FC<FooterProps> = ({ onNavigateSection, onOpenWaitlis
                 <button type="button" onClick={onOpenWaitlist} className={linkClass}>
                   Join Early Access
                 </button>
+              </li>
+              <li>
+                <a href={ABOUT_PAGE.path} onClick={viewClick(ABOUT_PAGE.view)} className={linkClass}>
+                  About us &amp; methodology
+                </a>
               </li>
               {aboutLinks.map((link) => (
                 <li key={link.label}>

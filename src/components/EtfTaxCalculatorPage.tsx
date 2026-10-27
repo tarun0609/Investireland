@@ -112,8 +112,8 @@ export const EtfTaxCalculatorPage: React.FC<Props> = ({ onNavigate }) => {
             <Assumptions
               items={[
                 'Your lump sum is invested on day one and each monthly amount at the start of the month; growth compounds monthly.',
-                'Each month’s ETF purchase is tracked separately: it is taxed at 38% on its gain 8 years after purchase (and every 8 years after), and that tax is credited when you sell. Deemed disposal is paid from the investment.',
-                'Shares: CGT of 33% on the total gain if sold at the end, less one €1,270 annual exemption. Dividends are not modelled separately.',
+                'Each month’s ETF purchase is tracked separately: it is taxed at 35% (the exit tax rate from 1 January 2027) on its gain 8 years after purchase (and every 8 years after), and that tax is credited when you sell. Deemed disposal is paid from the investment.',
+                'Shares: CGT of 31% on the total gain if sold at the end, less one €1,270 annual exemption. Dividends are not modelled separately.',
                 'If an ETF lot is worth less than its last deemed disposal value, no refund is modelled before you sell.',
               ]}
             />

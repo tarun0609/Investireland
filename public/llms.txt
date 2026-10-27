@@ -6,16 +6,26 @@ Key facts (as announced; subject to final legislation by the Oireachtas):
 - Proposed Investment Account target start date: 1 July 2027.
 - Annual contribution limit: €12,000 per tax year.
 - Growth on balances up to €50,000 would not be taxed; a 1% annual charge would apply to the value above €50,000.
-- Under current rules, many funds and ETFs are subject to 38% exit tax (from 1 January 2026) and the 8-year deemed disposal rule.
+- Outside the account, many funds and ETFs are subject to exit tax (38% in 2026, 35% from 1 January 2027 under Budget 2027) and the 8-year deemed disposal rule.
+- Capital gains tax on shares: 31% after Budget 2027 (€1,270 annual exemption). DIRT on deposit interest: 33%.
 
 ## Pages
 - [Home: calculators, scenario planner, portfolio tracker and FAQ](https://www.investirelandai.ie/)
+- [About InvestIreland AI: who we are, methodology and sources](https://www.investirelandai.ie/about)
 - [Privacy & Cookies (GDPR)](https://www.investirelandai.ie/privacy)
 
-## Free calculators (2026 Irish tax rules)
+## Guides
+- [Best investment options in Ireland: deposits, prize bonds, ETFs, pensions, property and shares compared after tax](https://www.investirelandai.ie/best-investment-options-ireland)
+- [ETF tax in Ireland for beginners: exit tax and deemed disposal explained](https://www.investirelandai.ie/etf-tax-ireland-beginners)
+- [Exit tax vs Investment Account in Ireland](https://www.investirelandai.ie/exit-tax-vs-investment-account)
+
+## Free calculators (Irish tax rules after Budget 2027)
 - [All calculators](https://www.investirelandai.ie/calculators)
-- [Investment Calculator Ireland: exit tax vs proposed Investment Account](https://www.investirelandai.ie/investment-calculator)
-- [ETF Tax Calculator Ireland: 38% exit tax and 8-year deemed disposal vs 33% CGT](https://www.investirelandai.ie/etf-tax-calculator)
+- [Investment Calculator Ireland: lump sum and monthly investing after tax](https://www.investirelandai.ie/investment-calculator)
+- [Investment Account Calculator Ireland: €50,000 tax-free threshold and 1% charge](https://www.investirelandai.ie/investment-account-calculator)
+- [ETF Tax Calculator Ireland: exit tax and 8-year deemed disposal vs 31% CGT](https://www.investirelandai.ie/etf-tax-calculator)
+- [Exit Tax Calculator Ireland: tax on selling an ETF or fund](https://www.investirelandai.ie/exit-tax-calculator)
+- [Deemed Disposal Calculator Ireland: 8-year tax schedule per purchase](https://www.investirelandai.ie/deemed-disposal-calculator)
 - [Pension Calculator Ireland: tax relief, pot, lump sum and retirement income](https://www.investirelandai.ie/pension-calculator)
 - [Savings Goal Calculator Ireland: monthly savings needed after DIRT, tax and inflation](https://www.investirelandai.ie/savings-goal-calculator)
 - [Mortgage Overpayment vs Investing Calculator Ireland](https://www.investirelandai.ie/mortgage-vs-investing-calculator)
