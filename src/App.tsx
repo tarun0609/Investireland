@@ -18,6 +18,7 @@ import { PricingSection } from './components/PricingSection';
 import { FAQSection } from './components/FAQSection';
 import { Footer } from './components/Footer';
 import { EarlyAccessModal } from './components/EarlyAccessModal';
+import { SupportChatWidget } from './components/SupportChatWidget';
 import { isDemoUser, subscribeToActiveUser, waitForAuthReady } from './services/authEmailService';
 import { FREE_HOLDINGS_LIMIT, type CheckoutPlan } from './config/plans';
 import {
@@ -633,6 +634,7 @@ export default function App() {
         billingEnabled={BILLING_ENABLED}
       />
 
+      <SupportChatWidget onNavigateView={setActiveView} onNavigateSection={handleNavigateSection} />
     </div>
   );
 }

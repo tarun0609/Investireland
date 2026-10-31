@@ -103,6 +103,13 @@ export const PrivacyPage: React.FC<PrivacyPageProps> = ({ onBack }) => {
             opted out; every such email has an unsubscribe link, and you can switch it off any time in Plan &amp; billing.
           </li>
           <li>
+            <strong>Help chat and AI assistant questions</strong>: answers from our help articles are worked out in your browser and nothing is
+            sent. If AI answers are switched on, your question, the last few messages of the conversation (and, for the portfolio assistant,
+            a short summary of your figures) are sent through our API to Google&rsquo;s Gemini service to write a reply. We don&rsquo;t keep chat
+            messages; they disappear when you close or reload the page. Please don&rsquo;t include passwords, PAN, card or other personal
+            details (legal basis: legitimate interests in answering your question).
+          </li>
+          <li>
             <strong>Technical logs</strong> (IP address, browser, time) kept briefly by our hosting and DNS providers to deliver and protect the
             site (legal basis: legitimate interests).
           </li>
@@ -114,7 +121,8 @@ export const PrivacyPage: React.FC<PrivacyPageProps> = ({ onBack }) => {
         <h2 className="text-lg font-bold text-slate-900">Service providers</h2>
         <p>
           Google Firebase (authentication and database), Microsoft Azure Static Web Apps (hosting), Cloudflare (DNS, and Cloudflare Workers
-          for our billing and account API at api.investirelandai.ie), Stripe (payments, only if you choose a paid plan), Brevo (sending account
+          for our billing, account and chat API at api.investirelandai.ie), Stripe (payments, only if you choose a paid plan), Google Gemini (AI
+          chat answers, only when AI answers are switched on), Brevo (sending account
           and product emails) and Gmail (account emails). Some may process data outside the EEA under the EU Standard Contractual Clauses or the EU–US Data Privacy Framework. Fonts are
           served from our own site, so no data is sent to Google Fonts.
         </p>

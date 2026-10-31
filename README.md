@@ -64,6 +64,16 @@ Two welcome-email paths exist. Use only one, or users will receive duplicates:
 
 Deploy the function with `cd functions && npm install && npm run deploy`. The build first copies the shared email template into `functions/shared/`.
 
+### Help chat (free FAQ answers, optional AI)
+
+The **Help** button in the bottom-right corner works on its own. It answers from the built-in help articles in `src/data/supportKnowledge.ts`, and the answers are worked out in the browser. To add AI answers from the free Google Gemini tier:
+
+1. Create a free API key at [aistudio.google.com](https://aistudio.google.com/apikey).
+2. `cd workers/api; npx wrangler deploy; npx wrangler secret put GEMINI_API_KEY`
+3. In GitHub, add the repository variable `VITE_API_URL` = `https://api.investirelandai.ie` (**Settings → Secrets and variables → Actions → Variables**), then re-run the deploy. The same URL also turns on billing and promo codes, so deploy the Worker's billing secrets first.
+
+The Worker's `POST /chat` only accepts requests from `APP_ORIGINS`. It allows 6 messages a minute and 60 a day per visitor, plus `CHAT_DAILY_LIMIT` in total. If the AI fails, the chat falls back to the help articles. The homepage AI assistant uses the same endpoint.
+
 ## Security model
 
 - **Authentication:** Firebase Auth. Passwords have a minimum length of 8 and are never handled by our server.

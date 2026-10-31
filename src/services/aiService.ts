@@ -1,5 +1,6 @@
 import { apiFetch } from './apiClient';
 import { CGT_RATE, EXIT_TAX_RATE, EXIT_TAX_RATE_2026, pct } from '../config/irishTax';
+import { SUPPORT_AI_AVAILABLE, requestAiReply } from './supportChatService';
 
 export interface AIChatMessage {
   id: string;
@@ -29,6 +30,22 @@ export async function askFinancialAI(
   context?: unknown
 ): Promise<AIReply> {
   const trimmed = message.trim().slice(0, AI_MAX_MESSAGE_CHARS);
+  // In production the site is static, so model answers come from the Worker API when it is configured.
+  if (SUPPORT_AI_AVAILABLE) {
+    const reply = await requestAiReply(
+      trimmed,
+      history.slice(-8).map((m) => ({ role: m.sender, text: m.text })),
+      context
+    );
+    if (reply) return { reply, source: 'Gemini (guided by Irish official-source rules)', isGrounded: false, mode: 'MODEL' };
+    return {
+      reply: getClientKnowledgeFallback(trimmed),
+      source: 'Offline summary (AI service unavailable)',
+      isGrounded: false,
+      mode: 'OFFLINE',
+      notice: 'The AI service is unavailable, so this is a pre-written summary.',
+    };
+  }
   try {
     const data = await apiFetch<{ reply?: string; source?: string; mode?: AIResponseMode; reason?: string }>('/api/ai-chat', {
       method: 'POST',
