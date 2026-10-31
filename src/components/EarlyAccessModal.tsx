@@ -11,7 +11,7 @@ import {
 import type { LifeStageCategory } from '../types';
 import { MIN_PASSWORD_LENGTH, getSignedInUser, registerWithCredentials, type ResidencyCountry } from '../services/authEmailService';
 import { CHECKOUT_PLANS, PROMO_MONTHS, isCheckoutPlan, type CheckoutPlan } from '../config/plans';
-import { setPendingPlan, setPendingPromo } from '../services/entitlementService';
+import { setPendingPlan, setPendingPromo } from '../services/entitlementCore';
 
 type PlanChoice = 'free' | CheckoutPlan;
 const PROMO_RE = /^[A-Z0-9-]{4,32}$/;

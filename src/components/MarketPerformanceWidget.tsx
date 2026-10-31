@@ -83,7 +83,7 @@ export const MarketPerformanceWidget: React.FC<MarketPerformanceWidgetProps> = (
                 aria-pressed={selectedTimeframe === tf}
                 className={`px-2 py-1 rounded-md transition-all cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 ${
                   selectedTimeframe === tf
-                    ? 'bg-emerald-600 text-white font-bold shadow-xs'
+                    ? 'bg-emerald-700 text-white font-bold shadow-xs'
                     : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
@@ -167,7 +167,7 @@ export const MarketPerformanceWidget: React.FC<MarketPerformanceWidgetProps> = (
                     <div className={`text-right flex items-center gap-1 font-mono font-bold text-sm ${isPositive ? 'text-emerald-700' : 'text-rose-600'}`}>
                       {isPositive ? <ArrowUpRight className="w-4 h-4" /> : <ArrowDownRight className="w-4 h-4" />}
                       <span>{isPositive ? '+' : ''}{perf.toFixed(2)}%</span>
-                      <span className="text-[10px] font-normal text-slate-400 font-sans">({selectedTimeframe})</span>
+                      <span className="text-[10px] font-normal text-slate-500 font-sans">({selectedTimeframe})</span>
                     </div>
                   </div>
 
@@ -228,7 +228,7 @@ export const MarketPerformanceWidget: React.FC<MarketPerformanceWidgetProps> = (
             </span>
           </div>
 
-          <div className="flex items-center gap-1.5 font-mono text-[11px] text-slate-400 shrink-0">
+          <div className="flex items-center gap-1.5 font-mono text-[11px] text-slate-500 shrink-0">
             <Clock className="w-3.5 h-3.5" />
             <span>Data as of: {lastUpdated}</span>
           </div>

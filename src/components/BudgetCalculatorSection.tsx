@@ -541,7 +541,7 @@ export const BudgetCalculatorSection: React.FC<BudgetCalculatorSectionProps> = (
                 <div className="p-3 bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-700">
                   Annual Milestone Projection (Nominal Values)
                 </div>
-                <div className="overflow-x-auto max-h-80">
+                <div className="overflow-x-auto max-h-80" tabIndex={0} role="region" aria-label="Scrollable table">
                   <table className="w-full min-w-[480px] text-left text-xs">
                     <thead className="bg-slate-100 text-slate-600 font-semibold sticky top-0">
                       <tr>

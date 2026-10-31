@@ -18,7 +18,7 @@ import {
   Sparkles
 } from 'lucide-react';
 import { Currency, InvestmentAccountState } from '../types';
-import { getActiveUser } from '../services/authEmailService';
+import { getActiveUser } from '../services/activeUserStore';
 import { INITIAL_INVESTMENT_ACCOUNT_STATE } from '../data/mockData';
 import { InvestmentAccountPdfModal } from './InvestmentAccountPdfModal';
 
@@ -136,7 +136,7 @@ export const InvestmentAccountSection: React.FC<InvestmentAccountSectionProps> =
             <span className="text-xs font-bold text-emerald-800 uppercase tracking-widest bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200">
               Historic Reform in Irish Personal Finance
             </span>
-            <span className="text-xs font-semibold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full border border-slate-200 hidden sm:inline-flex items-center gap-1 font-mono">
+            <span className="text-xs font-semibold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-full border border-slate-200 hidden sm:inline-flex items-center gap-1 font-mono">
               Budget 2027 &bull; 1 July 2027
             </span>
           </div>
@@ -327,7 +327,7 @@ export const InvestmentAccountSection: React.FC<InvestmentAccountSectionProps> =
                 </span>
               </div>
               <div className="text-3xl font-black text-emerald-800 font-mono mt-1">
-                €{annualContrib.toLocaleString('en-IE')} <span className="text-sm font-normal text-slate-400">/ €{annualLimit.toLocaleString('en-IE')}</span>
+                €{annualContrib.toLocaleString('en-IE')} <span className="text-sm font-normal text-slate-500">/ €{annualLimit.toLocaleString('en-IE')}</span>
               </div>
               
               {/* Allowance progress bar */}
@@ -340,7 +340,7 @@ export const InvestmentAccountSection: React.FC<InvestmentAccountSectionProps> =
 
               <p className="text-[11px] text-emerald-700 font-semibold mt-1.5 flex items-center justify-between">
                 <span>€{remainingAllowance.toLocaleString('en-IE')} allowance remaining</span>
-                <span className="text-[10px] text-slate-400">Max €1,000/mo</span>
+                <span className="text-[10px] text-slate-500">Max €1,000/mo</span>
               </p>
             </div>
 
@@ -376,7 +376,7 @@ export const InvestmentAccountSection: React.FC<InvestmentAccountSectionProps> =
             </div>
 
             <div className="border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
-              <div className="overflow-x-auto">
+              <div className="overflow-x-auto" tabIndex={0} role="region" aria-label="Scrollable table">
                 <table className="w-full text-left text-xs">
                   <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
                     <tr>
@@ -406,7 +406,7 @@ export const InvestmentAccountSection: React.FC<InvestmentAccountSectionProps> =
                     ))}
                     {historyList.length === 0 && (
                       <tr>
-                        <td colSpan={5} className="py-6 text-center text-slate-400 font-sans">
+                        <td colSpan={5} className="py-6 text-center text-slate-500 font-sans">
                           No transactions recorded yet. Click "Record €1k Deposit" or make a deposit in the dashboard.
                         </td>
                       </tr>

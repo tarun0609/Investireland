@@ -180,6 +180,14 @@ export const SUPPORT_TOPICS: SupportTopic[] = [
       'If you are Irish tax resident, Ireland generally taxes your worldwide income and gains, including Indian mutual funds, shares and deposits and US shares or RSUs. Double taxation agreements usually let you credit tax paid abroad. RSUs are taxed through payroll when they vest; later gains pay CGT. Non-EU funds can fall under the complex offshore fund rules, so check with Revenue or a tax adviser.',
   },
   {
+    id: 'xray',
+    question: 'How diversified is my portfolio?',
+    keywords: ['diversify', 'diversified', 'diversification', 'x-ray', 'xray', 'concentration', 'exposure', 'risk', 'portfolio mix', 'allocation', 'rebalance'],
+    answer:
+      'The Financial X-Ray breaks your holdings down by asset type, currency (EUR, INR, USD) and country. If more than about 30% sits in one currency or one company, such as employer RSUs or Indian funds, you carry concentration risk. Spreading money across an Irish Investment Account, global funds and a cash reserve makes a portfolio more resilient.',
+    links: [{ label: 'Financial X-Ray', section: 'financial-xray' }],
+  },
+  {
     id: 'calculators',
     question: 'Which calculators do you have?',
     keywords: ['calculator', 'calculators', 'tool', 'tools', 'calculate', 'mortgage', 'savings goal', 'compare'],
@@ -205,10 +213,10 @@ export const SUPPORT_TOPICS: SupportTopic[] = [
 ];
 
 export const SUPPORT_SUGGESTIONS = [
+  'How does exit tax work?',
+  'Investment Account explained',
+  'Pension tax relief',
   'What plans and prices are there?',
-  'How do I import my holdings?',
-  'How are ETFs taxed in Ireland?',
-  'How do I contact a person?',
 ];
 
 export const SUPPORT_FALLBACK_ANSWER = `Sorry, I don't have an answer for that yet. I can help with plans and billing, promo codes, your account and data, importing holdings, our calculators and Irish investment tax basics. For anything else, email ${CONTACT_EMAILS.support}.`;

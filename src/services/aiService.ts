@@ -1,4 +1,4 @@
-import { apiFetch } from './apiClient';
+import { EXPRESS_API_AVAILABLE } from '../config/runtime';
 import { CGT_RATE, EXIT_TAX_RATE, EXIT_TAX_RATE_2026, pct } from '../config/irishTax';
 import { SUPPORT_AI_AVAILABLE, requestAiReply } from './supportChatService';
 
@@ -38,15 +38,12 @@ export async function askFinancialAI(
       context
     );
     if (reply) return { reply, source: 'Gemini (guided by Irish official-source rules)', isGrounded: false, mode: 'MODEL' };
-    return {
-      reply: getClientKnowledgeFallback(trimmed),
-      source: 'Offline summary (AI service unavailable)',
-      isGrounded: false,
-      mode: 'OFFLINE',
-      notice: 'The AI service is unavailable, so this is a pre-written summary.',
-    };
+    return offlineReply(trimmed);
   }
+  if (!EXPRESS_API_AVAILABLE) return offlineReply(trimmed);
   try {
+    // apiClient pulls in Firebase (for the ID token), so it is only loaded when the Express API exists.
+    const { apiFetch } = await import('./apiClient');
     const data = await apiFetch<{ reply?: string; source?: string; mode?: AIResponseMode; reason?: string }>('/api/ai-chat', {
       method: 'POST',
       body: JSON.stringify({
@@ -68,14 +65,18 @@ export async function askFinancialAI(
     };
   } catch (err) {
     console.warn('AI service unavailable; using offline answers:', err);
-    return {
-      reply: getClientKnowledgeFallback(trimmed),
-      source: 'Offline summary (AI service unavailable)',
-      isGrounded: false,
-      mode: 'OFFLINE',
-      notice: 'The AI service is unavailable, so this is a pre-written summary.',
-    };
+    return offlineReply(trimmed);
   }
+}
+
+function offlineReply(query: string): AIReply {
+  return {
+    reply: getClientKnowledgeFallback(query),
+    source: 'Offline summary (AI service unavailable)',
+    isGrounded: false,
+    mode: 'OFFLINE',
+    notice: 'The AI service is unavailable, so this is a pre-written summary.',
+  };
 }
 function getClientKnowledgeFallback(query: string): string {
   const q = query.toLowerCase();

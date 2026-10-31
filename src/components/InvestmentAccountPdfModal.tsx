@@ -1,6 +1,6 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
 import { Currency, InvestmentAccountState } from '../types';
-import { getActiveUser } from '../services/authEmailService';
+import { getActiveUser } from '../services/activeUserStore';
 import {
   FileDown,
   X,
@@ -186,7 +186,7 @@ export const InvestmentAccountPdfModal: React.FC<InvestmentAccountPdfModalProps>
         {/* Header */}
         <div className="flex items-start justify-between gap-3 pb-4 border-b border-slate-100">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-xs shrink-0">
+            <div className="w-10 h-10 rounded-xl bg-emerald-700 text-white flex items-center justify-center shadow-xs shrink-0">
               <FileDown className="w-5 h-5" />
             </div>
             <div className="min-w-0">
@@ -203,7 +203,7 @@ export const InvestmentAccountPdfModal: React.FC<InvestmentAccountPdfModalProps>
             type="button"
             onClick={onClose}
             aria-label="Close export dialog"
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer shrink-0"
+            className="p-1.5 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer shrink-0"
           >
             <X className="w-5 h-5" />
           </button>
@@ -299,7 +299,7 @@ export const InvestmentAccountPdfModal: React.FC<InvestmentAccountPdfModalProps>
               <div className="flex items-start justify-between gap-3 pb-3 border-b border-slate-100">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className="px-1.5 py-0.5 rounded bg-emerald-600 text-white font-black text-[10px]">IE</span>
+                    <span className="px-1.5 py-0.5 rounded bg-emerald-700 text-white font-black text-[10px]">IE</span>
                     <span className="font-black text-slate-900 text-sm">InvestIreland AI</span>
                   </div>
                   <span className="text-[10px] text-slate-500 block mt-0.5 font-medium">
@@ -324,7 +324,7 @@ export const InvestmentAccountPdfModal: React.FC<InvestmentAccountPdfModalProps>
                 <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200 min-w-0">
                   <span className="text-[9px] text-emerald-700 uppercase font-bold block">Annual Allowance</span>
                   <span className="text-sm font-extrabold text-emerald-800 font-mono block mt-0.5 truncate">
-                    {fmtEUR(annualContrib)} <span className="text-[10px] text-slate-400">/ {fmtEUR(annualLimit)}</span>
+                    {fmtEUR(annualContrib)} <span className="text-[10px] text-slate-500">/ {fmtEUR(annualLimit)}</span>
                   </span>
                 </div>
 
@@ -350,12 +350,12 @@ export const InvestmentAccountPdfModal: React.FC<InvestmentAccountPdfModalProps>
                     <History className="w-3 h-3 text-emerald-600" />
                     <span>Transactions in PDF ({historyList.length})</span>
                   </span>
-                  <span className="text-[10px] text-slate-400">
+                  <span className="text-[10px] text-slate-500">
                     Remaining allowance: {fmtEUR(remainingAllowance)}
                   </span>
                 </div>
 
-                <div className="border border-slate-200 rounded-lg overflow-x-auto">
+                <div className="border border-slate-200 rounded-lg overflow-x-auto" tabIndex={0} role="region" aria-label="Scrollable table">
                   <table className="w-full min-w-[360px] text-left text-[11px]">
                     <thead className="bg-slate-100 text-slate-600 font-bold">
                       <tr>
@@ -368,7 +368,7 @@ export const InvestmentAccountPdfModal: React.FC<InvestmentAccountPdfModalProps>
                     <tbody className="divide-y divide-slate-100 text-slate-700">
                       {historyList.length === 0 && (
                         <tr>
-                          <td colSpan={4} className="py-2 px-2.5 text-center text-slate-400 text-[10px]">
+                          <td colSpan={4} className="py-2 px-2.5 text-center text-slate-500 text-[10px]">
                             No transactions logged yet.
                           </td>
                         </tr>
@@ -385,7 +385,7 @@ export const InvestmentAccountPdfModal: React.FC<InvestmentAccountPdfModalProps>
                       ))}
                       {historyList.length > 4 && (
                         <tr>
-                          <td colSpan={4} className="py-1 px-2.5 text-center text-slate-400 text-[10px] bg-slate-50/50">
+                          <td colSpan={4} className="py-1 px-2.5 text-center text-slate-500 text-[10px] bg-slate-50/50">
                             + {historyList.length - 4} more {historyList.length - 4 === 1 ? 'entry' : 'entries'} in the PDF
                           </td>
                         </tr>

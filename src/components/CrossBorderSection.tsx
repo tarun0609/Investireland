@@ -234,9 +234,9 @@ export const CrossBorderSection: React.FC<CrossBorderSectionProps> = ({
           <div className="flex items-start gap-3">
             <ShieldCheck className="w-5 h-5 text-emerald-700 shrink-0 mt-0.5" />
             <div>
-              <h4 className="text-sm font-bold text-slate-900">
+              <h3 className="text-sm font-bold text-slate-900">
                 Ireland &amp; India Double Taxation Avoidance Agreement (DTAA)
-              </h4>
+              </h3>
               <p className="text-xs text-slate-600 mt-1 leading-relaxed">
                 If you are tax-resident in Ireland, Revenue considers your worldwide income and gains. However, under the comprehensive <strong>Ireland-India DTAA (Taxes on Capital Gains, Article 13)</strong>, relief is generally available so the same gain is not fully taxed twice (subject to the treaty's conditions; confirm with Revenue or a tax adviser). InvestIreland AI helps you to maintain clean, unified records of currency conversion dates, purchase prices, and withholding tax certificates.
               </p>

@@ -27,7 +27,7 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onOpenWaitlist, 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         
         <div className="text-center max-w-3xl mx-auto">
-          <span className="text-xs font-bold text-slate-500 uppercase tracking-widest bg-slate-200/60 px-3 py-1 rounded-full">
+          <span className="text-xs font-bold text-slate-700 uppercase tracking-widest bg-slate-200/60 px-3 py-1 rounded-full">
             {live ? 'Pricing' : 'Planned Pricing'}
           </span>
           <h2 className="mt-4 text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
@@ -115,7 +115,7 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onOpenWaitlist, 
 
           {/* PRO (Highlighted) */}
           <div className="bg-white p-6 sm:p-7 rounded-2xl border-2 border-emerald-500 shadow-lg flex flex-col justify-between relative overflow-hidden">
-            <div className="absolute top-0 right-0 bg-emerald-600 text-white text-[10px] font-extrabold uppercase px-3 py-1 rounded-bl-lg tracking-wider">
+            <div className="absolute top-0 right-0 bg-emerald-700 text-white text-[10px] font-extrabold uppercase px-3 py-1 rounded-bl-lg tracking-wider">
               Recommended
             </div>
 
