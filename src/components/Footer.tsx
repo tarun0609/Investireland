@@ -1,6 +1,7 @@
 import React from 'react';
 import { LifeBuoy, Mail, ShieldCheck } from 'lucide-react';
 import { CONTACT_EMAILS } from '../config/contact';
+import { openCookieSettings } from './CookieConsentBanner';
 import { isModifiedClick } from '../utils/links';
 import { ABOUT_PAGE, CALCULATORS_HUB, CALCULATOR_TOOLS, GUIDE_PAGES, type AppView } from '../config/calculators';
 
@@ -158,7 +159,10 @@ export const Footer: React.FC<FooterProps> = ({ onNavigateSection, onOpenWaitlis
               </li>
             </ul>
             <p className="text-[11px] leading-relaxed text-slate-400">
-              No advertising, analytics or tracking cookies. Account data is stored with Firebase and can only be read by your signed-in account.
+              Google Ads cookies only if you accept them; no analytics. Account data is stored with Firebase and can only be read by your signed-in account.{' '}
+              <button type="button" onClick={openCookieSettings} className="cursor-pointer underline hover:text-white">
+                Cookie settings
+              </button>
             </p>
           </nav>
 

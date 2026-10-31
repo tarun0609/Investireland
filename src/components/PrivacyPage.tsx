@@ -1,12 +1,13 @@
 import React, { useEffect } from 'react';
 import { ArrowLeft, Cookie, Database, Mail, ShieldCheck, Trash2 } from 'lucide-react';
 import { CONTACT_EMAILS } from '../config/contact';
+import { openCookieSettings } from './CookieConsentBanner';
 
 interface PrivacyPageProps {
   onBack: () => void;
 }
 
-const LAST_UPDATED = '1 November 2026';
+const LAST_UPDATED = '31 October 2026';
 
 const storageRows: { name: string; where: string; purpose: string; when: string }[] = [
   {
@@ -26,6 +27,19 @@ const storageRows: { name: string; where: string; purpose: string; when: string 
     where: 'accounts.google.com',
     purpose: 'Google sets its own cookies inside its sign-in window, under Google’s privacy policy.',
     when: 'Only if you click “Continue with Google”',
+  },
+  {
+    name: 'investireland_cookie_consent_v1',
+    where: 'Browser localStorage',
+    purpose: 'Remembers whether you accepted or rejected advertising cookies, so we don’t ask again.',
+    when: 'After you choose in the cookie banner',
+  },
+  {
+    name: 'Google Ads cookies (e.g. _gcl_au)',
+    where: 'Cookies on this site and Google domains',
+    purpose:
+      'Measures whether visits and sign-ups came from our Google ads and helps Google show our ads to relevant people. Set by Google under its privacy policy; kept up to 90 days (_gcl_au) or as Google states.',
+    when: 'Only if you click “Accept”',
   },
 ];
 
@@ -50,11 +64,20 @@ export const PrivacyPage: React.FC<PrivacyPageProps> = ({ onBack }) => {
       <div className="mt-8 rounded-2xl border border-emerald-200 bg-emerald-50 p-5 text-sm leading-relaxed text-emerald-900">
         <p className="flex items-start gap-2 font-semibold">
           <Cookie className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-          No advertising, analytics or tracking cookies.
+          No advertising cookies unless you say yes, and no analytics.
         </p>
         <p className="mt-1">
-          We only store what is strictly necessary for features you ask to use, so we don’t show a cookie consent banner. If we ever add
-          optional cookies, we will ask for your consent first and give you an equally easy way to refuse.
+          We use Google Ads cookies only if you click &ldquo;Accept&rdquo; in our cookie banner. Rejecting is just as easy, and the site works
+          the same either way. Everything else we store is strictly necessary for features you ask to use.
+        </p>
+        <p className="mt-2">
+          <button
+            type="button"
+            onClick={openCookieSettings}
+            className="cursor-pointer font-semibold text-emerald-800 underline hover:text-emerald-950"
+          >
+            Change your cookie settings
+          </button>
         </p>
       </div>
 
@@ -114,7 +137,11 @@ export const PrivacyPage: React.FC<PrivacyPageProps> = ({ onBack }) => {
             site (legal basis: legitimate interests).
           </li>
         </ul>
-        <p>We never sell your data and never use it for advertising.</p>
+        <p>
+          We never sell your data, and your portfolio figures are never used for advertising. If you accept advertising cookies, Google Ads
+          receives your IP address, browser details, the pages you visit here and whether you signed up, so we can measure our ads (legal basis:
+          consent, which you can withdraw at any time in cookie settings).
+        </p>
       </section>
 
       <section className="mt-10 space-y-3 text-sm leading-relaxed text-slate-700">
@@ -122,7 +149,7 @@ export const PrivacyPage: React.FC<PrivacyPageProps> = ({ onBack }) => {
         <p>
           Google Firebase (authentication and database), Microsoft Azure Static Web Apps (hosting), Cloudflare (DNS, and Cloudflare Workers
           for our billing, account and chat API at api.investirelandai.ie), Stripe (payments, only if you choose a paid plan), Google Gemini (AI
-          chat answers, only when AI answers are switched on), Brevo (sending account
+                    chat answers, only when AI answers are switched on), Google Ads (ad measurement, only if you accept advertising cookies), Brevo (sending account
           and product emails) and Gmail (account emails). Some may process data outside the EEA under the EU Standard Contractual Clauses or the EU–US Data Privacy Framework. Fonts are
           served from our own site, so no data is sent to Google Fonts.
         </p>
@@ -166,7 +193,11 @@ export const PrivacyPage: React.FC<PrivacyPageProps> = ({ onBack }) => {
         </div>
         <p>
           All of these are strictly necessary for a feature you requested, so under the ePrivacy rules (S.I. No. 336 of 2011) they do not need
-          consent. You can remove them at any time by signing out and clearing this site’s data in your browser settings.
+          consent, except Google Ads cookies, which are set only after you click &ldquo;Accept&rdquo;. You can change your choice at any time in{' '}
+          <button type="button" onClick={openCookieSettings} className="cursor-pointer font-semibold text-emerald-700 underline">
+            cookie settings
+          </button>
+          , or remove everything by signing out and clearing this site’s data in your browser settings.
         </p>
       </section>
 

@@ -19,6 +19,7 @@ import { FAQSection } from './components/FAQSection';
 import { Footer } from './components/Footer';
 import { EarlyAccessModal } from './components/EarlyAccessModal';
 import { SupportChatWidget } from './components/SupportChatWidget';
+import { CookieConsentBanner } from './components/CookieConsentBanner';
 import { isDemoUser, subscribeToActiveUser, waitForAuthReady } from './services/authEmailService';
 import { FREE_HOLDINGS_LIMIT, type CheckoutPlan } from './config/plans';
 import {
@@ -635,6 +636,7 @@ export default function App() {
       />
 
       <SupportChatWidget onNavigateView={setActiveView} onNavigateSection={handleNavigateSection} />
+      <CookieConsentBanner onOpenPrivacy={() => setActiveView('privacy')} />
     </div>
   );
 }
