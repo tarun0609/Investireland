@@ -1,4 +1,5 @@
 import { adminCreatePromo, adminGrant, adminListCampaigns, adminListPromos, adminListUsers, adminOverview, adminSendEmail, adminSetPromoActive, requireAdmin } from './admin';
+import { handleChat } from './chat';
 import { handleCheckout, handlePortal, handleStripeWebhook } from './billing';
 import { handleUnsubscribe } from './email';
 import { splitList, type Env } from './env';
@@ -76,6 +77,14 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
     }
     if (path === '/email/unsubscribe' && (request.method === 'GET' || request.method === 'POST')) {
       return await handleUnsubscribe(env, firestoreFor(env), request);
+    }
+
+    // Public support chat: no sign-in, but only our own site may call it.
+    if (path === '/chat') {
+      if (!cors) throw new HttpError(403, 'Origin not allowed.');
+      if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
+      if (request.method !== 'POST') throw new HttpError(405, 'Method not allowed.');
+      return withHeaders(await handleChat(env, request, await readJson(request)), cors);
     }
 
     const key = `${request.method} ${path}`;

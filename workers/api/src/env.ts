@@ -28,6 +28,13 @@ export interface Env {
   /** Random secret used to sign unsubscribe and household invite links (secret). */
   LINK_SIGNING_SECRET: string;
 
+  /** Google Gemini API key for the support chat (secret, free tier). Chat is off when unset. */
+  GEMINI_API_KEY?: string;
+  /** Gemini model id, e.g. "gemini-3.8-flash". */
+  GEMINI_MODEL?: string;
+  /** Max AI chat replies per day across all visitors (default 1000). */
+  CHAT_DAILY_LIMIT?: string;
+
   /** Global cap on promo redemptions (default 1000). */
   PROMO_GLOBAL_CAP?: string;
 }

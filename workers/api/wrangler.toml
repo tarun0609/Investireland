@@ -18,9 +18,13 @@ EMAIL_FROM = "hello@investirelandai.ie"
 EMAIL_FROM_NAME = "InvestIreland AI"
 EMAIL_DAILY_LIMIT = "300"
 PROMO_GLOBAL_CAP = "1000"
+# Support chat (Google Gemini free tier). Keep the daily cap within your free quota.
+GEMINI_MODEL = "gemini-3.8-flash"
+CHAT_DAILY_LIMIT = "1000"
 
 # Secrets - set each with: npx wrangler secret put NAME
 #   ADMIN_UIDS, GOOGLE_SERVICE_ACCOUNT, LINK_SIGNING_SECRET, BREVO_API_KEY,
 #   STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET,
 #   STRIPE_PRICE_PRO_MONTHLY, STRIPE_PRICE_PRO_ANNUAL, STRIPE_PRICE_FAMILY_ANNUAL
 #   EMAIL_REPLY_TO (optional)
+#   GEMINI_API_KEY (optional; enables AI answers in the support chat, free key from aistudio.google.com)

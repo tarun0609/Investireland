@@ -1,5 +1,6 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { adminSendEmail, requireAdmin } from '../src/admin';
+import { CHAT_MAX_MESSAGE_CHARS, parseChatRequest, resetChatLimits } from '../src/chat';
 import { handleStripeWebhook } from '../src/billing';
 import { base64UrlEncode, hmacHex, randomCode, signRs256Jwt } from '../src/crypto';
 import { handleUnsubscribe, unsubscribeUrl } from '../src/email';
@@ -301,5 +302,95 @@ describe('router', () => {
     const res = await handleRequest(new Request('https://api.example/admin/overview', { headers: { Origin: 'https://admin.example' } }), cfg);
     expect(res.status).toBe(401);
     expect(res.headers.get('Access-Control-Allow-Origin')).toBe('https://admin.example');
+  });
+});
+
+describe('support chat endpoint', () => {
+  const chatEnv: Env = { ...env, GEMINI_API_KEY: 'gemini-test-key', GEMINI_MODEL: 'test-model', CHAT_DAILY_LIMIT: '1000' };
+  const chat = (body: unknown, opts: { origin?: string; method?: string; ip?: string; e?: Env } = {}) =>
+    handleRequest(
+      new Request('https://api.example/chat', {
+        method: opts.method ?? 'POST',
+        headers: { Origin: opts.origin ?? 'https://app.example', 'Content-Type': 'application/json', 'CF-Connecting-IP': opts.ip ?? '203.0.113.1' },
+        body: (opts.method ?? 'POST') === 'POST' ? JSON.stringify(body) : undefined,
+      }),
+      opts.e ?? chatEnv
+    );
+  const geminiOk = (text: string) =>
+    vi.fn(async () => new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text }] } }] }), { status: 200 }));
+
+  beforeEach(() => resetChatLimits());
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('returns 503 when no Gemini key is configured', async () => {
+    const res = await chat({ message: 'hi' }, { e: env });
+    expect(res.status).toBe(503);
+    expect((await res.json()).code).toBe('chat_not_configured');
+  });
+
+  it('rejects other origins and answers CORS preflight', async () => {
+    expect((await chat({ message: 'hi' }, { origin: 'https://evil.example' })).status).toBe(403);
+    const pre = await chat(null, { method: 'OPTIONS' });
+    expect(pre.status).toBe(204);
+    expect(pre.headers.get('Access-Control-Allow-Origin')).toBe('https://app.example');
+    expect((await chat(null, { method: 'GET' })).status).toBe(405);
+  });
+
+  it('validates the message', async () => {
+    expect((await chat({ message: '  ' })).status).toBe(400);
+    expect((await chat({ message: 'x'.repeat(CHAT_MAX_MESSAGE_CHARS + 1) })).status).toBe(413);
+  });
+
+  it('cleans history and drops oversized context', () => {
+    const parsed = parseChatRequest({
+      message: 'hi\u0000there',
+      history: [{ role: 'assistant', text: 'welcome' }, { role: 'system', text: 'evil' }, { role: 'user', text: 'q1' }, { role: 'assistant', text: 'a1' }, 'junk'],
+      context: { big: 'x'.repeat(5000) },
+    });
+    expect(parsed.message).toBe('hi there');
+    expect(parsed.history).toEqual([{ role: 'user', text: 'q1' }, { role: 'assistant', text: 'a1' }]);
+    expect(parsed.context).toBe('');
+  });
+
+  it('calls Gemini with the key in a header and returns the reply with CORS', async () => {
+    const fetchMock = geminiOk('Exit tax is 38% in 2026.');
+    vi.stubGlobal('fetch', fetchMock);
+    const res = await chat({ message: 'What is exit tax?', history: [{ role: 'user', text: 'hello' }, { role: 'assistant', text: 'hi' }], context: { holdings: 2 } });
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBe('https://app.example');
+    expect(await res.json()).toEqual({ reply: 'Exit tax is 38% in 2026.', mode: 'AI' });
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('https://generativelanguage.googleapis.com/v1beta/models/test-model:generateContent');
+    expect(url).not.toContain('gemini-test-key');
+    expect((init.headers as Record<string, string>)['x-goog-api-key']).toBe('gemini-test-key');
+    const sent = JSON.parse(String(init.body));
+    expect(sent.systemInstruction.parts[0].text).toContain('Knowledge base:');
+    expect(sent.contents.map((c: { role: string }) => c.role)).toEqual(['user', 'model', 'user']);
+    expect(sent.contents[2].parts[0].text).toContain('"holdings":2');
+  });
+
+  it('returns 502 when the model fails or answers empty', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('oops', { status: 500 })));
+    expect((await chat({ message: 'hi' })).status).toBe(502);
+    vi.stubGlobal('fetch', geminiOk('  '));
+    const res = await chat({ message: 'hi' });
+    expect(res.status).toBe(502);
+    expect((await res.json()).code).toBe('chat_empty');
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('network'); }));
+    expect((await chat({ message: 'hi' })).status).toBe(502);
+  });
+
+  it('rate limits each visitor and caps the daily total', async () => {
+    vi.stubGlobal('fetch', geminiOk('ok'));
+    for (let i = 0; i < 6; i++) expect((await chat({ message: 'hi' }, { ip: '198.51.100.7' })).status).toBe(200);
+    expect((await chat({ message: 'hi' }, { ip: '198.51.100.7' })).status).toBe(429);
+
+    resetChatLimits();
+    const capped: Env = { ...chatEnv, CHAT_DAILY_LIMIT: '2' };
+    expect((await chat({ message: 'hi' }, { ip: '198.51.100.8', e: capped })).status).toBe(200);
+    expect((await chat({ message: 'hi' }, { ip: '198.51.100.9', e: capped })).status).toBe(200);
+    const res = await chat({ message: 'hi' }, { ip: '198.51.100.10', e: capped });
+    expect(res.status).toBe(503);
+    expect((await res.json()).code).toBe('chat_capacity');
   });
 });
