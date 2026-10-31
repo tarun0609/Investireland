@@ -43,6 +43,7 @@ describe('support knowledge base', () => {
 
   it('answers every suggestion chip from a topic', () => {
     for (const s of SUPPORT_SUGGESTIONS) expect(answerFromKnowledgeBase(s).topicId).not.toBeNull();
+    expect(SUPPORT_SUGGESTIONS.map((s) => answerFromKnowledgeBase(s).topicId)).toEqual(['exit-tax', 'investment-account', 'pension', 'plans']);
   });
 
   it('falls back with a support email for unknown questions', () => {

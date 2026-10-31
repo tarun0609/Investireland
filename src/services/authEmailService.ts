@@ -14,7 +14,15 @@ import {
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, db } from './firebase';
 import { apiFetch } from './apiClient';
-import { setStorageScope } from './storageScope';
+import { getActiveUser, getSignedInUser, setSignedInProfile } from './activeUserStore';
+
+export {
+  DEFAULT_DEMO_USER,
+  getActiveUser,
+  getSignedInUser,
+  isDemoUser,
+  subscribeToActiveUser,
+} from './activeUserStore';
 
 export type ResidencyCountry = AuthUser['country'];
 const COUNTRIES: ResidencyCountry[] = ['Ireland', 'India', 'United States', 'United Kingdom', 'Other EU'];
@@ -273,31 +281,10 @@ export function getFriendlyAuthErrorMessage(error: unknown, context?: string): s
   return `${info.message} ${info.actionHint}`;
 }
 
-export const DEFAULT_DEMO_USER: AuthUser = {
-  id: 'usr_demo_priya',
-  name: 'Priya Sharma',
-  email: 'priya.sharma@investireland.demo',
-  country: 'Ireland',
-  preferredCurrency: 'EUR',
-  taxResidencyStatus: 'Irish Tax Resident (demo profile)',
-  registeredAt: '2026-01-10T09:00:00.000Z',
-  lastLoginAt: '2026-01-10T09:00:00.000Z',
-  hasOverseasAssets: true,
-  primaryLifeStageGoal: 'house_deposit',
-  emailVerified: false,
-};
-
-export function isDemoUser(user: AuthUser | null | undefined): boolean {
-  return !user || user.id === DEFAULT_DEMO_USER.id;
-}
-
 // ---------------------------------------------------------------------------
 // Auth state (single source of truth: Firebase Auth + users/{uid} profile doc)
 // ---------------------------------------------------------------------------
 
-type ActiveUserListener = (user: AuthUser) => void;
-const activeUserListeners = new Set<ActiveUserListener>();
-let signedInProfile: AuthUser | null = null;
 let authResolved = false;
 let resolveAuthReady: () => void = () => {};
 const authReady = new Promise<void>((resolve) => {
@@ -330,23 +317,6 @@ function profileFromFirebase(fbUser: FirebaseUser, data?: Record<string, any> | 
   };
 }
 
-function notifyActiveUser() {
-  const user = getActiveUser();
-  activeUserListeners.forEach((listener) => {
-    try {
-      listener(user);
-    } catch (err) {
-      console.error('Active user listener failed', err);
-    }
-  });
-}
-
-function setSignedInProfile(profile: AuthUser | null) {
-  signedInProfile = profile;
-  setStorageScope(profile?.id);
-  notifyActiveUser();
-}
-
 async function loadProfileDoc(uid: string): Promise<Record<string, any> | null> {
   try {
     const snap = await getDoc(doc(db, 'users', uid));
@@ -374,24 +344,6 @@ onAuthStateChanged(auth, async (fbUser) => {
 /** Resolves once Firebase has restored (or ruled out) a persisted session. */
 export function waitForAuthReady(): Promise<void> {
   return authReady;
-}
-
-/** Signed-in user's profile, or the demo persona when signed out. */
-export function getActiveUser(): AuthUser {
-  return signedInProfile ?? DEFAULT_DEMO_USER;
-}
-
-export function getSignedInUser(): AuthUser | null {
-  return signedInProfile;
-}
-
-/** Subscribes to sign-in/sign-out/profile changes. Fires immediately with the current user. */
-export function subscribeToActiveUser(listener: ActiveUserListener): () => void {
-  activeUserListeners.add(listener);
-  listener(getActiveUser());
-  return () => {
-    activeUserListeners.delete(listener);
-  };
 }
 
 export { getStorageScope, scopedStorageKey } from './storageScope';
@@ -436,8 +388,9 @@ async function saveProfileDoc(fbUser: FirebaseUser, fields: ProfileFields, regis
 /** Updates editable fields on the signed-in user's profile. */
 export async function updateActiveUserProfile(updates: Partial<Pick<AuthUser, 'name' | 'country' | 'preferredCurrency'>>): Promise<boolean> {
   const fbUser = auth.currentUser;
-  if (!fbUser || !signedInProfile) return false;
-  const next: AuthUser = { ...signedInProfile, ...updates };
+  const current = getSignedInUser();
+  if (!fbUser || !current) return false;
+  const next: AuthUser = { ...current, ...updates };
   try {
     await saveProfileDoc(
       fbUser,

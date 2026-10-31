@@ -427,7 +427,7 @@ export const FinancialGoalMilestones: React.FC<FinancialGoalMilestonesProps> = (
             <button
               type="button"
               onClick={handleResetDefaults}
-              className="p-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
+              className="p-2 rounded-xl text-slate-500 hover:text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
               title="Load example milestones (replaces your current goals)"
               aria-label="Load example milestones"
             >
@@ -514,7 +514,7 @@ export const FinancialGoalMilestones: React.FC<FinancialGoalMilestonesProps> = (
             </span>
             <div className="text-lg sm:text-xl font-black text-slate-900 mt-1 flex items-center gap-1.5">
               <span>{summary.completedGoalsCount}</span>
-              <span className="text-xs font-normal text-slate-400">of {summary.totalGoalsCount}</span>
+              <span className="text-xs font-normal text-slate-500">of {summary.totalGoalsCount}</span>
               {summary.completedGoalsCount > 0 && (
                 <CheckCircle2 className="w-4 h-4 text-emerald-600 inline ml-1" />
               )}
@@ -578,7 +578,7 @@ export const FinancialGoalMilestones: React.FC<FinancialGoalMilestonesProps> = (
             >
               {renderIcon(p.category)}
               <span>{p.categoryLabel}</span>
-              {count > 0 && <span className="opacity-70 text-[10px]">({count})</span>}
+              {count > 0 && <span className="opacity-90 text-[10px]">({count})</span>}
             </button>
           );
         })}
@@ -664,7 +664,7 @@ export const FinancialGoalMilestones: React.FC<FinancialGoalMilestonesProps> = (
                   <button
                     type="button"
                     onClick={() => handleToggleCompleted(goal)}
-                    className={`p-1.5 rounded-lg cursor-pointer ${goal.isCompleted ? 'text-emerald-600 hover:bg-emerald-50' : 'text-slate-400 hover:text-emerald-600 hover:bg-emerald-50'}`}
+                    className={`p-1.5 rounded-lg cursor-pointer ${goal.isCompleted ? 'text-emerald-600 hover:bg-emerald-50' : 'text-slate-500 hover:text-emerald-600 hover:bg-emerald-50'}`}
                     title={goal.isCompleted ? 'Mark as not achieved' : 'Mark as achieved'}
                     aria-label={goal.isCompleted ? `Mark ${goal.title} as not achieved` : `Mark ${goal.title} as achieved`}
                     aria-pressed={!!goal.isCompleted}
@@ -674,7 +674,7 @@ export const FinancialGoalMilestones: React.FC<FinancialGoalMilestonesProps> = (
                   <button
                     type="button"
                     onClick={() => handleOpenEditModal(goal)}
-                    className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
+                    className="p-1.5 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
                     title="Edit milestone"
                     aria-label={`Edit ${goal.title}`}
                   >
@@ -683,7 +683,7 @@ export const FinancialGoalMilestones: React.FC<FinancialGoalMilestonesProps> = (
                   <button
                     type="button"
                     onClick={() => handleDeleteGoal(goal)}
-                    className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
+                    className="p-1.5 rounded-lg text-slate-500 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
                     title="Delete milestone"
                     aria-label={`Delete ${goal.title}`}
                   >
@@ -707,7 +707,7 @@ export const FinancialGoalMilestones: React.FC<FinancialGoalMilestonesProps> = (
                     <span className="text-xs text-slate-500">
                       of {formatCurrency(convertFromEUR(goal.targetAmountEUR, currentCurrency), currentCurrency)}
                       {goal.targetCurrency !== 'EUR' && (
-                        <span className="text-[10px] text-slate-400 ml-1">
+                        <span className="text-[10px] text-slate-500 ml-1">
                           ({currencySymbol(goal.targetCurrency)}{goal.targetAmount.toLocaleString('en-IE')})
                         </span>
                       )}
@@ -732,20 +732,20 @@ export const FinancialGoalMilestones: React.FC<FinancialGoalMilestonesProps> = (
                 {/* Sub metrics */}
                 <div className="grid grid-cols-1 min-[400px]:grid-cols-3 gap-2 mt-3 pt-2 text-[11px] text-slate-600 border-t border-slate-50">
                   <div>
-                    <span className="text-[10px] text-slate-400 block">Target Year</span>
+                    <span className="text-[10px] text-slate-500 block">Target Year</span>
                     <span className="font-bold text-slate-800 flex items-center gap-1">
-                      <Calendar className="w-3 h-3 text-slate-400" />
+                      <Calendar className="w-3 h-3 text-slate-500" />
                       {goal.targetYear} ({isOverdue ? 'Overdue' : yearsRemaining === 0 ? 'This year' : `${yearsRemaining}y left`})
                     </span>
                   </div>
                   <div>
-                    <span className="text-[10px] text-slate-400 block">Shortfall</span>
+                    <span className="text-[10px] text-slate-500 block">Shortfall</span>
                     <span className={`font-bold ${isDone ? 'text-emerald-700' : 'text-rose-700'}`}>
                       {isDone ? 'Fully Funded' : formatCurrency(convertFromEUR(shortfallEUR, currentCurrency), currentCurrency)}
                     </span>
                   </div>
                   <div>
-                    <span className="text-[10px] text-slate-400 block">Required Pace</span>
+                    <span className="text-[10px] text-slate-500 block">Required Pace</span>
                     <span className="font-bold text-slate-800">
                       {isDone ? '—' : `${formatCurrency(convertFromEUR(suggestedMonthly, currentCurrency), currentCurrency)}/mo`}
                     </span>
@@ -834,7 +834,7 @@ export const FinancialGoalMilestones: React.FC<FinancialGoalMilestonesProps> = (
               type="button"
               onClick={() => setIsAddModalOpen(false)}
               aria-label="Close"
-              className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
+              className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>
@@ -1034,7 +1034,7 @@ export const FinancialGoalMilestones: React.FC<FinancialGoalMilestonesProps> = (
               type="button"
               onClick={() => setIsEmailModalOpen(false)}
               aria-label="Close"
-              className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
+              className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>

@@ -4,13 +4,13 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <!-- Google tag (gtag.js), loaded only after cookie consent: see public/consent.js -->
-    <script src="/consent.js"></script>
+    <script src="/consent.js" defer></script>
     <!-- seo:head -->
     <link rel="preload" href="/fonts/plus-jakarta-sans-latin-wght.woff2" as="font" type="font/woff2" crossorigin>
   </head>
   <body class="bg-[#F8FAFC] text-[#0F172A] font-sans antialiased selection:bg-emerald-100 selection:text-emerald-900">
     <!-- seo:noscript -->
-    <div id="root"></div>
+    <div id="root"><!-- seo:shell --></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

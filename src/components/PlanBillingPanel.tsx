@@ -227,7 +227,7 @@ export const PlanBillingPanel: React.FC<PlanBillingPanelProps> = ({ access, user
                 </div>
               </div>
               {partnerHoldings && partnerHoldings.length > 0 && (
-                <div className="mt-4 overflow-x-auto">
+                <div className="mt-4 overflow-x-auto" tabIndex={0} role="region" aria-label="Scrollable table">
                   <table className="w-full text-left text-xs">
                     <caption className="sr-only">Partner holdings</caption>
                     <thead className="text-slate-500">

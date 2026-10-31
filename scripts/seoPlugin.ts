@@ -13,6 +13,7 @@ import {
   SITE_URL,
   absoluteUrl,
   type PageSeo,
+  HOME_HERO,
 } from '../src/config/site';
 import {
   CALCULATORS_HUB,
@@ -224,6 +225,25 @@ export function renderHead(page: PageSeo): string {
 
 const NOSCRIPT_START = '<!-- seo:noscript-start -->';
 const NOSCRIPT_END = '<!-- seo:noscript-end -->';
+const SHELL_PLACEHOLDER = '<!-- seo:shell -->';
+const SHELL_START = '<!-- seo:shell-start -->';
+const SHELL_END = '<!-- seo:shell-end -->';
+
+/**
+ * Visible pre-rendered homepage hero inside #root, so the first paint (and any crawler) gets real
+ * text before JavaScript runs. React replaces it on mount; the markup mirrors Navbar + HeroSection
+ * so nothing moves when that happens.
+ */
+export function renderHomeShell(): string {
+  return `${SHELL_START}<header class="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-slate-200/80"><div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8"><div class="flex items-center justify-between gap-2 h-16"><a href="/" class="flex items-center gap-2 sm:gap-2.5 shrink-0 rounded-xl"><span aria-hidden="true" class="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-br from-emerald-600 to-teal-700 flex items-center justify-center text-white"><span class="font-extrabold text-sm tracking-tight">IE</span></span><span class="font-extrabold text-slate-900 text-base sm:text-lg tracking-tight">${escapeHtml(SITE_NAME)}</span></a></div></div></header>`
+    + `<main><section aria-labelledby="hero-heading" class="relative overflow-hidden pt-14 pb-16 sm:pt-20 sm:pb-24 lg:pt-28 lg:pb-32 bg-gradient-to-b from-emerald-50/60 via-white to-white border-b border-slate-200/60"><div class="relative max-w-3xl mx-auto px-4 sm:px-6 text-center">`
+    + `<p class="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-white/80 px-3.5 py-1.5 text-xs sm:text-sm font-medium text-emerald-900"><span class="h-2 w-2 rounded-full bg-emerald-600" aria-hidden="true"></span>Built for people investing in Ireland</p>`
+    + `<h1 id="hero-heading" class="mt-6 text-4xl sm:text-5xl lg:text-6xl font-extrabold text-slate-950 tracking-tight leading-[1.1]">${escapeHtml(HOME_HERO.h1Lead)} <span class="text-emerald-800">${escapeHtml(HOME_HERO.h1Rest)}</span></h1>`
+    + `<p class="mt-6 text-lg sm:text-xl text-slate-600 leading-relaxed">${escapeHtml(HOME_HERO.subline)}</p>`
+    + `<div class="mt-9 flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-3 sm:gap-4"><a href="${CALCULATORS_HUB.path}" class="inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl text-base font-semibold bg-emerald-700 text-white shadow-md">Try the calculators</a><button type="button" class="inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl text-base font-semibold bg-white text-slate-800 border border-slate-300 shadow-xs">Open my tracker</button></div>`
+    + `<p class="mt-6 flex items-center justify-center gap-2 text-sm text-slate-600">Educational tools, not financial advice.</p>`
+    + `</div></section></main>${SHELL_END}`;
+}
 
 function renderPrivacyNoscript(): string {
   return `${NOSCRIPT_START}<noscript>
@@ -241,7 +261,7 @@ export function renderNoscript(): string {
   const faqs = FAQS.map((f) => `<dt><strong>${escapeHtml(f.q)}</strong></dt><dd>${escapeHtml(f.a)}</dd>`).join('');
   return `${NOSCRIPT_START}<noscript>
       <main style="max-width:48rem;margin:2rem auto;padding:0 1rem;font-family:system-ui,sans-serif;line-height:1.6">
-        <h1>${escapeHtml(SITE_NAME)}: Ireland's Investment Account calculator and portfolio tracker</h1>
+        <h2>${escapeHtml(SITE_NAME)}: Ireland's Investment Account calculator and portfolio tracker</h2>
         <p>${escapeHtml(HOME_SEO.description)}</p>
         <h2>What you can do</h2>
         <ul>
@@ -268,6 +288,9 @@ const replaceBetween = (html: string, startMarker: string, endMarker: string, re
   if (start === -1 || end === -1) throw new Error(`[seo] built index.html is missing ${startMarker}.`);
   return html.slice(0, start) + replacement + html.slice(end + endMarker.length);
 };
+
+// Other pages are lazy-loaded views, so they keep an empty #root rather than the homepage hero.
+const removeShell = (html: string) => (html.includes(SHELL_START) ? replaceBetween(html, SHELL_START, SHELL_END, '') : html);
 
 function renderSection(section: ContentSection): string {
   const paragraphs = (section.paragraphs ?? []).map((p) => `<p>${escapeHtml(p)}</p>`).join('');
@@ -325,13 +348,13 @@ export function renderCalculatorNoscript(page: CalculatorPage): string {
 
 export function renderCalculatorDocument(indexHtml: string, page: CalculatorPage): string {
   const withHead = replaceBetween(indexHtml, HEAD_START, HEAD_END, renderHead(page));
-  return replaceBetween(withHead, NOSCRIPT_START, NOSCRIPT_END, renderCalculatorNoscript(page));
+  return removeShell(replaceBetween(withHead, NOSCRIPT_START, NOSCRIPT_END, renderCalculatorNoscript(page)));
 }
 
 /** Builds the static /privacy document from the built home document. */
 export function renderPrivacyDocument(indexHtml: string): string {
   const withHead = replaceBetween(indexHtml, HEAD_START, HEAD_END, renderHead(PRIVACY_SEO));
-  return replaceBetween(withHead, NOSCRIPT_START, NOSCRIPT_END, renderPrivacyNoscript());
+  return removeShell(replaceBetween(withHead, NOSCRIPT_START, NOSCRIPT_END, renderPrivacyNoscript()));
 }
 
 /** Indexable public URLs. Keep in sync with the routes the app serves with HTTP 200. */
@@ -360,7 +383,10 @@ export function seoPlugin(): Plugin {
       if (!html.includes(HEAD_PLACEHOLDER) || !html.includes(BODY_PLACEHOLDER)) {
         throw new Error('[seo] index.html is missing the seo:head or seo:noscript placeholder.');
       }
-      return html.replace(HEAD_PLACEHOLDER, renderHead(HOME_SEO)).replace(BODY_PLACEHOLDER, renderNoscript());
+      return html
+        .replace(HEAD_PLACEHOLDER, renderHead(HOME_SEO))
+        .replace(BODY_PLACEHOLDER, renderNoscript())
+        .replace(SHELL_PLACEHOLDER, renderHomeShell());
     },
     writeBundle() {
       const outDir = path.resolve(config.root, config.build.outDir);

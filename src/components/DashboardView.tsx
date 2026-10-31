@@ -324,13 +324,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold text-slate-600 hover:text-emerald-700 hover:bg-emerald-50 border border-slate-200 hover:border-emerald-300 transition-all cursor-pointer"
                     title="Click to personalize your dashboard name"
                   >
-                    <Edit3 className="w-3.5 h-3.5 text-slate-400" />
+                    <Edit3 className="w-3.5 h-3.5 text-slate-500" />
                     <span>Edit Name</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => setShowPersonaInfo(!showPersonaInfo)}
-                    className="text-slate-400 hover:text-slate-600 p-1 rounded-md hover:bg-slate-100 transition-colors cursor-pointer"
+                    className="text-slate-500 hover:text-slate-600 p-1 rounded-md hover:bg-slate-100 transition-colors cursor-pointer"
                     title="Where does this name come from?"
                     aria-label="Where does this name come from?"
                   >
@@ -427,6 +427,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <button
               type="button"
               key={tab.id}
+              aria-pressed={activeTab === tab.id}
               onClick={() => setActiveTab(tab.id as DashboardTab)}
               className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
                 activeTab === tab.id
@@ -606,7 +607,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
             {/* AI Insight Box (Spec Section 20) */}
             <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-start gap-3.5">
-              <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center shrink-0">
+              <div className="w-8 h-8 rounded-lg bg-emerald-700 text-white flex items-center justify-center shrink-0">
                 <Sparkles className="w-4 h-4" />
               </div>
               <div className="flex-1">
@@ -627,7 +628,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     ? `Add your first holding to get personalised concentration and liquidity insights. When Ireland's proposed Investment Account launches on 1 July 2027, you could shelter up to €${investmentAccount.annualLimit.toLocaleString('en-IE')}/year from DIRT and exit tax.`
                     : `Your largest single holding represents ${xray.concentration.topHoldingPct}% of your total portfolio, and your top 5 assets represent ${xray.concentration.top5Pct}%. You have ${xray.liquidity.cashPct}% in cash reserves. When Ireland's proposed Investment Account launches on 1 July 2027, you could shelter up to €${investmentAccount.annualLimit.toLocaleString('en-IE')}/year from deposit interest retention tax (DIRT) and exit tax.`}
                 </p>
-                <p className="text-[10px] text-slate-400 mt-1">Rule-based summary of your holdings &middot; educational only, not financial advice.</p>
+                <p className="text-[10px] text-slate-500 mt-1">Rule-based summary of your holdings &middot; educational only, not financial advice.</p>
               </div>
             </div>
 
@@ -644,7 +645,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       PDF &middot; A4
                     </span>
                   </div>
-                  <p className="text-xs text-slate-400 mt-0.5">
+                  <p className="text-xs text-slate-500 mt-0.5">
                     Generate a printable summary summarizing your cross-border portfolio (IE, India, US), Budget 2027 allowances, and X-Ray diagnostics.
                   </p>
                 </div>
@@ -877,7 +878,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
                   <span className="text-xs font-bold text-slate-500 uppercase">Annual Contribution Allowance</span>
                   <div className="text-3xl font-extrabold text-emerald-800 font-mono mt-1">
-                    €{investmentAccount.annualContributions.toLocaleString('en-IE')} <span className="text-base text-slate-400 font-normal">/ €{investmentAccount.annualLimit.toLocaleString('en-IE')}</span>
+                    €{investmentAccount.annualContributions.toLocaleString('en-IE')} <span className="text-base text-slate-500 font-normal">/ €{investmentAccount.annualLimit.toLocaleString('en-IE')}</span>
                   </div>
                   <p className="text-[11px] text-emerald-700 mt-1">
                     {contributionHeadroom > 0 ? `€${contributionHeadroom.toLocaleString('en-IE')} remaining headroom` : 'Annual limit reached for this tax year'}
@@ -901,7 +902,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 <h3 className="text-sm font-bold text-slate-900 mb-3">
                   Transaction &amp; Allocation Log
                 </h3>
-                <div className="overflow-x-auto">
+                <div className="overflow-x-auto" tabIndex={0} role="region" aria-label="Scrollable table">
                   <table className="w-full text-left text-xs">
                     <thead className="bg-slate-50 text-slate-500 font-semibold border-y border-slate-200">
                       <tr>
@@ -983,7 +984,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               )}
 
               {/* Table */}
-              <div className="overflow-x-auto mt-4">
+              <div className="overflow-x-auto mt-4" tabIndex={0} role="region" aria-label="Scrollable table">
                 <table className="w-full text-left text-xs">
                   <thead className="bg-slate-50 text-slate-500 font-semibold border-y border-slate-200">
                     <tr>
@@ -1026,7 +1027,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                             {(h.ticker || h.isin) && (
                               <div className="text-[10px] text-slate-500 font-mono font-normal">{[h.ticker, h.isin].filter(Boolean).join(' · ')}</div>
                             )}
-                            {h.notes && <div className="text-[10px] text-slate-400 font-normal">{h.notes}</div>}
+                            {h.notes && <div className="text-[10px] text-slate-500 font-normal">{h.notes}</div>}
                           </td>
                           <td className="py-3 px-3">
                             <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-mono text-[11px]">
@@ -1058,7 +1059,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                             <button
                               type="button"
                               onClick={() => openEditHoldingModal(h)}
-                              className="text-slate-400 hover:text-emerald-700 p-1 cursor-pointer transition-colors"
+                              className="text-slate-500 hover:text-emerald-700 p-1 cursor-pointer transition-colors"
                               title="Edit position"
                               aria-label={`Edit ${h.assetName}`}
                             >
@@ -1067,7 +1068,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                             <button
                               type="button"
                               onClick={() => handleDeleteHolding(h)}
-                              className="text-slate-400 hover:text-rose-600 p-1 cursor-pointer transition-colors"
+                              className="text-slate-500 hover:text-rose-600 p-1 cursor-pointer transition-colors"
                               title="Delete position"
                               aria-label={`Delete ${h.assetName}`}
                             >
@@ -1178,7 +1179,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <div className="bg-white rounded-2xl max-w-md w-full max-h-[90vh] overflow-y-auto p-5 sm:p-6 shadow-2xl border border-slate-200">
             <div className="flex items-center justify-between pb-4 border-b border-slate-100">
               <h3 id="contribution-title" className="text-lg font-bold text-slate-900">Record 2027 Scheme Contribution</h3>
-              <button type="button" onClick={() => setIsContributionModalOpen(false)} aria-label="Close" className="text-slate-400 hover:text-slate-700 cursor-pointer">
+              <button type="button" onClick={() => setIsContributionModalOpen(false)} aria-label="Close" className="text-slate-500 hover:text-slate-700 cursor-pointer">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -1261,7 +1262,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               autoFocus
               aria-label="Close"
               onClick={() => setUpsell(null)}
-              className="absolute right-3 top-3 z-10 rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 cursor-pointer"
+              className="absolute right-3 top-3 z-10 rounded-lg p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-700 cursor-pointer"
             >
               <X className="h-5 w-5" />
             </button>

@@ -169,7 +169,7 @@ export const PrivacyPage: React.FC<PrivacyPageProps> = ({ onBack }) => {
         <h2 className="flex items-center gap-2 text-lg font-bold text-slate-900">
           <Cookie className="h-5 w-5 text-emerald-600" aria-hidden="true" /> Cookies and browser storage
         </h2>
-        <div className="overflow-x-auto rounded-xl border border-slate-200">
+        <div className="overflow-x-auto rounded-xl border border-slate-200" tabIndex={0} role="region" aria-label="Scrollable table">
           <table className="w-full min-w-[520px] text-left text-xs">
             <thead className="bg-slate-50 text-slate-500">
               <tr>

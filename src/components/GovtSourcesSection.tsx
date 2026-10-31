@@ -9,12 +9,14 @@ export const GovtSourcesSection: React.FC = () => {
   const [latencyMs, setLatencyMs] = useState<number | null>(null);
   const [lastSyncTime, setLastSyncTime] = useState<string>('—');
   const [showJsonInspector, setShowJsonInspector] = useState<boolean>(false);
+  const [syncError, setSyncError] = useState<boolean>(false);
   const isMountedRef = useRef(true);
   const isBundled = fiscalData === FALLBACK_FISCAL_DATA;
   const reviewedDate = (fiscalData.lastVerifiedTimestamp ?? '').slice(0, 10) || '—';
 
   const handleSyncFromGovtAPI = useCallback(async () => {
     setIsLoading(true);
+    setSyncError(false);
     const start = performance.now();
     try {
       const data = await fetchOfficialFiscalData();
@@ -24,6 +26,7 @@ export const GovtSourcesSection: React.FC = () => {
       setLastSyncTime(new Date().toLocaleTimeString('en-IE', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }));
     } catch (err) {
       console.error(err);
+      if (isMountedRef.current) setSyncError(true);
     } finally {
       if (isMountedRef.current) setIsLoading(false);
     }
@@ -80,13 +83,18 @@ export const GovtSourcesSection: React.FC = () => {
                 type="button"
                 onClick={() => void handleSyncFromGovtAPI()}
                 disabled={isLoading}
-                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all disabled:opacity-50 cursor-pointer"
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-bold transition-all disabled:opacity-50 cursor-pointer"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
                 <span>{isLoading ? 'Loading...' : 'Reload reference data'}</span>
               </button>
             </div>
           </div>
+          {syncError && (
+            <p role="status" className="mt-3 text-xs text-amber-300">
+              Couldn&apos;t reload the data just now. Showing the last loaded reference figures. Try again in a moment.
+            </p>
+          )}
 
           {/* Key fiscal parameters (reference data) */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-4 text-xs font-mono">

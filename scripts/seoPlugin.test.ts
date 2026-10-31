@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { FAQS } from '../src/data/faqs';
-import { HOME_SEO, PRIVACY_SEO } from '../src/config/site';
+import { HOME_HERO, HOME_SEO, PRIVACY_SEO } from '../src/config/site';
 import {
   renderCalculatorDocument,
   renderHead,
@@ -25,7 +25,7 @@ const extractJsonLd = (html: string) => {
   return JSON.parse(match![1]);
 };
 
-const template = `<html><head><!-- seo:head --></head><body><!-- seo:noscript --><div id="root"></div></body></html>`;
+const template = `<html><head><!-- seo:head --></head><body><!-- seo:noscript --><div id="root"><!-- seo:shell --></div></body></html>`;
 const transform = (html: string) => {
   const hook = seoPlugin().transformIndexHtml as (html: string) => string;
   return hook(html);
@@ -74,6 +74,19 @@ describe('seoPlugin', () => {
     expect(privacy).not.toContain('FAQPage');
     expect(privacy).toContain('<div id="root"></div>');
     expect(renderNoscript()).toContain('<dl>');
+  });
+
+  it('pre-renders a visible homepage hero with exactly one h1 and strips it from other pages', () => {
+    const home = transform(template);
+    expect(home).not.toContain('<!-- seo:shell -->');
+    expect(home.match(/<h1[\s>]/g)).toHaveLength(1);
+    expect(home).toContain(HOME_HERO.subline);
+    expect(home).toContain(`href="${CALCULATORS_HUB.path}"`);
+
+    const calc = renderCalculatorDocument(home, ETF_TAX_CALCULATOR);
+    expect(calc).toContain('<div id="root"></div>');
+    expect(calc).not.toContain(HOME_HERO.subline);
+    expect(calc.match(/<h1[\s>]/g)).toHaveLength(1);
   });
 
   it('renders a valid sitemap with only the canonical public URLs and only real page dates', () => {

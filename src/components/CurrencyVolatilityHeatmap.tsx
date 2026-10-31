@@ -220,7 +220,7 @@ export const CurrencyVolatilityHeatmap: React.FC<CurrencyVolatilityHeatmapProps>
                 <Flame className="w-3 h-3 text-rose-400" />
                 <span>30-Day Volatility Heatmap</span>
               </span>
-              <span className="text-[11px] text-slate-400 flex items-center gap-1 font-mono">
+              <span className="text-[11px] text-slate-500 flex items-center gap-1 font-mono">
                 <Calendar className="w-3 h-3" />
                 <span>Sample 30-day series</span>
               </span>
@@ -260,7 +260,7 @@ export const CurrencyVolatilityHeatmap: React.FC<CurrencyVolatilityHeatmapProps>
         {/* Filter bar */}
         <div className="mt-5 pt-4 border-t border-white/10 flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-1.5 text-xs">
-            <span className="text-slate-400 font-medium mr-1">Filter Currency:</span>
+            <span className="text-slate-500 font-medium mr-1">Filter Currency:</span>
             {(['ALL', 'INR', 'USD', 'GBP'] as const).map(cur => (
               <button
                 key={cur}
@@ -346,13 +346,13 @@ export const CurrencyVolatilityHeatmap: React.FC<CurrencyVolatilityHeatmapProps>
                     <div className="mt-4 p-3 bg-white rounded-xl border border-slate-200">
                       <div className="flex items-end justify-between">
                         <div>
-                          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Sample Rate (end of series)</div>
+                          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Sample Rate (end of series)</div>
                           <div className="text-lg sm:text-xl font-mono font-extrabold text-slate-900">
                             1 EUR = {item.currentRate.toFixed(item.code === 'INR' ? 2 : 3)} {item.code}
                           </div>
                         </div>
-                        <div className={`text-right ${isEURStrengthened ? 'text-amber-600' : 'text-emerald-600'}`}>
-                          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">30-Day Delta</div>
+                        <div className={`text-right ${isEURStrengthened ? 'text-amber-700' : 'text-emerald-700'}`}>
+                          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">30-Day Delta</div>
                           <div className="text-sm font-mono font-bold flex items-center justify-end gap-0.5">
                             {isEURStrengthened ? (
                               <>
@@ -381,7 +381,7 @@ export const CurrencyVolatilityHeatmap: React.FC<CurrencyVolatilityHeatmapProps>
                         <span className="font-bold text-slate-700 flex items-center gap-1">
                           <span>30-Day Rate Heat Trajectory</span>
                         </span>
-                        <span className="text-[10px] text-slate-400">Day 1 &rarr; Day 30</span>
+                        <span className="text-[10px] text-slate-500">Day 1 &rarr; Day 30</span>
                       </div>
                       
                       {/* Bar Heat Strip */}
@@ -419,13 +419,13 @@ export const CurrencyVolatilityHeatmap: React.FC<CurrencyVolatilityHeatmapProps>
 
                       <div className="grid grid-cols-2 gap-2 text-xs font-mono">
                         <div>
-                          <div className="text-[10px] text-slate-400 font-sans">Native Balance</div>
+                          <div className="text-[10px] text-slate-600 font-sans">Native Balance</div>
                           <div className="font-bold text-slate-900 truncate">
                             {formatCurrency(item.userNativeHolding, item.code)}
                           </div>
                         </div>
                         <div>
-                          <div className="text-[10px] text-slate-400 font-sans">Converted Value</div>
+                          <div className="text-[10px] text-slate-600 font-sans">Converted Value</div>
                           <div className="font-bold text-slate-900 truncate">
                             {formatCurrency(holdingValCurrent, currentCurrency)}
                           </div>
@@ -433,14 +433,14 @@ export const CurrencyVolatilityHeatmap: React.FC<CurrencyVolatilityHeatmapProps>
                       </div>
 
                       <div className="mt-2.5 pt-2 border-t border-slate-200 flex items-center justify-between text-xs">
-                        <span className="text-[11px] text-slate-500">Portfolio Share:</span>
+                        <span className="text-[11px] text-slate-600">Portfolio Share:</span>
                         <span className="font-bold font-mono text-slate-800">
                           {item.portfolioSharePct.toFixed(1)}%
                         </span>
                       </div>
 
                       <div className="mt-1.5 flex items-center justify-between text-xs">
-                        <span className="text-[11px] text-slate-500">Est. 30d FX Impact:</span>
+                        <span className="text-[11px] text-slate-600">Est. 30d FX Impact:</span>
                         <span className={`font-bold font-mono ${item.currencyPnlEUR >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
                           {formatSigned(item.currencyPnlEUR)}
                         </span>
@@ -450,7 +450,7 @@ export const CurrencyVolatilityHeatmap: React.FC<CurrencyVolatilityHeatmapProps>
                     {/* Specific Assets List */}
                     {item.userHoldingsCount > 0 ? (
                       <div className="mt-3 space-y-1">
-                        <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                        <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
                           Tracked Holdings
                         </div>
                         {foreignHoldingsSummary.currencyMap[item.code].holdings.map(h => (
@@ -468,7 +468,7 @@ export const CurrencyVolatilityHeatmap: React.FC<CurrencyVolatilityHeatmapProps>
                         ))}
                       </div>
                     ) : (
-                      <div className="mt-3 text-center py-2 px-3 rounded-lg bg-white border border-dashed border-slate-200 text-[11px] text-slate-400">
+                      <div className="mt-3 text-center py-2 px-3 rounded-lg bg-white border border-dashed border-slate-200 text-[11px] text-slate-500">
                         No active holdings in {item.code}
                       </div>
                     )}

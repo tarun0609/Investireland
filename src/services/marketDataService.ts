@@ -1,3 +1,4 @@
+import { EXPRESS_API_AVAILABLE } from '../config/runtime';
 import { MarketIndex } from '../types';
 
 export const FALLBACK_MARKET_INDICES: MarketIndex[] = [
@@ -103,6 +104,7 @@ function isValidIndex(v: unknown): v is MarketIndex {
 }
 
 export async function fetchMarketSnapshot(): Promise<MarketSnapshot> {
+  if (!EXPRESS_API_AVAILABLE) return { data: FALLBACK_MARKET_INDICES, isSample: true, asOf: MARKET_INDICES_AS_OF };
   try {
     const res = await fetch('/api/market-indices');
     if (!res.ok) throw new Error(`Failed to fetch market indices HTTP ${res.status}`);

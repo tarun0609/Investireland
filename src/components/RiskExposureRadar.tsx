@@ -150,11 +150,11 @@ export const RiskExposureRadar: React.FC<RiskExposureRadarProps> = ({
         <div className="bg-slate-900 text-white p-3 rounded-xl border border-slate-800 shadow-xl text-xs font-mono">
           <div className="font-bold text-emerald-400 font-sans mb-1">{data.axis}</div>
           <div className="flex justify-between gap-4">
-            <span className="text-slate-400">Your Allocation:</span>
+            <span className="text-slate-500">Your Allocation:</span>
             <span className="font-bold text-white">{data.portfolio}%</span>
           </div>
           <div className="flex justify-between gap-4">
-            <span className="text-slate-400">Illustrative Benchmark:</span>
+            <span className="text-slate-500">Illustrative Benchmark:</span>
             <span className="text-emerald-300">{data.benchmark}%</span>
           </div>
         </div>
@@ -203,7 +203,7 @@ export const RiskExposureRadar: React.FC<RiskExposureRadarProps> = ({
             <button
               type="button"
               onClick={onOpenRebalancer}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition-all cursor-pointer shadow-xs"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-700 hover:bg-emerald-600 text-white transition-all cursor-pointer shadow-xs"
               title="Calculate buy/sell orders to match target allocation"
             >
               <Scale className="w-3.5 h-3.5" />
@@ -215,7 +215,7 @@ export const RiskExposureRadar: React.FC<RiskExposureRadarProps> = ({
 
       {analysis.isEmpty ? (
         <div className="p-6 sm:p-10 flex flex-col items-center text-center gap-3">
-          <div className="w-12 h-12 rounded-2xl bg-slate-100 border border-slate-200 text-slate-400 flex items-center justify-center">
+          <div className="w-12 h-12 rounded-2xl bg-slate-100 border border-slate-200 text-slate-500 flex items-center justify-center">
             <PieChart className="w-6 h-6" />
           </div>
           <h4 className="text-sm font-bold text-slate-900">No holdings to analyse yet</h4>

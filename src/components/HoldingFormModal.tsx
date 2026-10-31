@@ -107,7 +107,7 @@ export const HoldingFormModal: React.FC<HoldingFormModalProps> = ({ initial, onS
           <h3 id="holding-form-title" className="text-lg font-bold text-slate-900">
             {isEdit ? 'Edit Holding' : 'Add Investment Holding'}
           </h3>
-          <button type="button" onClick={onClose} aria-label="Close" className="text-slate-400 hover:text-slate-700 cursor-pointer">
+          <button type="button" onClick={onClose} aria-label="Close" className="text-slate-500 hover:text-slate-700 cursor-pointer">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -154,7 +154,7 @@ export const HoldingFormModal: React.FC<HoldingFormModalProps> = ({ initial, onS
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label htmlFor="holding-ticker" className="block font-bold text-slate-700 mb-1">Ticker <span className="font-normal text-slate-400">(optional)</span></label>
+              <label htmlFor="holding-ticker" className="block font-bold text-slate-700 mb-1">Ticker <span className="font-normal text-slate-500">(optional)</span></label>
               <input
                 id="holding-ticker"
                 type="text"
@@ -168,7 +168,7 @@ export const HoldingFormModal: React.FC<HoldingFormModalProps> = ({ initial, onS
               />
             </div>
             <div>
-              <label htmlFor="holding-isin" className="block font-bold text-slate-700 mb-1">ISIN <span className="font-normal text-slate-400">(optional)</span></label>
+              <label htmlFor="holding-isin" className="block font-bold text-slate-700 mb-1">ISIN <span className="font-normal text-slate-500">(optional)</span></label>
               <input
                 id="holding-isin"
                 type="text"
@@ -255,7 +255,7 @@ export const HoldingFormModal: React.FC<HoldingFormModalProps> = ({ initial, onS
                 />
               </div>
               <div>
-                <label htmlFor="holding-units-total" className="block font-bold text-slate-700 mb-1">Units <span className="font-normal text-slate-400">(optional)</span></label>
+                <label htmlFor="holding-units-total" className="block font-bold text-slate-700 mb-1">Units <span className="font-normal text-slate-500">(optional)</span></label>
                 <input
                   id="holding-units-total"
                   type="number"

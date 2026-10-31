@@ -365,7 +365,7 @@ Generated via InvestIreland Portfolio Engine`;
               <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-emerald-400 bg-emerald-950/80 border border-emerald-700/60 px-2 py-0.5 rounded">
                 Cross-Border Cashflow Engine
               </span>
-              <span className="text-xs text-slate-400">
+              <span className="text-xs text-slate-500">
                 Ireland &middot; India &middot; US Tax Treaties
               </span>
             </div>
@@ -866,7 +866,7 @@ Generated via InvestIreland Portfolio Engine`;
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 border border-slate-200 transition-colors cursor-pointer"
               title="Replace the ledger with illustrative sample dividends"
             >
-              <RotateCcw className="w-3.5 h-3.5 text-slate-400" />
+              <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
               <span>Load sample data</span>
             </button>
           </div>
@@ -877,7 +877,7 @@ Generated via InvestIreland Portfolio Engine`;
           
           {/* Search bar */}
           <div className="relative flex-1 min-w-[180px] max-w-xs">
-            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
             <input
               type="text"
               placeholder="Search holding, ticker, broker..."
@@ -890,7 +890,7 @@ Generated via InvestIreland Portfolio Engine`;
                 type="button" 
                 onClick={() => setSearchQuery('')}
                 aria-label="Clear search"
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-600 cursor-pointer"
               >
                 <X className="w-3 h-3" />
               </button>
@@ -954,7 +954,7 @@ Generated via InvestIreland Portfolio Engine`;
         </div>
 
         {/* Ledger Table */}
-        <div className="overflow-x-auto border border-slate-200 rounded-xl">
+        <div className="overflow-x-auto border border-slate-200 rounded-xl" tabIndex={0} role="region" aria-label="Scrollable table">
           <table className="w-full text-left border-collapse text-xs">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold uppercase text-[11px] tracking-wider">
@@ -1005,7 +1005,7 @@ Generated via InvestIreland Portfolio Engine`;
                         <div className="font-semibold text-slate-900 group-hover:text-emerald-700 transition-colors">
                           {item.holdingName}
                         </div>
-                        <div className="text-[11px] text-slate-400 flex items-center gap-1.5 font-mono">
+                        <div className="text-[11px] text-slate-500 flex items-center gap-1.5 font-mono">
                           {item.ticker && <span className="font-bold text-slate-600">{item.ticker}</span>}
                           <span>&middot;</span>
                           <span>{item.payoutType}</span>
@@ -1018,7 +1018,7 @@ Generated via InvestIreland Portfolio Engine`;
                           <span>{countryFlag(item.country)}</span>
                           <span className="font-medium text-slate-800">{item.country}</span>
                         </div>
-                        <div className="text-[11px] text-slate-400 font-mono truncate max-w-[130px]">
+                        <div className="text-[11px] text-slate-500 font-mono truncate max-w-[130px]">
                           {item.broker}
                         </div>
                       </td>
@@ -1033,7 +1033,7 @@ Generated via InvestIreland Portfolio Engine`;
                         <span className="text-amber-700 font-medium">
                           {formatOriginal(item.withholdingTax, item.currency)}
                         </span>
-                        <div className="text-[10px] text-slate-400">
+                        <div className="text-[10px] text-slate-500">
                           {item.withholdingRatePct}%
                         </div>
                       </td>
@@ -1046,7 +1046,7 @@ Generated via InvestIreland Portfolio Engine`;
                       {/* Converted to active currency */}
                       <td className="py-3 px-3.5 text-right font-bold text-slate-900 whitespace-nowrap">
                         {formatCurrency(netInCurr, currentCurrency)}
-                        <div className="text-[10px] text-slate-400">
+                        <div className="text-[10px] text-slate-500">
                           Gross: {formatCurrency(grossInCurr, currentCurrency)}
                         </div>
                       </td>
@@ -1062,7 +1062,7 @@ Generated via InvestIreland Portfolio Engine`;
                           {item.taxCategory}
                         </span>
                         {item.notes && (
-                          <div className="text-[10px] text-slate-400 truncate max-w-[160px] mt-0.5 font-mono" title={item.notes}>
+                          <div className="text-[10px] text-slate-500 truncate max-w-[160px] mt-0.5 font-mono" title={item.notes}>
                             {item.notes}
                           </div>
                         )}
@@ -1074,7 +1074,7 @@ Generated via InvestIreland Portfolio Engine`;
                           type="button"
                           onClick={() => handleDeleteDividend(item)}
                           aria-label={`Delete ${item.paymentDate} dividend for ${item.holdingName}`}
-                          className="text-slate-400 hover:text-rose-600 p-1 rounded transition-colors cursor-pointer"
+                          className="text-slate-500 hover:text-rose-600 p-1 rounded transition-colors cursor-pointer"
                           title="Delete this dividend record"
                         >
                           <X className="w-3.5 h-3.5" />
@@ -1109,7 +1109,7 @@ Generated via InvestIreland Portfolio Engine`;
                 type="button" 
                 onClick={() => setIsAddModalOpen(false)}
                 aria-label="Close"
-                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg cursor-pointer"
+                className="text-slate-500 hover:text-slate-600 p-1 rounded-lg cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>

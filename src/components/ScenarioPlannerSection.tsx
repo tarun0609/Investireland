@@ -47,11 +47,11 @@ export const ScenarioPlannerSection: React.FC<ScenarioPlannerSectionProps> = ({
   const valAt9 = calculateCompound(0.09);
 
   return (
-    <section className="py-20 bg-white border-b border-slate-200">
+    <section id="what-if" className="py-20 bg-white border-b border-slate-200">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         
         <div className="text-center max-w-3xl mx-auto">
-          <span className="text-xs font-bold text-slate-500 uppercase tracking-widest bg-slate-100 px-3 py-1 rounded-full">
+          <span className="text-xs font-bold text-slate-600 uppercase tracking-widest bg-slate-100 px-3 py-1 rounded-full">
             Long-Term Compounding Explorer
           </span>
           <h2 className="mt-4 text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">

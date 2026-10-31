@@ -366,7 +366,7 @@ export const AssetRebalancer: React.FC<AssetRebalancerProps> = ({
                 RADAR INTEGRATED
               </span>
             </div>
-            <p className="text-xs text-slate-400 mt-0.5">
+            <p className="text-xs text-slate-500 mt-0.5">
               Calculates precise buy and sell orders across Ireland 🇮🇪, India 🇮🇳, and US 🇺🇸 to match target radar allocations
             </p>
           </div>
@@ -392,7 +392,7 @@ export const AssetRebalancer: React.FC<AssetRebalancerProps> = ({
               </>
             ) : (
               <>
-                <Copy className="w-3.5 h-3.5 text-slate-400" />
+                <Copy className="w-3.5 h-3.5 text-slate-500" />
                 <span>Copy Checklist</span>
               </>
             )}
@@ -653,7 +653,7 @@ export const AssetRebalancer: React.FC<AssetRebalancerProps> = ({
             </div>
           ) : !hasHoldings && mode === 'portfolio' ? (
             <div className="p-5 rounded-xl border border-dashed border-slate-300 bg-slate-50 text-center text-xs text-slate-600">
-              <Scale className="w-6 h-6 text-slate-400 mx-auto mb-2" />
+              <Scale className="w-6 h-6 text-slate-500 mx-auto mb-2" />
               <p className="font-bold text-slate-800">No holdings to rebalance yet</p>
               <p className="mt-1">Add holdings to your portfolio to calculate buy and sell orders, or switch to <strong>Tax-Smart Cash Inflow</strong> to plan how to invest fresh savings.</p>
             </div>
@@ -715,7 +715,7 @@ export const AssetRebalancer: React.FC<AssetRebalancerProps> = ({
                         <span className="text-slate-700">{item.suggestedVehicle}</span>
                       </div>
                       <div className="text-[11px] text-slate-500 flex items-center gap-1">
-                        <Info className="w-3 h-3 text-slate-400 shrink-0" />
+                        <Info className="w-3 h-3 text-slate-500 shrink-0" />
                         <span>{item.taxNote}</span>
                       </div>
                     </div>

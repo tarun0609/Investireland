@@ -70,13 +70,21 @@ export const NumberField: React.FC<NumberFieldProps> = ({ label, value, onChange
   }, [value]);
 
   const clamp = (n: number) => Math.min(max, Math.max(min, n));
+  const typed = parseFloat(text);
+  const invalid = !Number.isFinite(typed) || typed < min || typed > max;
+  const fmt = (n: number) => n.toLocaleString('en-IE');
+  const describedBy = [help ? `${id}-help` : '', invalid ? `${id}-error` : ''].filter(Boolean).join(' ') || undefined;
 
   return (
     <div>
       <label htmlFor={id} className="block text-xs font-semibold text-slate-700 mb-1">
         {label}
       </label>
-      <div className="flex items-center rounded-lg border border-slate-300 bg-white focus-within:border-emerald-600 focus-within:ring-2 focus-within:ring-emerald-100">
+      <div
+        className={`flex items-center rounded-lg border bg-white focus-within:ring-2 ${
+          invalid ? 'border-red-500 focus-within:ring-red-100' : 'border-slate-300 focus-within:border-emerald-600 focus-within:ring-emerald-100'
+        }`}
+      >
         {prefix && <span className="pl-3 text-sm text-slate-500" aria-hidden="true">{prefix}</span>}
         <input
           id={id}
@@ -86,7 +94,8 @@ export const NumberField: React.FC<NumberFieldProps> = ({ label, value, onChange
           max={max}
           step={step}
           value={text}
-          aria-describedby={help ? `${id}-help` : undefined}
+          aria-describedby={describedBy}
+          aria-invalid={invalid || undefined}
           onChange={(e) => {
             setText(e.target.value);
             // Only publish in-range values while typing, so partial entries like "6" (on the way to 66)
@@ -104,6 +113,11 @@ export const NumberField: React.FC<NumberFieldProps> = ({ label, value, onChange
         />
         {suffix && <span className="pr-3 text-sm text-slate-500" aria-hidden="true">{suffix}</span>}
       </div>
+      {invalid && (
+        <p id={`${id}-error`} className="mt-1 text-[11px] font-semibold leading-snug text-red-700" role="status">
+          Enter a number from {fmt(min)} to {fmt(max)}. Results use the last valid value.
+        </p>
+      )}
       {help && (
         <p id={`${id}-help`} className="mt-1 text-[11px] leading-snug text-slate-500">
           {help}
@@ -167,7 +181,7 @@ export const ResultCard: React.FC<{
   }[tone];
   return (
     <div className={`rounded-xl border p-4 ${toneClass}`}>
-      <div className={`text-[11px] font-semibold uppercase tracking-wider ${tone === 'highlight' ? 'text-emerald-300' : 'text-slate-500'}`}>{label}</div>
+      <div className={`text-[11px] font-semibold uppercase tracking-wider ${tone === 'highlight' ? 'text-emerald-300' : 'text-slate-600'}`}>{label}</div>
       <div className={`mt-1 text-2xl font-extrabold tracking-tight ${tone === 'highlight' ? 'text-white' : 'text-slate-900'}`}>{value}</div>
       {detail && <div className={`mt-1 text-xs leading-snug ${tone === 'highlight' ? 'text-slate-300' : 'text-slate-600'}`}>{detail}</div>}
     </div>
@@ -305,7 +319,7 @@ export const ContentSectionView: React.FC<{ section: ContentSection; onNavigate:
       </ul>
     )}
     {section.table && (
-      <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200 bg-white">
+      <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200 bg-white" tabIndex={0} role="region" aria-label="Scrollable table">
         <table className="w-full min-w-[40rem] text-left text-sm">
           <caption className="p-3 text-left text-xs font-semibold text-slate-500">{section.table.caption}</caption>
           <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
@@ -541,7 +555,7 @@ export const DataTable: React.FC<{
 }) => (
   <details open={defaultOpen} className="rounded-xl border border-slate-200 bg-white">
     <summary className="cursor-pointer p-4 text-sm font-bold text-slate-900">{caption}</summary>
-    <div className="max-h-96 overflow-auto border-t border-slate-100">
+    <div className="max-h-96 overflow-auto border-t border-slate-100" tabIndex={0} role="region" aria-label="Scrollable table">
       <table className="w-full text-left text-xs">
         <caption className="sr-only">{caption}</caption>
         <thead className="sticky top-0 bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500">

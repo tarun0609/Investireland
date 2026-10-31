@@ -1,3 +1,4 @@
+import { EXPRESS_API_AVAILABLE } from '../config/runtime';
 import { FiscalDataResponse, Currency } from '../types';
 import { getFxRates } from './fxRateService';
 import {
@@ -105,6 +106,7 @@ export const FALLBACK_FISCAL_DATA: FiscalDataResponse = {
 };
 
 export async function fetchOfficialFiscalData(): Promise<FiscalDataResponse> {
+  if (!EXPRESS_API_AVAILABLE) return FALLBACK_FISCAL_DATA;
   try {
     const res = await fetch('/api/fiscal-data');
     if (!res.ok) {

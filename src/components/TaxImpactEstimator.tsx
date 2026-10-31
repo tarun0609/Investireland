@@ -150,7 +150,7 @@ Estimates only, based on ${describeFxRates()} and simplified rules. Confirm with
                 <Receipt className="w-3.5 h-3.5" />
                 Cross-Border Tax Engine
               </span>
-              <span className="text-xs text-slate-400">
+              <span className="text-xs text-slate-500">
                 Ireland &middot; India &middot; US Tri-Jurisdiction
               </span>
             </div>
@@ -172,7 +172,7 @@ Estimates only, based on ${describeFxRates()} and simplified rules. Confirm with
               aria-live="polite"
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-all cursor-pointer"
             >
-              {copiedReport ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-slate-400" />}
+              {copiedReport ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-slate-500" />}
               <span>{copiedReport ? 'Summary Copied!' : copyError ? 'Copy failed – clipboard unavailable' : 'Copy Summary'}</span>
             </button>
             <div className="bg-emerald-950/80 border border-emerald-600/40 px-3.5 py-1.5 rounded-xl text-right">
@@ -207,7 +207,7 @@ Estimates only, based on ${describeFxRates()} and simplified rules. Confirm with
               onClick={() => setActiveTab(tab.id)}
               className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
                 activeTab === tab.id
-                  ? 'bg-emerald-600 text-white shadow-xs'
+                  ? 'bg-emerald-700 text-white shadow-xs'
                   : 'bg-slate-800/70 text-slate-300 hover:text-white hover:bg-slate-800'
               }`}
             >
@@ -588,7 +588,7 @@ Estimates only, based on ${describeFxRates()} and simplified rules. Confirm with
                     className="w-full accent-emerald-600 cursor-pointer"
                   />
 
-                  <div className="flex justify-between text-[10px] text-slate-400 mt-1">
+                  <div className="flex justify-between text-[10px] text-slate-500 mt-1">
                     <span>-15% (Stronger USD)</span>
                     <span className="font-semibold text-slate-600">ECB: {FALLBACK_FISCAL_DATA.macroIndicators.fxRates.EUR_TO_USD.toFixed(4)}</span>
                     <span>+15% (Weaker USD)</span>
@@ -604,7 +604,7 @@ Estimates only, based on ${describeFxRates()} and simplified rules. Confirm with
                         onClick={() => setInputs(prev => ({ ...prev, eurUsdAdjustmentPct: pct }))}
                         className={`flex-1 py-1 text-[11px] font-bold rounded cursor-pointer transition-all ${
                           inputs.eurUsdAdjustmentPct === pct
-                            ? 'bg-emerald-600 text-white'
+                            ? 'bg-emerald-700 text-white'
                             : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
                         }`}
                       >
@@ -641,7 +641,7 @@ Estimates only, based on ${describeFxRates()} and simplified rules. Confirm with
                     className="w-full accent-orange-600 cursor-pointer"
                   />
 
-                  <div className="flex justify-between text-[10px] text-slate-400 mt-1">
+                  <div className="flex justify-between text-[10px] text-slate-500 mt-1">
                     <span>-15% (Stronger INR)</span>
                     <span className="font-semibold text-slate-600">ECB: ₹{FALLBACK_FISCAL_DATA.macroIndicators.fxRates.EUR_TO_INR.toFixed(2)}</span>
                     <span>+15% (Weaker INR)</span>
@@ -657,7 +657,7 @@ Estimates only, based on ${describeFxRates()} and simplified rules. Confirm with
                         onClick={() => setInputs(prev => ({ ...prev, eurInrAdjustmentPct: pct }))}
                         className={`flex-1 py-1 text-[11px] font-bold rounded cursor-pointer transition-all ${
                           inputs.eurInrAdjustmentPct === pct
-                            ? 'bg-orange-600 text-white'
+                            ? 'bg-orange-700 text-white'
                             : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
                         }`}
                       >
@@ -732,7 +732,7 @@ Estimates only, based on ${describeFxRates()} and simplified rules. Confirm with
 
             {/* Holdings Table */}
             <div className="border border-slate-200 rounded-xl overflow-hidden">
-              <div className="overflow-x-auto">
+              <div className="overflow-x-auto" tabIndex={0} role="region" aria-label="Scrollable table">
                 <table className="w-full text-left text-xs">
                   <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold uppercase tracking-wider">
                     <tr>
@@ -762,7 +762,7 @@ Estimates only, based on ${describeFxRates()} and simplified rules. Confirm with
                           <tr className="hover:bg-slate-50/70 transition-colors">
                             <td className="px-4 py-3 font-medium text-slate-900">
                               <div className="max-w-[14rem] break-words">{h.assetName}</div>
-                              <div className="text-[10px] text-slate-400 font-normal">{h.assetType} &middot; {h.units.toLocaleString('en-IE', { maximumFractionDigits: 4 })} units</div>
+                              <div className="text-[10px] text-slate-500 font-normal">{h.assetType} &middot; {h.units.toLocaleString('en-IE', { maximumFractionDigits: 4 })} units</div>
                             </td>
                             <td className="px-4 py-3">
                               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-medium text-[11px] bg-slate-100 text-slate-700 whitespace-nowrap">
@@ -775,7 +775,7 @@ Estimates only, based on ${describeFxRates()} and simplified rules. Confirm with
                             <td className="px-4 py-3 text-right font-mono font-medium text-slate-900">
                               <div>{fmtEUR(h.currentValueEUR)}</div>
                               {h.currency !== 'EUR' && (
-                                <div className="text-[10px] text-slate-400 font-normal whitespace-nowrap">
+                                <div className="text-[10px] text-slate-500 font-normal whitespace-nowrap">
                                   {h.currency} {Math.round(h.currentValueLocal).toLocaleString(h.currency === 'INR' ? 'en-IN' : 'en-IE')}
                                 </div>
                               )}
@@ -784,7 +784,7 @@ Estimates only, based on ${describeFxRates()} and simplified rules. Confirm with
                               <div className={`font-bold ${h.totalGainEUR < 0 ? 'text-rose-700' : 'text-emerald-700'}`}>
                                 {fmtSignedEUR(h.totalGainEUR)}
                               </div>
-                              <div className="text-[10px] text-slate-400">
+                              <div className="text-[10px] text-slate-500">
                                 {h.gainPct >= 0 ? '+' : ''}{h.gainPct.toFixed(1)}%
                               </div>
                             </td>

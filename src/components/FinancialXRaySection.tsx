@@ -273,7 +273,7 @@ export const FinancialXRaySection: React.FC<FinancialXRaySectionProps> = ({
 
           {/* Plain English AI Diagnosis Box (Spec Section 13 & 60) */}
           <div className="mt-8 bg-gradient-to-r from-emerald-50 via-teal-50/50 to-slate-50 rounded-xl p-5 border border-emerald-200 flex items-start gap-3.5">
-            <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center shrink-0">
+            <div className="w-8 h-8 rounded-lg bg-emerald-700 text-white flex items-center justify-center shrink-0">
               <Sparkles className="w-4 h-4" />
             </div>
             <div>

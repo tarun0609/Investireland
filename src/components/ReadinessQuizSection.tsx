@@ -56,7 +56,7 @@ export const ReadinessQuizSection: React.FC<ReadinessQuizSectionProps> = ({
   };
 
   return (
-    <section className="py-20 bg-slate-50 border-b border-slate-200">
+    <section id="readiness-quiz" className="py-20 bg-slate-50 border-b border-slate-200">
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
         
         <div className="text-center max-w-2xl mx-auto">
@@ -200,7 +200,7 @@ export const ReadinessQuizSection: React.FC<ReadinessQuizSectionProps> = ({
                 </button>
               </div>
 
-              <p className="mt-4 text-[11px] text-slate-400">
+              <p className="mt-4 text-[11px] text-slate-500">
                 This is an educational indicator designed to inform self-directed investors, not a statutory suitability assessment or financial advice.
               </p>
             </div>

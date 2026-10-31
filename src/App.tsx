@@ -4,42 +4,32 @@ import { INITIAL_HOLDINGS, INITIAL_INVESTMENT_ACCOUNT_STATE } from './data/mockD
 import { Navbar } from './components/Navbar';
 import { HeroSection } from './components/HeroSection';
 import { InvestmentAccountSection } from './components/InvestmentAccountSection';
-import { ProblemCardsSection } from './components/ProblemCardsSection';
 import { BudgetCalculatorSection } from './components/BudgetCalculatorSection';
-import { CrossBorderSection } from './components/CrossBorderSection';
-import { FinancialXRaySection } from './components/FinancialXRaySection';
-import { ProductCardsSection } from './components/ProductCardsSection';
-import { ScenarioPlannerSection } from './components/ScenarioPlannerSection';
-import { GovtSourcesSection } from './components/GovtSourcesSection';
+import { FeatureGrid } from './components/FeatureGrid';
+import { DeepDive, requestOpenSection } from './components/DeepDive';
 import { AiAssistantSection } from './components/AiAssistantSection';
-import { ReadinessQuizSection } from './components/ReadinessQuizSection';
-import { EducationHubSection } from './components/EducationHubSection';
 import { PricingSection } from './components/PricingSection';
 import { FAQSection } from './components/FAQSection';
 import { Footer } from './components/Footer';
-import { EarlyAccessModal } from './components/EarlyAccessModal';
 import { SupportChatWidget } from './components/SupportChatWidget';
 import { CookieConsentBanner } from './components/CookieConsentBanner';
-import { isDemoUser, subscribeToActiveUser, waitForAuthReady } from './services/authEmailService';
+import { hadSignedInSession, isDemoUser, subscribeToActiveUser } from './services/activeUserStore';
+import { loadSessionServices, type SessionServices } from './services/session';
 import { FREE_HOLDINGS_LIMIT, type CheckoutPlan } from './config/plans';
 import {
   BILLING_ENABLED,
   BillingError,
   FREE_ENTITLEMENT,
-  acceptHouseholdInvite,
   getPendingInvite,
   getPendingPlan,
   getPendingPromo,
-  openBillingPortal,
   planAccess,
-  redeemPromoCode,
   setPendingInvite,
   setPendingPlan,
   setPendingPromo,
-  startCheckout,
-  subscribeEntitlement,
   type ClientEntitlement,
-} from './services/entitlementService';
+} from './services/entitlementCore';
+import { BookOpen, ClipboardCheck, Globe2, HelpCircle, LayoutDashboard, LayoutGrid, ScanSearch, ShieldCheck, Sparkles } from 'lucide-react';
 import { applyPageSeo, normalisePath, seoForView } from './utils/seo';
 import {
   CALCULATOR_ALIASES,
@@ -52,14 +42,8 @@ import {
 import { getFxRates, loadEcbRates, subscribeFxRates } from './services/fxRateService';
 import type { ImportPlanItem } from './services/csvImportService';
 import { isRefreshableFund, markAutoRefreshed, refreshFundPrices, shouldAutoRefresh, type NavRefreshSummary } from './services/navRefreshService';
-import { 
-  loadUserHoldings, 
-  saveUserHolding, 
-  removeUserHolding, 
-  loadInvestmentAccountState, 
-  saveInvestmentAccountState 
-} from './services/portfolioService';
 
+const EarlyAccessModal = lazy(() => import('./components/EarlyAccessModal').then((m) => ({ default: m.EarlyAccessModal })));
 const DashboardView = lazy(() => import('./components/DashboardView').then((m) => ({ default: m.DashboardView })));
 const PrivacyPage = lazy(() => import('./components/PrivacyPage').then((m) => ({ default: m.PrivacyPage })));
 const CalculatorsHubPage = lazy(() => import('./components/CalculatorsHubPage').then((m) => ({ default: m.CalculatorsHubPage })));
@@ -77,6 +61,16 @@ const ExitTaxCalculatorPage = lazy(() => import('./components/ExitTaxCalculatorP
 const DeemedDisposalCalculatorPage = lazy(() =>
   import('./components/DeemedDisposalCalculatorPage').then((m) => ({ default: m.DeemedDisposalCalculatorPage }))
 );
+// Homepage deep-dive panels: their code only loads when a visitor opens one.
+const ProblemCardsSection = lazy(() => import('./components/ProblemCardsSection').then((m) => ({ default: m.ProblemCardsSection })));
+const CrossBorderSection = lazy(() => import('./components/CrossBorderSection').then((m) => ({ default: m.CrossBorderSection })));
+const FinancialXRaySection = lazy(() => import('./components/FinancialXRaySection').then((m) => ({ default: m.FinancialXRaySection })));
+const ProductCardsSection = lazy(() => import('./components/ProductCardsSection').then((m) => ({ default: m.ProductCardsSection })));
+const ScenarioPlannerSection = lazy(() => import('./components/ScenarioPlannerSection').then((m) => ({ default: m.ScenarioPlannerSection })));
+const GovtSourcesSection = lazy(() => import('./components/GovtSourcesSection').then((m) => ({ default: m.GovtSourcesSection })));
+const ReadinessQuizSection = lazy(() => import('./components/ReadinessQuizSection').then((m) => ({ default: m.ReadinessQuizSection })));
+const EducationHubSection = lazy(() => import('./components/EducationHubSection').then((m) => ({ default: m.EducationHubSection })));
+const SampleSnapshotSection = lazy(() => import('./components/SampleSnapshotSection').then((m) => ({ default: m.SampleSnapshotSection })));
 const GuidePage = lazy(() => import('./components/GuidePage').then((m) => ({ default: m.GuidePage })));
 
 const PRIVACY_PATH = '/privacy';
@@ -101,7 +95,7 @@ const viewFromLocation = (): AppView => {
 };
 
 const ViewFallback = () => (
-  <div role="status" aria-live="polite" className="flex min-h-[50vh] items-center justify-center text-sm font-semibold text-slate-500">
+  <div role="status" aria-live="polite" className="flex min-h-[100vh] items-center justify-center text-sm font-semibold text-slate-600">
     Loading…
   </div>
 );
@@ -117,10 +111,11 @@ export default function App() {
   // Keep /privacy and the calculator pages as real, shareable URLs; other views live at the site root.
   const setActiveView = useCallback((view: AppView) => {
     const targetPath = pathForView(view);
-    if (window.location.pathname !== targetPath) {
+    if (window.location.pathname !== targetPath || window.location.hash) {
       window.history.pushState(null, '', targetPath);
-      if (view !== 'landing') window.scrollTo({ top: 0 });
     }
+    // The tracker shares the site root URL, so scroll whenever the view itself changes.
+    if (view !== 'landing') window.scrollTo({ top: 0 });
     setActiveViewState(view);
   }, []);
 
@@ -157,47 +152,88 @@ export default function App() {
   const [isDataReady, setIsDataReady] = useState(false);
   const isDataReadyRef = useRef(false);
 
+  // Firebase (auth + saved data) loads on demand: straight away for the tracker or a returning
+  // signed-in visitor, otherwise once the page is idle so it never delays the first paint.
+  const sessionRef = useRef<SessionServices | null>(null);
+  const [sessionRequested, setSessionRequested] = useState(() => activeView === 'app' || hadSignedInSession());
+
+  useEffect(() => {
+    if (activeView === 'app') setSessionRequested(true);
+  }, [activeView]);
+
+  useEffect(() => {
+    if (sessionRequested) return;
+    let idleId: number | undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const request = () => setSessionRequested(true);
+    const schedule = () => {
+      timer = setTimeout(() => {
+        if ('requestIdleCallback' in window) idleId = window.requestIdleCallback(request, { timeout: 4000 });
+        else request();
+      }, 3000);
+    };
+    if (document.readyState === 'complete') schedule();
+    else window.addEventListener('load', schedule, { once: true });
+    return () => {
+      window.removeEventListener('load', schedule);
+      if (timer) clearTimeout(timer);
+      if (idleId !== undefined && 'cancelIdleCallback' in window) window.cancelIdleCallback(idleId);
+    };
+  }, [sessionRequested]);
+
   // Reload portfolio data whenever the signed-in user changes.
   useEffect(() => {
+    if (!sessionRequested) return;
     let cancelled = false;
     let unsubscribe: (() => void) | undefined;
-    waitForAuthReady().then(() => {
-      if (cancelled) return;
-      unsubscribe = subscribeToActiveUser((user) => {
-        const uid = isDemoUser(user) ? 'guest' : user.id;
-        if (uid === activeUserIdRef.current && uid !== 'guest') return;
-        activeUserIdRef.current = uid;
-        isDataReadyRef.current = false;
-        setIsDataReady(false);
-        setActiveUserId(uid);
-        setHoldings([]);
-        setInvestmentAccount(EMPTY_INVESTMENT_ACCOUNT);
-        Promise.all([loadUserHoldings(uid), loadInvestmentAccountState(uid)])
-          .then(([loadedHoldings, accountState]) => {
-            if (activeUserIdRef.current !== uid) return;
-            setHoldings(loadedHoldings);
-            setInvestmentAccount(accountState);
-            isDataReadyRef.current = true;
-            setIsDataReady(true);
-            setDataError(null);
-          })
-          .catch((err) => {
-            console.error('Failed to load portfolio', err);
-            if (activeUserIdRef.current === uid) setDataError('We could not load your saved portfolio. Please refresh to try again.');
-          });
+    loadSessionServices()
+      .then(async (svc) => {
+        sessionRef.current = svc;
+        await svc.waitForAuthReady();
+        return svc;
+      })
+      .then((svc) => {
+        if (cancelled) return;
+        unsubscribe = subscribeToActiveUser((user) => {
+          const uid = isDemoUser(user) ? 'guest' : user.id;
+          if (uid === activeUserIdRef.current && uid !== 'guest') return;
+          activeUserIdRef.current = uid;
+          isDataReadyRef.current = false;
+          setIsDataReady(false);
+          setActiveUserId(uid);
+          setHoldings([]);
+          setInvestmentAccount(EMPTY_INVESTMENT_ACCOUNT);
+          Promise.all([svc.loadUserHoldings(uid), svc.loadInvestmentAccountState(uid)])
+            .then(([loadedHoldings, accountState]) => {
+              if (activeUserIdRef.current !== uid) return;
+              setHoldings(loadedHoldings);
+              setInvestmentAccount(accountState);
+              isDataReadyRef.current = true;
+              setIsDataReady(true);
+              setDataError(null);
+            })
+            .catch((err) => {
+              console.error('Failed to load portfolio', err);
+              if (activeUserIdRef.current === uid) setDataError('We could not load your saved portfolio. Please refresh to try again.');
+            });
+        });
+      })
+      .catch((err) => {
+        console.error('Failed to load account services', err);
+        if (!cancelled) setDataError('We could not connect to your account. Check your connection and refresh to try again.');
       });
-    });
     return () => {
       cancelled = true;
       unsubscribe?.();
     };
-  }, []);
+  }, [sessionRequested]);
 
   // Live plan details for the signed-in user.
   useEffect(() => {
     setEntitlement(FREE_ENTITLEMENT);
-    if (!BILLING_ENABLED || activeUserId === 'guest') return;
-    return subscribeEntitlement(activeUserId, setEntitlement);
+    const svc = sessionRef.current;
+    if (!BILLING_ENABLED || activeUserId === 'guest' || !svc) return;
+    return svc.subscribeEntitlement(activeUserId, setEntitlement);
   }, [activeUserId]);
 
   // Return links from Stripe (?billing=…) and household invites (?household=…) land on the site root.
@@ -230,7 +266,7 @@ export default function App() {
     const promo = getPendingPromo();
     const plan = getPendingPlan();
     if (invite) {
-      acceptHouseholdInvite(invite)
+      loadSessionServices().then(svc => svc.acceptHouseholdInvite(invite))
         .then(() => {
           setPendingInvite(null);
           setNotice('You\u2019ve joined the Family household. You now have Family features.');
@@ -240,7 +276,7 @@ export default function App() {
           showBillingError(err);
         });
     } else if (promo) {
-      redeemPromoCode(promo)
+      loadSessionServices().then(svc => svc.redeemPromoCode(promo))
         .then((res) => {
           setPendingPromo(null);
           setNotice(`Promo code applied: Pro is unlocked until ${new Date(res.expiresAt).toLocaleDateString('en-IE', { day: 'numeric', month: 'long', year: 'numeric' })}.`);
@@ -255,7 +291,7 @@ export default function App() {
         });
     } else if (plan) {
       setPendingPlan(null);
-      startCheckout(plan).catch(showBillingError);
+      loadSessionServices().then(svc => svc.startCheckout(plan)).catch(showBillingError);
     }
   }, [activeUserId]);
 
@@ -269,11 +305,18 @@ export default function App() {
       handleOpenWaitlist({ plan: plan.startsWith('family') ? 'Family' : 'Pro', checkoutPlan: plan });
       return;
     }
+    let svc: SessionServices;
     try {
-      await startCheckout(plan);
+      svc = await loadSessionServices();
+    } catch (err) {
+      showBillingError(err);
+      return;
+    }
+    try {
+      await svc.startCheckout(plan);
     } catch (err) {
       if (err instanceof BillingError && err.code === 'has_subscription') {
-        await openBillingPortal().catch(showBillingError);
+        await svc.openBillingPortal().catch(showBillingError);
         return;
       }
       showBillingError(err);
@@ -283,20 +326,37 @@ export default function App() {
   const handleOpenWaitlist = (prefillData?: any) => {
     setWaitlistPrefill(prefillData || null);
     setIsWaitlistOpen(true);
+    setSessionRequested(true);
   };
 
+  // Sections may sit in a collapsed, lazily loaded panel, so ask it to open and wait for it to render.
   const handleNavigateSection = (sectionId: string) => {
-    if (activeView !== 'landing') {
-      setActiveView('landing');
-      setTimeout(() => {
-        const el = document.getElementById(sectionId);
-        if (el) el.scrollIntoView({ behavior: 'smooth' });
-      }, 50);
-    } else {
+    if (activeView !== 'landing') setActiveView('landing');
+    const behavior: ScrollBehavior = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
+    let requested = false;
+    let frames = 0;
+    const tryScroll = () => {
       const el = document.getElementById(sectionId);
-      if (el) el.scrollIntoView({ behavior: 'smooth' });
-    }
+      if (el) {
+        el.scrollIntoView({ behavior, block: 'start' });
+        if (window.location.hash !== `#${sectionId}`) window.history.replaceState(null, '', `/#${sectionId}`);
+        return;
+      }
+      if (!requested) {
+        requested = true;
+        requestOpenSection(sectionId);
+      }
+      if (frames++ < 180) requestAnimationFrame(tryScroll);
+    };
+    requestAnimationFrame(tryScroll);
   };
+
+  // Honour /#section deep links on first load, including sections inside collapsed panels.
+  useEffect(() => {
+    const id = decodeURIComponent(window.location.hash.slice(1));
+    if (id && activeView === 'landing' && /^[a-z0-9-]+$/i.test(id)) handleNavigateSection(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const holdingsRef = useRef(holdings);
   holdingsRef.current = holdings;
@@ -344,7 +404,7 @@ export default function App() {
       return;
     }
     setHoldings(prev => [newHolding, ...prev]);
-    const result = await saveUserHolding(activeUserId, newHolding);
+    const result = await (await loadSessionServices()).saveUserHolding(activeUserId, newHolding);
     if (!result.success) {
       setHoldings(prev => prev.filter(h => h.id !== newHolding.id));
       setDataError(result.error ?? 'Could not save the holding.');
@@ -355,7 +415,7 @@ export default function App() {
     if (!ensureDataReady()) return;
     const previous = holdings.find(h => h.id === updated.id);
     setHoldings(prev => prev.map(h => (h.id === updated.id ? updated : h)));
-    const result = await saveUserHolding(activeUserId, updated);
+    const result = await (await loadSessionServices()).saveUserHolding(activeUserId, updated);
     if (!result.success) {
       if (previous) setHoldings(prev => prev.map(h => (h.id === updated.id ? previous : h)));
       setDataError(result.error ?? 'Could not update the holding.');
@@ -374,7 +434,7 @@ export default function App() {
         skipped++;
         continue;
       }
-      const result = await saveUserHolding(uid, holding);
+      const result = await (await loadSessionServices()).saveUserHolding(uid, holding);
       if (activeUserIdRef.current !== uid) return items.length;
       if (!result.success) {
         failed++;
@@ -420,7 +480,7 @@ export default function App() {
     if (!ensureDataReady()) return;
     const removed = holdings.find(h => h.id === id);
     setHoldings(prev => prev.filter(h => h.id !== id));
-    const result = await removeUserHolding(activeUserId, id);
+    const result = await (await loadSessionServices()).removeUserHolding(activeUserId, id);
     if (!result.success) {
       if (removed) setHoldings(prev => [removed, ...prev]);
       setDataError(result.error ?? 'Could not delete the holding.');
@@ -455,7 +515,7 @@ export default function App() {
     if (allowed < amount) {
       setDataError(`Only €${allowed.toLocaleString()} was added: contributions are capped at €${previous.annualLimit.toLocaleString()} per year.`);
     }
-    const result = await saveInvestmentAccountState(activeUserId, updated);
+    const result = await (await loadSessionServices()).saveInvestmentAccountState(activeUserId, updated);
     if (!result.success) {
       setInvestmentAccount(previous);
       setDataError(result.error ?? 'Could not save the contribution.');
@@ -505,28 +565,22 @@ export default function App() {
           <PrivacyPage onBack={() => setActiveView('landing')} />
         </Suspense>
       ) : isCalculatorView(activeView) ? (
-        <>
-          <Suspense fallback={<ViewFallback />}>
-            {renderCalculator(activeView)}
-          </Suspense>
+        // Footer waits with the page so it doesn't jump down when the lazy chunk arrives (CLS).
+        <Suspense fallback={<ViewFallback />}>
+          {renderCalculator(activeView)}
           <Footer
             onNavigateSection={handleNavigateSection}
             onOpenWaitlist={() => handleOpenWaitlist()}
             onOpenPrivacy={() => setActiveView('privacy')}
             onNavigateView={setActiveView}
           />
-        </>
+        </Suspense>
       ) : activeView === 'landing' ? (
         <main>
-          {/* 1. Hero Section & Product Demo Mockup */}
-          <HeroSection
-            currentCurrency={currentCurrency}
-            onOpenWaitlist={() => handleOpenWaitlist()}
-            onExploreCalculator={() => handleNavigateSection('calculator')}
-            onOpenDashboard={() => setActiveView('app')}
-          />
+          <HeroSection onOpenCalculators={() => setActiveView('calculators')} onOpenDashboard={() => setActiveView('app')} />
 
-          {/* 2. Ireland's New Investment Account Framework (Budget 2027) */}
+          <FeatureGrid onNavigateSection={handleNavigateSection} onNavigateView={setActiveView} />
+
           <InvestmentAccountSection
             investmentAccount={investmentAccount}
             currentCurrency={currentCurrency}
@@ -535,55 +589,47 @@ export default function App() {
             onAddContribution={handleAddContribution}
           />
 
-          {/* 3. Problem Cards ("Investing shouldn't require a finance degree") */}
-          <ProblemCardsSection />
+          <BudgetCalculatorSection currentCurrency={currentCurrency} onOpenWaitlist={handleOpenWaitlist} />
 
-          {/* 4. FY26 vs FY27 Interactive Budget & Investment Calculator (Robust Dynamic State Component) */}
-          <BudgetCalculatorSection
-            currentCurrency={currentCurrency}
-            onOpenWaitlist={handleOpenWaitlist}
-          />
+          <section aria-labelledby="explore-heading" className="py-16 sm:py-20 bg-slate-50 border-b border-slate-200">
+            <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+              <h2 id="explore-heading" className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900">
+                Explore in depth
+              </h2>
+              <p className="mt-3 text-base sm:text-lg text-slate-600">Open any topic for the full tool or explainer.</p>
+              <div className="mt-8 space-y-3">
+                <DeepDive sectionId="cross-border" title="India & US assets" summary="How Irish tax treats funds, shares and RSUs held abroad." icon={<Globe2 className="h-5 w-5" />}>
+                  <CrossBorderSection currentCurrency={currentCurrency} onOpenWaitlist={() => handleOpenWaitlist()} onOpenDashboard={() => setActiveView('app')} />
+                </DeepDive>
+                <DeepDive sectionId="financial-xray" title="Financial X-Ray" summary="See how spread out your savings and investments are." icon={<ScanSearch className="h-5 w-5" />}>
+                  <FinancialXRaySection currentCurrency={currentCurrency} holdings={holdings} onOpenWaitlist={() => handleOpenWaitlist()} onOpenDashboard={() => setActiveView('app')} />
+                </DeepDive>
+                <DeepDive sectionId="what-if" title="What-if planner" summary="Try different monthly amounts, returns and time frames." icon={<Sparkles className="h-5 w-5" />}>
+                  <ScenarioPlannerSection currentCurrency={currentCurrency} onOpenWaitlist={() => handleOpenWaitlist()} />
+                </DeepDive>
+                <DeepDive sectionId="readiness-quiz" title="Readiness quiz" summary="A 2-minute score for how ready you are to invest." icon={<ClipboardCheck className="h-5 w-5" />}>
+                  <ReadinessQuizSection onOpenWaitlist={handleOpenWaitlist} />
+                </DeepDive>
+                <DeepDive sectionId="sample-snapshot" title="Sample dashboard" summary="A preview of the tracker with example figures." icon={<LayoutDashboard className="h-5 w-5" />}>
+                  <SampleSnapshotSection currentCurrency={currentCurrency} onOpenDashboard={() => setActiveView('app')} />
+                </DeepDive>
+                <DeepDive sectionId="how-it-works" title="How it works" summary="The everyday money problems this site helps with." icon={<HelpCircle className="h-5 w-5" />}>
+                  <ProblemCardsSection />
+                </DeepDive>
+                <DeepDive sectionId="product-cards" title="What you get" summary="The tracker, calculators and planning tools at a glance." icon={<LayoutGrid className="h-5 w-5" />}>
+                  <ProductCardsSection onOpenDashboard={() => setActiveView('app')} onOpenWaitlist={() => handleOpenWaitlist()} />
+                </DeepDive>
+                <DeepDive sectionId="education" title="Education hub" summary="Short, dated explainers on Irish investing rules." icon={<BookOpen className="h-5 w-5" />}>
+                  <EducationHubSection />
+                </DeepDive>
+                <DeepDive sectionId="govt-sources" title="Official sources" summary="Revenue, gov.ie and Department of Finance references." icon={<ShieldCheck className="h-5 w-5" />}>
+                  <GovtSourcesSection />
+                </DeepDive>
+              </div>
+            </div>
+          </section>
 
-          {/* 5. Cross-Border Wealth Architecture (Ireland + India + US + EU) */}
-          <CrossBorderSection
-            currentCurrency={currentCurrency}
-            onOpenWaitlist={() => handleOpenWaitlist()}
-            onOpenDashboard={() => setActiveView('app')}
-          />
-
-          {/* 6. Signature Feature: The Financial X-Ray */}
-          <FinancialXRaySection
-            currentCurrency={currentCurrency}
-            holdings={holdings}
-            onOpenWaitlist={() => handleOpenWaitlist()}
-            onOpenDashboard={() => setActiveView('app')}
-          />
-
-          {/* 7. Product Architecture Cards */}
-          <ProductCardsSection
-            onOpenDashboard={() => setActiveView('app')}
-            onOpenWaitlist={() => handleOpenWaitlist()}
-          />
-
-          {/* 8. Scenario Planner ("What If?") */}
-          <ScenarioPlannerSection
-            currentCurrency={currentCurrency}
-            onOpenWaitlist={() => handleOpenWaitlist()}
-          />
-
-          {/* 9. Live Official Government Sources & Secure Fiscal API Inspector */}
-          <GovtSourcesSection />
-
-          {/* 10. AI Assistant ("Ask your money questions in plain English") */}
           <AiAssistantSection />
-
-          {/* 11. Viral Diagnostic Tool: "How Invested Are You?" (0-100 Readiness Score) */}
-          <ReadinessQuizSection
-            onOpenWaitlist={handleOpenWaitlist}
-          />
-
-          {/* 12. Educational Knowledge Hub (Reviewed & Dated Sources) */}
-          <EducationHubSection />
 
           {/* 13. Transparent Pricing (Free, Pro, Family, B2B Enterprise API) */}
           <PricingSection
@@ -628,12 +674,16 @@ export default function App() {
       )}
 
       {/* Early Access / Calculation Saver Modal */}
-      <EarlyAccessModal
-        isOpen={isWaitlistOpen}
-        onClose={() => setIsWaitlistOpen(false)}
-        prefillData={waitlistPrefill}
-        billingEnabled={BILLING_ENABLED}
-      />
+      {isWaitlistOpen && (
+        <Suspense fallback={null}>
+          <EarlyAccessModal
+            isOpen
+            onClose={() => setIsWaitlistOpen(false)}
+            prefillData={waitlistPrefill}
+            billingEnabled={BILLING_ENABLED}
+          />
+        </Suspense>
+      )}
 
       <SupportChatWidget onNavigateView={setActiveView} onNavigateSection={handleNavigateSection} />
       <CookieConsentBanner onOpenPrivacy={() => setActiveView('privacy')} />

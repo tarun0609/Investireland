@@ -20,9 +20,11 @@ export default defineConfig(() => {
         output: {
           codeSplitting: {
             groups: [
-              { name: 'vendor-firebase', test: /node_modules[\\/](@firebase|firebase)[\\/]/ },
-              { name: 'vendor-charts', test: /node_modules[\\/](recharts|d3-[^\\/]+|victory-vendor)[\\/]/ },
-              { name: 'vendor-react', test: /node_modules[\\/](react|react-dom|scheduler)[\\/]/ },
+              // Higher priority wins so React is never pulled into the charts chunk
+              // (that would force the 400 kB recharts bundle onto every page).
+              { name: 'vendor-react', test: /node_modules[\\/](react|react-dom|scheduler)[\\/]/, priority: 30 },
+              { name: 'vendor-firebase', test: /node_modules[\\/](@firebase|firebase)[\\/]/, priority: 20 },
+              { name: 'vendor-charts', test: /node_modules[\\/](recharts|d3-[^\\/]+|victory-vendor)[\\/]/, priority: 10 },
             ],
           },
         },

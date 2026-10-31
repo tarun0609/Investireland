@@ -224,9 +224,9 @@ export const CsvImportPanel: React.FC<CsvImportPanelProps> = ({ holdings, onImpo
               id="csv-file-input"
             />
             <label htmlFor="csv-file-input" className={`block ${busy ? 'cursor-wait opacity-60' : 'cursor-pointer'}`} aria-busy={busy}>
-              {busy ? <Loader2 className="w-8 h-8 text-emerald-600 mx-auto mb-2 animate-spin" /> : <FileUp className="w-8 h-8 text-slate-400 mx-auto mb-2" />}
+              {busy ? <Loader2 className="w-8 h-8 text-emerald-600 mx-auto mb-2 animate-spin" /> : <FileUp className="w-8 h-8 text-slate-500 mx-auto mb-2" />}
               <span className="text-sm font-bold text-slate-800 block">{busy ? 'Reading your statement\u2026' : 'Choose a CAS PDF or CSV file'}</span>
-              <span className="text-xs text-slate-400 mt-1 block">PDF up to 10 MB, CSV up to 2 MB &middot; stays on this device</span>
+              <span className="text-xs text-slate-500 mt-1 block">PDF up to 10 MB, CSV up to 2 MB &middot; stays on this device</span>
             </label>
           </div>
 
@@ -293,7 +293,7 @@ export const CsvImportPanel: React.FC<CsvImportPanelProps> = ({ holdings, onImpo
             </div>
           )}
 
-          <div className="overflow-x-auto border border-slate-200 rounded-xl">
+          <div className="overflow-x-auto border border-slate-200 rounded-xl" tabIndex={0} role="region" aria-label="Scrollable table">
             <table className="w-full text-left text-xs">
               <thead className="bg-slate-50 text-slate-500 font-semibold">
                 <tr>
@@ -309,7 +309,7 @@ export const CsvImportPanel: React.FC<CsvImportPanelProps> = ({ holdings, onImpo
                   <tr key={h.id}>
                     <td className="py-2 px-3">
                       <div className="font-bold text-slate-900 break-words max-w-[240px]">{h.assetName}</div>
-                      <div className="text-[10px] text-slate-400 font-mono">{[h.ticker, h.isin, h.assetType].filter(Boolean).join(' · ')}</div>
+                      <div className="text-[10px] text-slate-500 font-mono">{[h.ticker, h.isin, h.assetType].filter(Boolean).join(' · ')}</div>
                     </td>
                     <td className="py-2 px-3 text-right font-mono">{formatUnits(h.units)}</td>
                     <td className="py-2 px-3 text-right font-mono whitespace-nowrap">{formatCurrency(h.unitPrice, h.currency, 2)}</td>
