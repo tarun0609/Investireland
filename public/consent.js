@@ -1,7 +1,7 @@
 // Google tag (gtag.js) for Google Ads, behind consent (Google Consent Mode v2, "basic" mode).
 // Nothing is loaded from Google and no advertising cookies are set until the visitor clicks "Accept".
 (function () {
-  var TAG_ID = 'AW-970610553';
+  var TAG_ID = 'AW-18550273296';
   var STORAGE_KEY = 'investireland_cookie_consent_v1';
   var GRANTED = { ad_storage: 'granted', ad_user_data: 'granted', ad_personalization: 'granted', analytics_storage: 'granted' };
   var DENIED = { ad_storage: 'denied', ad_user_data: 'denied', ad_personalization: 'denied', analytics_storage: 'denied' };
