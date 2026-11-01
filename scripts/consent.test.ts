@@ -34,7 +34,7 @@ describe('Google tag consent loader', () => {
   it('defaults every consent type to denied and loads nothing from Google', () => {
     const { appended, calls, api } = boot();
     expect(calls()[0]).toEqual(['consent', 'default', { ad_storage: 'denied', ad_user_data: 'denied', ad_personalization: 'denied', analytics_storage: 'denied' }]);
-    expect(calls()).toContainEqual(['config', 'AW-970610553']);
+    expect(calls()).toContainEqual(['config', 'AW-18550273296']);
     expect(appended).toHaveLength(0);
     expect(api.get()).toBeNull();
   });
@@ -44,7 +44,7 @@ describe('Google tag consent loader', () => {
     api.set('granted');
     api.set('granted');
     expect(appended).toHaveLength(1);
-    expect(appended[0]).toMatchObject({ async: true, src: 'https://www.googletagmanager.com/gtag/js?id=AW-970610553' });
+    expect(appended[0]).toMatchObject({ async: true, src: 'https://www.googletagmanager.com/gtag/js?id=AW-18550273296' });
     expect(calls()).toContainEqual(['consent', 'update', expect.objectContaining({ ad_storage: 'granted' })]);
     expect(store.get('investireland_cookie_consent_v1')).toBe('granted');
     expect(events).toContain('investireland:consent');
